@@ -6,7 +6,6 @@ import { Status, Priority } from '@prisma/client';
 import { Server as SocketIOServer } from 'socket.io';
 import type { Server as HTTPServer } from 'http';
 import type { Socket as NetSocket } from 'net';
-import crypto from 'crypto';
 
 // Importar las utilidades
 import { 
@@ -36,7 +35,6 @@ interface AppRouterRequest extends Request {
 }
 
 // Clave secreta para verificar la autenticidad del webhook de ClickUp
-const CLICKUP_WEBHOOK_SECRET = process.env.CLICKUP_WEBHOOK_SECRET || '';
 
 // Mapeo de prioridades de ClickUp (número) a tus enums locales (string)
 const clickupPriorityToLocal: Record<number, Priority> = {
@@ -47,28 +45,28 @@ const clickupPriorityToLocal: Record<number, Priority> = {
 };
 
 // Función para verificar la firma del webhook de ClickUp
-function verifyClickUpSignature(payload: any, signature: string | string[] | undefined, secret: string): boolean {
-  if (!signature || typeof signature !== 'string') {
-    console.warn('Firma de webhook no encontrada o formato incorrecto.');
-    return false;
-  }
-  if (!secret) {
-    console.error('Secreto de webhook no configurado. No se puede verificar la firma.');
-    return false;
-  }
+// function verifyClickUpSignature(payload: any, signature: string | string[] | undefined, secret: string): boolean {
+//   if (!signature || typeof signature !== 'string') {
+//     console.warn('Firma de webhook no encontrada o formato incorrecto.');
+//     return false;
+//   }
+//   if (!secret) {
+//     console.error('Secreto de webhook no configurado. No se puede verificar la firma.');
+//     return false;
+//   }
 
-  const hmac = crypto.createHmac('sha256', secret);
-  hmac.update(JSON.stringify(payload));
-  const digest = hmac.digest('hex');
+//   const hmac = crypto.createHmac('sha256', secret);
+//   hmac.update(JSON.stringify(payload));
+//   const digest = hmac.digest('hex');
   
-  const expectedSignature = `sha256=${digest}`;
-  const isValid = crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
+//   const expectedSignature = `sha256=${digest}`;
+//   const isValid = crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
   
-  if (!isValid) {
-    console.warn('Firma de webhook inválida. Posible ataque o secreto incorrecto.');
-  }
-  return isValid;
-}
+//   if (!isValid) {
+//     console.warn('Firma de webhook inválida. Posible ataque o secreto incorrecto.');
+//   }
+//   return isValid;
+// }
 
 // Función para calcular fechas y posición en cola para una nueva tarea
 async function calculateTaskScheduling(
@@ -126,12 +124,11 @@ async function calculateTaskScheduling(
 export async function POST(req: AppRouterRequest) {
   try {
     const payload = await req.json();
-    const headers = req.headers;
 
     // ✅ Paso 1: Verificar la firma del webhook
-    if (!verifyClickUpSignature(payload, headers.get('x-webhook-signature') || undefined, CLICKUP_WEBHOOK_SECRET)) {
-      return NextResponse.json({ error: 'Firma de webhook inválida' }, { status: 403 });
-    }
+    // if (!verifyClickUpSignature(payload, headers.get('x-webhook-signature') || undefined, CLICKUP_WEBHOOK_SECRET)) {
+    //   return NextResponse.json({ error: 'Firma de webhook inválida' }, { status: 403 });
+    // }
 
     console.log('Webhook de ClickUp recibido:', payload.event);
 

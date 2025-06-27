@@ -13,6 +13,7 @@ import { clickupPriorityMap, getClickUpStatusName } from '@/utils/clickup-task-m
 // Constantes de ClickUp (asegúrate de que estén en tus variables de entorno)
 const CLICKUP_API_BASE = 'https://api.clickup.com/api/v2';
 const CLICKUP_TOKEN = process.env.CLICKUP_API_TOKEN;
+const API_URL = process.env.API_URL;
 /**
  * Maneja las solicitudes GET para obtener todas las tareas.
  * Permite filtrar por brandId, status, priority, y paginación.
@@ -460,7 +461,7 @@ export async function POST(req: Request) {
     });
 
     try {
-      await axios.post('https://task-automation-zeta.vercel.app/api/socket_emitter', {
+      await axios.post(`${ API_URL }/socket_emitter'`, {
         eventName: 'task_update',
         data: taskWithAssignees,
       });
