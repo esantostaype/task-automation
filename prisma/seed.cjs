@@ -208,10 +208,9 @@ async function main() {
   console.log("Creando UserRoles...");
   const userRoleData = [
     { user: allUsers.find(u => u.name === "Erick Santos"), types: [uxType], brandId: null },
-    { user: allUsers.find(u => u.name === "Diego Ganoza"), types: [graphicType], brandId: null },
+    { user: allUsers.find(u => u.name === "Diego Ganoza"), types: [uxType], brandId: null },
     { user: allUsers.find(u => u.name === "Dayana Viggiani"), types: [graphicType], brandId: null },
-    // Ejemplo de usuario con múltiples roles (generalista)
-    { user: allUsers.find(u => u.name === "Erick Santos"), types: [graphicType], brandId: null } // Erick ahora también es Graphic
+    { user: allUsers.find(u => u.name === "Diego Ganoza"), types: [graphicType], brandId: null }
   ];
 
   const roles = userRoleData.flatMap(({ user, types, brandId }) => {
