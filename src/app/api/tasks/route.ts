@@ -460,7 +460,7 @@ export async function POST(req: Request) {
     });
 
     try {
-      await axios.post('http://localhost:3000/api/socket_emitter', {
+      await axios.post('https://task-automation-zeta.vercel.app/api/socket_emitter', {
         eventName: 'task_update',
         data: taskWithAssignees,
       });
