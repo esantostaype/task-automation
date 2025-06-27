@@ -1,0 +1,135 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_LOCAL")
+}
+
+enum Tier {
+  S
+  A
+  B
+  C
+  D
+  E
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum Status {
+  TO_DO
+  IN_PROGRESS
+  ON_APPROVAL
+  COMPLETE
+}
+
+model User {
+  id String @id @unique
+  name String
+  email String @unique
+  active Boolean @default(false)  
+  roles UserRole[]
+  tasks TaskAssignment[]  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Brand {
+  id String @id @unique
+  name String @unique
+  spaceId String?
+  folderId String?
+  teamId String?
+  isActive Boolean @default(true)
+  description String?  
+  defaultStatus Status @default(TO_DO)
+  statusMapping Json?  
+  tasks Task[]
+  userRoles UserRole[]  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Task {
+  id String @id @unique
+  name String
+  description String?
+  status Status @default(TO_DO)
+  priority Priority
+  startDate DateTime
+  deadline DateTime
+  timeEstimate Int?
+  points Int?
+  tags String?
+  url String?
+  lastSyncAt DateTime?
+  syncStatus String @default("PENDING")
+  syncError String?  
+  queuePosition Int
+  typeId Int
+  categoryId Int
+  brandId String
+  type TaskType @relation(fields: [typeId], references: [id], onDelete: Cascade)
+  category TaskCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  assignees TaskAssignment[]  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TaskAssignment {
+  id Int @id @default(autoincrement())
+  userId String
+  taskId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  @@unique([userId, taskId])
+}
+
+model TaskType {
+  id Int @id @default(autoincrement())
+  name String @unique
+  categories TaskCategory[]
+  roles UserRole[]
+  tasks Task[]
+}
+
+model TaskCategory {
+  id Int @id @default(autoincrement())
+  name String
+  duration Float
+  tier Tier
+  typeId Int
+  type TaskType @relation(fields: [typeId], references: [id])
+  tasks Task[]
+}
+
+model UserRole {
+  id Int @id @default(autoincrement())
+  userId String
+  typeId Int
+  brandId String?
+  user User @relation(fields: [userId], references: [id])
+  type TaskType @relation(fields: [typeId], references: [id])
+  brand Brand? @relation(fields: [brandId], references: [id])
+  @@unique([userId, typeId, brandId])
+}
+
+model SyncLog {
+  id Int @id @default(autoincrement())
+  entityType String
+  entityIntId Int?
+  entityStringId String?
+  action String
+  status String
+  errorMessage String?
+  clickupResponse Json?  
+  createdAt DateTime @default(now())
+}

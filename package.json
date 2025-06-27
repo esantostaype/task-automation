@@ -1,27 +1,46 @@
 {
   "name": "task-automation",
   "version": "0.1.0",
+  "prisma": {
+    "seed": "ts-node prisma/seed.cjs"
+  },
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "next": "15.3.4"
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@fontsource/inter": "^5.2.6",
+    "@mui/joy": "^5.0.0-beta.52",
+    "@prisma/client": "^6.10.1",
+    "@tanstack/react-query": "^5.81.2",
+    "axios": "^1.10.0",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
+    "formik": "^2.4.6",
+    "next": "^14.2.25",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-toastify": "^11.0.5",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
+    "yup": "^1.6.1"
   },
   "devDependencies": {
-    "typescript": "^5",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.17",
+    "prisma": "^6.10.1",
     "tailwindcss": "^4",
-    "eslint": "^9",
-    "eslint-config-next": "15.3.4",
-    "@eslint/eslintrc": "^3"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
   }
 }
