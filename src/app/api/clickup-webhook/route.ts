@@ -126,6 +126,7 @@ export async function POST(req: AppRouterRequest) {
 console.log('📩 Webhook recibido GAAA:', new Date());
   try {
     const payload = await req.json();
+    console.log("🧾 Payload real recibido de Clickup:", JSON.stringify(payload, null, 2));
 
     // ✅ Paso 1: Verificar la firma del webhook
     // if (!verifyClickUpSignature(payload, headers.get('x-webhook-signature') || undefined, CLICKUP_WEBHOOK_SECRET)) {
