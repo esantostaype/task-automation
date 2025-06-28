@@ -3,9 +3,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/utils/prisma';
 import { Status, Priority } from '@prisma/client';
-import { Server as SocketIOServer } from 'socket.io';
-import type { Server as HTTPServer } from 'http';
-import type { Socket as NetSocket } from 'net';
+import axios from 'axios'; // Añadir axios para llamar al socket-emitter
 
 // Importar las utilidades
 import { 
@@ -19,20 +17,6 @@ import {
   calculateWorkingDeadline 
 } from '@/utils/task-calculation-utils';
 import { determineQueueInsertPosition } from '@/utils/priority-utils';
-
-// Define la interfaz para el servidor de Socket.IO en el objeto de respuesta
-interface SocketServer extends HTTPServer {
-  io?: SocketIOServer | undefined;
-}
-
-interface SocketWithIO extends NetSocket {
-  server: SocketServer;
-}
-
-// Extendemos el tipo Request de Next.js para incluir la propiedad socket
-interface AppRouterRequest extends Request {
-  socket: SocketWithIO;
-}
 
 // Asegúrate de tener tu token de ClickUp en las variables de entorno
 const CLICKUP_API_TOKEN = process.env.CLICKUP_API_TOKEN;
@@ -124,7 +108,20 @@ async function calculateTaskScheduling(
   return { startDate, deadline, queuePosition };
 }
 
-export async function POST(req: AppRouterRequest) {
+// ✅ NUEVA FUNCIÓN: Emitir eventos de Socket.IO usando el socket-emitter externo
+async function emitSocketEvent(eventType: string, data: any) {
+  try {
+    await axios.post('https://task-automation-zeta.vercel.app/api/socket_emitter', {
+      eventName: 'data_update',
+      data: { type: eventType, data: data },
+    });
+    console.log(`✅ Evento Socket.IO '${eventType}' emitido exitosamente`);
+  } catch (error) {
+    console.error(`❌ Error al emitir evento Socket.IO '${eventType}':`, error);
+  }
+}
+
+export async function POST(req: Request) {
   console.log('📩 Webhook recibido:', new Date());
   
   try {
@@ -133,6 +130,8 @@ export async function POST(req: AppRouterRequest) {
 
     const event = payload.event;
     let localEntity: any = null;
+    let shouldEmitEvent = false;
+    let eventType = '';
 
     switch (event) {
       // --- Eventos de Tareas ---
@@ -179,6 +178,10 @@ export async function POST(req: AppRouterRequest) {
             await prisma.taskAssignment.deleteMany({ where: { taskId: existingTask.id } });
             localEntity = await prisma.task.delete({ where: { id: existingTask.id } });
             await createSyncLog('Task', null, existingTask.id, 'DELETE', 'SUCCESS');
+            
+            // ✅ Configurar emisión de evento
+            shouldEmitEvent = true;
+            eventType = 'taskDeleted';
           } else {
             console.log(`Tarea ${taskId} no existe localmente, no se puede eliminar.`);
           }
@@ -292,6 +295,10 @@ export async function POST(req: AppRouterRequest) {
             }
 
             await createSyncLog('Task', null, localEntity.id, 'CREATE', 'SUCCESS');
+            
+            // ✅ Configurar emisión de evento
+            shouldEmitEvent = true;
+            eventType = 'taskCreated';
           }
         } else if (event === 'taskUpdated' && existingTask) {
           console.log(`Webhook: Actualizando tarea ${taskId} en DB local.`);
@@ -330,6 +337,10 @@ export async function POST(req: AppRouterRequest) {
           }
 
           await createSyncLog('Task', null, localEntity.id, 'UPDATE', 'SUCCESS');
+          
+          // ✅ Configurar emisión de evento
+          shouldEmitEvent = true;
+          eventType = 'taskUpdated';
         }
         break;
 
@@ -359,6 +370,8 @@ export async function POST(req: AppRouterRequest) {
               },
             });
             await createSyncLog('User', null, localEntity.id, 'CREATE', 'SUCCESS');
+            shouldEmitEvent = true;
+            eventType = 'userCreated';
           }
         } else if (event === 'userUpdated' && existingUser) {
           console.log(`Webhook: Actualizando usuario ${clickupUser.id} en DB local.`);
@@ -371,6 +384,8 @@ export async function POST(req: AppRouterRequest) {
             },
           });
           await createSyncLog('User', null, localEntity.id, 'UPDATE', 'SUCCESS');
+          shouldEmitEvent = true;
+          eventType = 'userUpdated';
         } else if (event === 'userDeleted' && existingUser) {
           console.log(`Webhook: Marcando usuario ${clickupUser.id} como inactivo en DB local.`);
           localEntity = await prisma.user.update({
@@ -380,6 +395,8 @@ export async function POST(req: AppRouterRequest) {
             },
           });
           await createSyncLog('User', null, existingUser.id, 'DELETE', 'SUCCESS');
+          shouldEmitEvent = true;
+          eventType = 'userDeleted';
         }
         break;
 
@@ -421,6 +438,8 @@ export async function POST(req: AppRouterRequest) {
               },
             });
             await createSyncLog('Brand', null, localEntity.id, 'CREATE', 'SUCCESS');
+            shouldEmitEvent = true;
+            eventType = 'brandCreated';
           }
         } else if (event === 'listUpdated' && existingBrand) {
           console.log(`Webhook: Actualizando Brand para lista ${clickupList.id} en DB local.`);
@@ -432,6 +451,8 @@ export async function POST(req: AppRouterRequest) {
             },
           });
           await createSyncLog('Brand', null, localEntity.id, 'UPDATE', 'SUCCESS');
+          shouldEmitEvent = true;
+          eventType = 'brandUpdated';
         } else if (event === 'listDeleted' && existingBrand) {
           console.log(`Webhook: Marcando Brand para lista ${clickupList.id} como inactivo en DB local.`);
           localEntity = await prisma.brand.update({
@@ -441,6 +462,8 @@ export async function POST(req: AppRouterRequest) {
             },
           });
           await createSyncLog('Brand', null, existingBrand.id, 'DELETE', 'SUCCESS');
+          shouldEmitEvent = true;
+          eventType = 'brandDeleted';
         }
         break;
 
@@ -449,12 +472,12 @@ export async function POST(req: AppRouterRequest) {
         break;
     }
 
-    // ✅ Emitir evento de Socket.IO
-    if (localEntity) {
-      const io = (req as any).socket?.server?.io;
-      if (io) {
-        let entityWithRelations: any;
-        if (event.startsWith('task')) {
+    // ✅ MEJORADO: Emitir evento de Socket.IO usando el socket-emitter externo
+    if (shouldEmitEvent && localEntity) {
+      let entityWithRelations: any;
+      
+      try {
+        if (eventType.startsWith('task')) {
           entityWithRelations = await prisma.task.findUnique({
             where: { id: localEntity.id },
             include: {
@@ -468,12 +491,12 @@ export async function POST(req: AppRouterRequest) {
               }
             }
           });
-        } else if (event.startsWith('user')) {
+        } else if (eventType.startsWith('user')) {
           entityWithRelations = await prisma.user.findUnique({
             where: { id: localEntity.id },
             include: { roles: true, tasks: true }
           });
-        } else if (event.startsWith('list')) {
+        } else if (eventType.startsWith('brand')) {
           entityWithRelations = await prisma.brand.findUnique({
             where: { id: localEntity.id },
             include: { tasks: true, userRoles: true }
@@ -481,9 +504,11 @@ export async function POST(req: AppRouterRequest) {
         }
 
         if (entityWithRelations) {
-          io.emit('data_update', { type: event.replace(/ed$/, ''), data: entityWithRelations });
-          console.log(`Evento 'data_update' (${event}) emitido por webhook para ${event.startsWith('task') ? 'tarea' : event.startsWith('user') ? 'usuario' : 'brand'} ${localEntity.id}`);
+          await emitSocketEvent(eventType, entityWithRelations);
+          console.log(`✅ Evento '${eventType}' emitido por webhook para entidad ${localEntity.id}`);
         }
+      } catch (emitError) {
+        console.error(`❌ Error al emitir evento '${eventType}':`, emitError);
       }
     }
 
