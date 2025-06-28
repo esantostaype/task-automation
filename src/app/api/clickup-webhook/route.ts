@@ -122,6 +122,8 @@ async function calculateTaskScheduling(
 }
 
 export async function POST(req: AppRouterRequest) {
+
+console.log('📩 Webhook recibido GAAA:', new Date());
   try {
     const payload = await req.json();
 
