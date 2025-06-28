@@ -34,7 +34,8 @@ interface AppRouterRequest extends Request {
   socket: SocketWithIO;
 }
 
-// Clave secreta para verificar la autenticidad del webhook de ClickUp
+// Asegúrate de tener tu token de ClickUp en las variables de entorno
+const CLICKUP_API_TOKEN = process.env.CLICKUP_API_TOKEN;
 
 // Mapeo de prioridades de ClickUp (número) a tus enums locales (string)
 const clickupPriorityToLocal: Record<number, Priority> = {
@@ -44,29 +45,31 @@ const clickupPriorityToLocal: Record<number, Priority> = {
   4: Priority.LOW,
 };
 
-// Función para verificar la firma del webhook de ClickUp
-// function verifyClickUpSignature(payload: any, signature: string | string[] | undefined, secret: string): boolean {
-//   if (!signature || typeof signature !== 'string') {
-//     console.warn('Firma de webhook no encontrada o formato incorrecto.');
-//     return false;
-//   }
-//   if (!secret) {
-//     console.error('Secreto de webhook no configurado. No se puede verificar la firma.');
-//     return false;
-//   }
+// Función para obtener los detalles completos de una tarea desde ClickUp
+async function fetchClickUpTask(taskId: string): Promise<any> {
+  if (!CLICKUP_API_TOKEN) {
+    throw new Error('Token de ClickUp no configurado');
+  }
 
-//   const hmac = crypto.createHmac('sha256', secret);
-//   hmac.update(JSON.stringify(payload));
-//   const digest = hmac.digest('hex');
-  
-//   const expectedSignature = `sha256=${digest}`;
-//   const isValid = crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
-  
-//   if (!isValid) {
-//     console.warn('Firma de webhook inválida. Posible ataque o secreto incorrecto.');
-//   }
-//   return isValid;
-// }
+  try {
+    const response = await fetch(`https://api.clickup.com/api/v2/task/${taskId}`, {
+      headers: {
+        'Authorization': CLICKUP_API_TOKEN,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Error al obtener tarea de ClickUp: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error al hacer fetch de la tarea de ClickUp:', error);
+    throw error;
+  }
+}
 
 // Función para calcular fechas y posición en cola para una nueva tarea
 async function calculateTaskScheduling(
@@ -122,18 +125,11 @@ async function calculateTaskScheduling(
 }
 
 export async function POST(req: AppRouterRequest) {
-
-console.log('📩 Webhook recibido GAAA:', new Date());
+  console.log('📩 Webhook recibido:', new Date());
+  
   try {
     const payload = await req.json();
     console.log("🧾 Payload real recibido de Clickup:", JSON.stringify(payload, null, 2));
-
-    // ✅ Paso 1: Verificar la firma del webhook
-    // if (!verifyClickUpSignature(payload, headers.get('x-webhook-signature') || undefined, CLICKUP_WEBHOOK_SECRET)) {
-    //   return NextResponse.json({ error: 'Firma de webhook inválida' }, { status: 403 });
-    // }
-
-    console.log('Webhook de ClickUp recibido:', payload.event);
 
     const event = payload.event;
     let localEntity: any = null;
@@ -143,16 +139,57 @@ console.log('📩 Webhook recibido GAAA:', new Date());
       case 'taskCreated':
       case 'taskUpdated':
       case 'taskDeleted':
-        const clickupTask = payload.task;
-        if (!clickupTask || !clickupTask.id) {
-          console.warn('Payload de tarea inválido o sin ID.');
-          return NextResponse.json({ message: 'Payload de tarea inválido' }, { status: 400 });
+        const taskId = payload.task_id;
+        
+        if (!taskId) {
+          console.warn('Payload no contiene task_id válido.');
+          return NextResponse.json({ message: 'task_id no encontrado en el payload' }, { status: 400 });
+        }
+
+        console.log(`Procesando evento ${event} para tarea ${taskId}`);
+
+        let clickupTask: any = null;
+        
+        // Para eventos de creación y actualización, obtener los detalles de ClickUp
+        if (event === 'taskCreated' || event === 'taskUpdated') {
+          try {
+            const taskResponse = await fetchClickUpTask(taskId);
+            clickupTask = taskResponse;
+            console.log(`Detalles de tarea obtenidos desde ClickUp:`, JSON.stringify(clickupTask, null, 2));
+          } catch (error) {
+            console.error(`Error al obtener detalles de tarea ${taskId}:`, error);
+            await createSyncLog('Task', null, taskId, 'SYNC', 'ERROR', 
+              `Error al obtener tarea de ClickUp: ${error instanceof Error ? error.message : 'Unknown error'}`
+            );
+            return NextResponse.json({ 
+              message: 'Error al obtener detalles de la tarea desde ClickUp',
+              error: error instanceof Error ? error.message : 'Unknown error'
+            }, { status: 500 });
+          }
         }
 
         const existingTask = await prisma.task.findUnique({
-          where: { id: clickupTask.id },
+          where: { id: taskId },
           include: { brand: true, category: true }
         });
+
+        if (event === 'taskDeleted') {
+          if (existingTask) {
+            console.log(`Webhook: Eliminando tarea ${taskId} de DB local.`);
+            await prisma.taskAssignment.deleteMany({ where: { taskId: existingTask.id } });
+            localEntity = await prisma.task.delete({ where: { id: existingTask.id } });
+            await createSyncLog('Task', null, existingTask.id, 'DELETE', 'SUCCESS');
+          } else {
+            console.log(`Tarea ${taskId} no existe localmente, no se puede eliminar.`);
+          }
+          break;
+        }
+
+        // Para eventos de creación y actualización, procesar la tarea
+        if (!clickupTask) {
+          console.error('No se pudieron obtener los detalles de la tarea');
+          return NextResponse.json({ message: 'No se pudieron obtener los detalles de la tarea' }, { status: 500 });
+        }
 
         // Buscar Brand por los campos correctos del schema
         let brand = null;
@@ -177,7 +214,7 @@ console.log('📩 Webhook recibido GAAA:', new Date());
 
         if (!brand) {
           console.warn(`Webhook: Brand local no encontrado para ClickUp Task. Space ID: ${clickupTask.space?.id}, Folder ID: ${clickupTask.folder?.id}, Team ID: ${clickupTask.team_id}. Omitiendo sincronización de tarea.`);
-          await createSyncLog('Task', null, clickupTask.id, 'SYNC', 'ERROR', 'Brand no encontrado localmente');
+          await createSyncLog('Task', null, taskId, 'SYNC', 'ERROR', 'Brand no encontrado localmente');
           return NextResponse.json({ message: 'Brand no encontrado localmente' }, { status: 404 });
         }
 
@@ -210,7 +247,7 @@ console.log('📩 Webhook recibido GAAA:', new Date());
 
         if (event === 'taskCreated' || (event === 'taskUpdated' && !existingTask)) {
           if (!existingTask) {
-            console.log(`Webhook: Creando tarea ${clickupTask.id} en DB local.`);
+            console.log(`Webhook: Creando tarea ${taskId} en DB local.`);
             
             // Calcular fechas y posición en cola
             const scheduling = await calculateTaskScheduling(
@@ -221,7 +258,7 @@ console.log('📩 Webhook recibido GAAA:', new Date());
 
             localEntity = await prisma.task.create({
               data: {
-                id: clickupTask.id,
+                id: taskId,
                 name: clickupTask.name,
                 description: clickupTask.description || null,
                 status: mapClickUpStatusToLocal(clickupTask.status.status, brand.statusMapping),
@@ -257,7 +294,7 @@ console.log('📩 Webhook recibido GAAA:', new Date());
             await createSyncLog('Task', null, localEntity.id, 'CREATE', 'SUCCESS');
           }
         } else if (event === 'taskUpdated' && existingTask) {
-          console.log(`Webhook: Actualizando tarea ${clickupTask.id} en DB local.`);
+          console.log(`Webhook: Actualizando tarea ${taskId} en DB local.`);
           
           localEntity = await prisma.task.update({
             where: { id: existingTask.id },
@@ -293,11 +330,6 @@ console.log('📩 Webhook recibido GAAA:', new Date());
           }
 
           await createSyncLog('Task', null, localEntity.id, 'UPDATE', 'SUCCESS');
-        } else if (event === 'taskDeleted' && existingTask) {
-          console.log(`Webhook: Eliminando tarea ${clickupTask.id} de DB local.`);
-          await prisma.taskAssignment.deleteMany({ where: { taskId: existingTask.id } });
-          localEntity = await prisma.task.delete({ where: { id: existingTask.id } });
-          await createSyncLog('Task', null, existingTask.id, 'DELETE', 'SUCCESS');
         }
         break;
 
