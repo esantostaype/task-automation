@@ -1,5 +1,7 @@
 import React from 'react'
-import { Select, Option, Typography } from '@mui/joy'
+import { Select, Option, Typography, FormLabel } from '@mui/joy'
+import { HugeiconsIcon } from '@hugeicons/react'
+import { Flag02Icon } from '@hugeicons/core-free-icons'
 
 interface PrioritySelectProps {
   value: string
@@ -15,17 +17,25 @@ export const PrioritySelect: React.FC<PrioritySelectProps> = ({
   error 
 }) => (
   <div>
+    <FormLabel>
+      <HugeiconsIcon
+        icon={ Flag02Icon }
+        size={ 20 }
+        strokeWidth={ 1.5 }
+      />
+      Priority
+    </FormLabel>
     <Select
       value={value}
       onChange={(_, val) => onChange(val as string)}
     >
-      <Option value="LOW">Baja</Option>
+      <Option value="LOW">Low</Option>
       <Option value="NORMAL">Normal</Option>
-      <Option value="HIGH">Alta</Option>
-      <Option value="URGENT">Urgente</Option>
+      <Option value="HIGH">High</Option>
+      <Option value="URGENT">Urgent</Option>
     </Select>
     {touched && error && (
-      <Typography level="body-xs" color="danger">{error}</Typography>
+      <Typography level="body-sm" color="danger">{error}</Typography>
     )}
-  </div>
+</div>
 )

@@ -1,16 +1,4 @@
-// lib/sync-log-utils.ts
-import { prisma } from '@/utils/prisma';
-
-/**
- * Crea un log de sincronización en la base de datos.
- * @param entityType Tipo de entidad ("Task", "User", "Brand", etc.).
- * @param entityIntId ID de la entidad si es de tipo Int (ej. TaskCategory.id).
- * @param entityStringId ID de la entidad si es de tipo String (ej. User.id, Task.id, Brand.id).
- * @param action Acción realizada ("CREATE", "UPDATE", "DELETE").
- * @param status Estado de la operación ("SUCCESS", "ERROR").
- * @param errorMessage Mensaje de error (opcional).
- * @param clickupResponse Respuesta completa de ClickUp (opcional).
- */
+import { prisma } from '@/utils/prisma'
 export async function createSyncLog(
   entityType: string,
   entityIntId: number | null,

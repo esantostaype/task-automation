@@ -1,3 +1,5 @@
+import { Priority, Status, Tier } from '@prisma/client'
+
 export interface TaskType {
   id: number
   name: string
@@ -8,7 +10,9 @@ export interface TaskCategory {
   id: number
   name: string
   duration: number
-  tier: string
+  tier: Tier
+  typeId: number
+  type: TaskType
 }
 
 export interface Brand {
@@ -16,6 +20,8 @@ export interface Brand {
   name: string
   isActive: boolean
   clickupListId?: string
+  defaultStatus: Status
+  statusMapping: Record<string, string> | null
 }
 
 export interface User {
@@ -33,19 +39,138 @@ export interface UserRole {
   brandId?: string | null
 }
 
-export interface FormValues {
+export interface Task {
+  id: string
   name: string
-  description: string
-  categoryId: string
-  priority: string
+  description?: string
+  typeId: number
+  categoryId: number
   brandId: string
-  assignedUserIds: string[]
-  durationDays: string
+  priority: Priority
+  status: Status
+  startDate: Date
+  deadline: Date
+  queuePosition: number
+  url?: string
+  lastSyncAt?: Date
+  syncStatus: string
+  category: TaskCategory
+  type: TaskType
+  brand: Brand
+  assignees: TaskAssignment[]
 }
 
-export interface SuggestedAssignment {
+export interface TaskAssignment {
+  id: number
   userId: string
+  taskId: string
+  user: User
+}
+
+export interface UserSlot {
+  userId: string
+  userName: string
+  availableDate: Date
+  tasks: Task[]
+  cargaTotal: number
+  isSpecialist: boolean
+}
+
+export interface QueueCalculationResult {
+  insertAt: number
+  calculatedStartDate: Date
+  affectedTasks: Task[]
+}
+
+export interface TaskCreationParams {
+  name: string
+  description?: string
+  typeId: number
+  categoryId: number
+  priority: Priority
+  brandId: string
+  assignedUserIds?: string[]
   durationDays: number
+}
+
+export interface TaskTimingResult {
+  startDate: Date
+  deadline: Date
+  insertAt: number
+}
+
+// Interfaz específica para ClickUp que garantiza statusMapping como Record<string, string>
+export interface ClickUpBrand {
+  id: string
+  name: string
+  isActive: boolean
+  clickupListId?: string
+  defaultStatus: Status
+  statusMapping: Record<string, string>
+}
+
+export interface ClickUpTaskCreationParams {
+  name: string
+  description?: string
+  priority: Priority
+  deadline: Date
+  startDate: Date
+  usersToAssign: string[]
+  category: TaskCategory
+  brand: ClickUpBrand
+}
+
+export interface ClickUpTaskResponse {
+  clickupTaskId: string
+  clickupTaskUrl: string
+}
+
+export interface TaskFilters {
+  brandId?: string
+  status?: Status
+  priority?: Priority
+}
+
+export interface PaginationParams {
+  page: number
+  limit: number
+  skip: number
+}
+
+export interface PaginatedResponse<T> {
+  data: T[]
+  pagination: {
+    total: number
+    page: number
+    limit: number
+    totalPages: number
+  }
+}
+
+// Tipos para mapeo de ClickUp
+export interface ClickUpStatusMapping {
+  [localStatus: string]: string
+}
+
+export interface AssigneeDebugInfo {
+  userId: string
+  userName?: string
+  clickupId?: string
+  willBeAssigned: boolean
+  reason: string
+}
+
+// Tipos de utilidad
+export type TaskWithAssignees = Task & {
+  assignees: (TaskAssignment & { user: User })[]
+}
+
+export type UserWithRoles = User & {
+  roles: UserRole[]
+}
+
+export type CategoryWithType = TaskCategory & {
+  type: TaskType
 }
 
 export interface UpdatedTask {
@@ -70,4 +195,43 @@ export interface ClientToServerEvents {
   join_room: (roomId: string) => void
   leave_room: (roomId: string) => void
   update_task: (taskId: string, updates: Partial<UpdatedTask>) => void
+}
+
+export interface FormValues {
+  name: string
+  description: string
+  categoryId: string
+  priority: string
+  brandId: string
+  assignedUserIds: string[]
+  durationDays: string
+}
+
+export interface SuggestedAssignment {
+  userId: string
+  durationDays: number
+}
+
+export interface TaskWhereInput {
+  brandId?: string
+  status?: Status
+  priority?: Priority
+}
+
+// Enums específicos para la aplicación
+export enum SyncStatus {
+  SYNCED = 'SYNCED',
+  PENDING = 'PENDING',
+  ERROR = 'ERROR'
+}
+
+export enum SyncAction {
+  CREATE = 'CREATE',
+  UPDATE = 'UPDATE',
+  DELETE = 'DELETE'
+}
+
+export enum SyncLogStatus {
+  SUCCESS = 'SUCCESS',
+  ERROR = 'ERROR'
 }

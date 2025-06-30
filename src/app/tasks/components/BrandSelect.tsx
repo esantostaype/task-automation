@@ -1,6 +1,8 @@
 import React from 'react'
-import { Select, Option, Typography } from '@mui/joy'
+import { Select, Option, Typography, FormLabel } from '@mui/joy'
 import { Brand } from '@/interfaces'
+import { HugeiconsIcon } from '@hugeicons/react'
+import { Bookmark02Icon  } from '@hugeicons/core-free-icons'
 
 interface BrandSelectProps {
   brands: Brand[]
@@ -8,6 +10,7 @@ interface BrandSelectProps {
   onChange: (value: string) => void
   touched?: boolean
   error?: string
+  loading?: boolean
 }
 
 export const BrandSelect: React.FC<BrandSelectProps> = ({ 
@@ -15,22 +18,39 @@ export const BrandSelect: React.FC<BrandSelectProps> = ({
   value, 
   onChange, 
   touched, 
-  error 
+  error,
+  loading = false
 }) => (
   <div>
+    <FormLabel>
+      <HugeiconsIcon
+        icon={ Bookmark02Icon  }
+        size={ 20 }
+        strokeWidth={ 1.5 }
+      />
+      Brand
+    </FormLabel>
     <Select
       value={value}
       onChange={(_, val) => onChange(val as string)}
-      placeholder="Seleccionar brand"
+      placeholder={loading ? "Loading brands..." : "Select a brand"}
+      disabled={loading}
     >
-      {brands.map((brand) => (
-        <Option key={brand.id} value={brand.id}>
-          {brand.name} {brand.clickupListId ? '(ClickUp ✓)' : ''}
-        </Option>
-      ))}
+      {loading ? (
+        <Option value="" disabled>Loading brands...</Option>
+      ) : (
+        <>
+          <Option value="">Select a brand</Option>
+          {brands.map((brand) => (
+            <Option key={brand.id} value={brand.id}>
+              {brand.name}
+            </Option>
+          ))}
+        </>
+      )}
     </Select>
     {touched && error && (
-      <Typography level="body-xs" color="danger">{error}</Typography>
+      <Typography level="body-sm" color="danger">{error}</Typography>
     )}
   </div>
 )

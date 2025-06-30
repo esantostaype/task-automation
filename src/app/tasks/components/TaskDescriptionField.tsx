@@ -1,6 +1,8 @@
 import React from 'react'
 import { Field } from 'formik'
-import { Textarea, Typography } from '@mui/joy'
+import { FormLabel, Textarea, Typography } from '@mui/joy'
+import { TextAlignLeft } from '@phosphor-icons/react'
+import TextFieldLayout from '@/components/TextFieldLayout'
 
 interface TaskDescriptionFieldProps {
   touched?: boolean
@@ -11,16 +13,16 @@ export const TaskDescriptionField: React.FC<TaskDescriptionFieldProps> = ({
   touched, 
   error 
 }) => (
-  <div>
+  <TextFieldLayout icon={<TextAlignLeft size={32} weight="thin" />}>
+    <FormLabel>Task Description</FormLabel>
     <Field
       as={Textarea}
       name="description"
-      placeholder="Descripción de la tarea (opcional)"
       minRows={2}
       maxRows={4}
     />
     {touched && error && (
-      <Typography level="body-xs" color="danger">{error}</Typography>
+      <Typography level="body-sm" color="danger">{error}</Typography>
     )}
-  </div>
+  </TextFieldLayout>
 )

@@ -1,6 +1,8 @@
 import React from 'react'
-import { Select, Option, Typography } from '@mui/joy'
+import { Select, Option, Typography, FormLabel } from '@mui/joy'
 import { TaskCategory } from '@/interfaces'
+import { HugeiconsIcon } from '@hugeicons/react'
+import { LabelImportantIcon } from '@hugeicons/core-free-icons'
 
 interface CategorySelectProps {
   categories: (TaskCategory & { typeName: string })[]
@@ -9,6 +11,7 @@ interface CategorySelectProps {
   onCategoryChange: () => void
   touched?: boolean
   error?: string
+  loading?: boolean
 }
 
 export const CategorySelect: React.FC<CategorySelectProps> = ({ 
@@ -17,25 +20,42 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
   onChange, 
   onCategoryChange,
   touched, 
-  error 
+  error,
+  loading = false
 }) => (
   <div>
+    <FormLabel>
+      <HugeiconsIcon
+        icon={ LabelImportantIcon }
+        size={ 20 }
+        strokeWidth={ 1.5 }
+      />
+      Category
+    </FormLabel>
     <Select
       value={value}
       onChange={(_, val) => {
         onChange(val as string)
         onCategoryChange()
       }}
-      placeholder="Seleccionar categoría"
+      placeholder={loading ? "Loading categories..." : "Select a Category"}
+      disabled={loading}
     >
-      {categories.map((cat) => (
-        <Option key={cat.id} value={cat.id.toString()}>
-          {cat.typeName} - {cat.name} (Tier {cat.tier} - {cat.duration} días)
-        </Option>
-      ))}
+      {loading ? (
+        <Option value="" disabled>Loading categories...</Option>
+      ) : (
+        <>
+          <Option value="">Select a Category</Option>
+          {categories.map((cat) => (
+            <Option key={cat.id} value={cat.id.toString()}>
+              { cat.name }
+            </Option>
+          ))}
+        </>
+      )}
     </Select>
     {touched && error && (
-      <Typography level="body-xs" color="danger">{error}</Typography>
+      <Typography level="body-sm" color="danger">{error}</Typography>
     )}
-  </div>
+</div>
 )

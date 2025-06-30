@@ -30,6 +30,19 @@ export const dynamicTheme = extendTheme({
           900: "#164165",
           950: "#002E4E"
         },
+        neutral: {
+          50: "#F3F6FB",
+          100: "#E3EBF6",
+          200: "#BECCE3",
+          300: "#A4B6D8",
+          400: "#89A1CC",
+          500: "#6F8CC0",
+          600: "#5979A9",
+          700: "#436692",
+          800: "#2C547C",
+          900: "#164165",
+          950: "#002E4E"
+        },
         danger: {
           50: "#fef2f2",
           100: "#ffe2e2",
@@ -51,7 +64,7 @@ export const dynamicTheme = extendTheme({
       styleOverrides: {
         root: () => ({
           fontSize: '1rem',
-          padding: '0.65rem 1rem',
+          padding: '0.8rem 1rem',
           backgroundColor: 'var(--soft-bg)',
           border: 'none',
           '&:hover': {
@@ -65,7 +78,7 @@ export const dynamicTheme = extendTheme({
       styleOverrides: {
         root: () => ({
           fontSize: '1rem',
-          padding: '0.65rem 1rem',
+          padding: '0.8rem 1rem',
           backgroundColor: 'var(--soft-bg)',
           border: 'none',
           '&:hover': {
@@ -100,7 +113,7 @@ export const dynamicTheme = extendTheme({
       styleOverrides: {
         root: () => ({
           fontSize: '1rem',
-          padding: '0.65rem 1rem',
+          padding: '0.8rem 1rem',
           backgroundColor: 'var(--soft-bg)',
           border: 'none',
           '&:hover': {
@@ -153,6 +166,36 @@ export const dynamicTheme = extendTheme({
           })
         })
       }
+    },
+    JoyButton: {
+      styleOverrides: {
+        root: () => ({
+          padding: '0.8rem 1rem',
+        }),
+      },
+    },
+    JoyChip: {
+      styleOverrides: {
+        root: () => ({
+          borderRadius: '0.25rem',
+          padding: '0.2rem 0.4rem',
+        }),
+      },
+    },
+    JoyFormLabel: {
+      styleOverrides: {
+        root: () => ({
+          fontWeight: '500',
+          fontSize: '0.75rem',
+          color: 'var(--color-gray-400)',
+          marginBottom: '0.4rem',
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
+          alignItems: 'center',
+          gap: '0.25rem',
+          display: 'flex',
+        }),
+      },
     }
   }
 })

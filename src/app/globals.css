@@ -3,11 +3,13 @@
 :root {
   --foreground: #020618;
   --background: #ffffff;
+  --surface: #141429;
 }
 
 @theme {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
   --color-accent: #6F8CC0;
   --color-accent-50: #F3F6FB;
   --color-accent-100: #E3EBF6;
@@ -26,7 +28,7 @@
   :root {
     --foreground: #F3F4F6;
     --background: #0A0A20;
-    --surface: #19192f;
+    --surface: #141429;
     --soft-bg: rgba(255,255,255,0.04);
     --soft-bg-hover: rgba(255,255,255,0.08);
     --soft-bg-active: rgba(255,255,255,0.12);
@@ -65,4 +67,35 @@ body {
   &:hover {
     background-color: var(--soft-bg-success-hover);
   }
+}
+
+.orbit-container {
+  position: relative;
+  width: 3rem;
+  height: 3rem;
+}
+
+.orbiting-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(0deg) translateX(1rem);
+  animation: orbit 1.2s linear infinite;
+}
+
+@keyframes orbit {
+  0% {
+    transform: translate(-50%, -50%) rotate(0deg) translateX(1rem) rotate(0deg);
+  }
+  100% {
+    transform: translate(-50%, -50%) rotate(360deg) translateX(1rem) rotate(-360deg);
+  }
+}
+
+@keyframes beat {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+.animate-beat {
+  animation: beat 1s ease-in-out infinite;
 }

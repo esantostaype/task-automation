@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // lib/clickup-task-mapping-utils.ts
 import { prisma } from '@/utils/prisma';
-import { Status, Tier } from '@prisma/client';
+import { Priority, Status, Tier } from '@prisma/client';
 
 /**
  * Mapea un estado de ClickUp a un enum de estado local.
@@ -11,7 +11,7 @@ import { Status, Tier } from '@prisma/client';
  * @returns El estado mapeado a tu enum local `Status`.
  */
 
-export const clickupPriorityMap: Record<string, number> = {
+export const clickupPriorityMap: Record<Priority, number> = {
   'URGENT': 1,
   'HIGH': 2,
   'NORMAL': 3,

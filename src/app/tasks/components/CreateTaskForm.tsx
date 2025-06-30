@@ -7,10 +7,10 @@ import { Formik, Form, useFormikContext } from 'formik'
 import { Button, Typography } from '@mui/joy'
 import { toast } from 'react-toastify'
 
-import { Spinner } from '@/components'
+import { SpinnerCreatingTask, SpinnerSearching } from '@/components'
 import { TaskKindSwitch } from './TaskKindSwitch'
 import { TaskNameField } from './TaskNameField'
-import { TaskDescriptionField } from './TaskDescriptionField'
+// import { TaskDescriptionField } from './TaskDescriptionField'
 import { BrandSelect } from './BrandSelect'
 import { CategorySelect } from './CategorySelect'
 import { PrioritySelect } from './PrioritySelect'
@@ -25,11 +25,13 @@ import { validationSchema } from '@/validation/taskValidation'
 import { FormValues, User } from '@/interfaces'
 
 interface FormikSuggestionLogicProps {
-  users: User[]
-  setSuggestedAssignment: React.Dispatch<React.SetStateAction<{ userId: string; durationDays: number } | null>>
-  setFetchingSuggestion: React.Dispatch<React.SetStateAction<boolean>>
-  resetCategory: boolean
-  setResetCategory: React.Dispatch<React.SetStateAction<boolean>>
+  users: User[];
+  setSuggestedAssignment: React.Dispatch<
+    React.SetStateAction<{ userId: string; durationDays: number } | null>
+  >;
+  setFetchingSuggestion: React.Dispatch<React.SetStateAction<boolean>>;
+  resetCategory: boolean;
+  setResetCategory: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const FormikSuggestionLogic: React.FC<FormikSuggestionLogicProps> = ({
@@ -38,92 +40,116 @@ const FormikSuggestionLogic: React.FC<FormikSuggestionLogicProps> = ({
   resetCategory,
   setResetCategory,
 }) => {
-  const { values, setFieldValue } = useFormikContext<FormValues>()
+  const { values, setFieldValue } = useFormikContext<FormValues>();
 
   const { suggestedAssignment, fetchingSuggestion } = useTaskSuggestion(
     values.brandId,
     values.categoryId,
     values.priority
-  )
+  );
 
   useEffect(() => {
     if (resetCategory) {
-      setFieldValue('categoryId', '')
-      setResetCategory(false)
+      setFieldValue("categoryId", "");
+      setResetCategory(false);
     }
-  }, [resetCategory, setFieldValue, setResetCategory])
+  }, [resetCategory, setFieldValue, setResetCategory]);
 
   useEffect(() => {
-    setFetchingSuggestion(fetchingSuggestion)
-    setSuggestedAssignment(suggestedAssignment)
+    setFetchingSuggestion(fetchingSuggestion);
+    setSuggestedAssignment(suggestedAssignment);
 
     if (suggestedAssignment) {
-      setFieldValue('durationDays', suggestedAssignment.durationDays.toString())
-      if (values.assignedUserIds.length === 0 || values.assignedUserIds[0] !== suggestedAssignment.userId) {
-        setFieldValue('assignedUserIds', [suggestedAssignment.userId])
+      setFieldValue(
+        "durationDays",
+        suggestedAssignment.durationDays.toString()
+      );
+      if (
+        values.assignedUserIds.length === 0 ||
+        values.assignedUserIds[0] !== suggestedAssignment.userId
+      ) {
+        setFieldValue("assignedUserIds", [suggestedAssignment.userId]);
       }
     } else if (!fetchingSuggestion && values.brandId && values.categoryId) {
-      setFieldValue('durationDays', '')
+      setFieldValue("durationDays", "");
       if (values.assignedUserIds.length === 0) {
-        setFieldValue('assignedUserIds', [])
+        setFieldValue("assignedUserIds", []);
       }
     }
-  }, [suggestedAssignment, fetchingSuggestion, values.brandId, values.categoryId, setFieldValue, values.assignedUserIds.length, setSuggestedAssignment, setFetchingSuggestion, values.assignedUserIds])
+  }, [
+    suggestedAssignment,
+    fetchingSuggestion,
+    values.brandId,
+    values.categoryId,
+    setFieldValue,
+    values.assignedUserIds.length,
+    setSuggestedAssignment,
+    setFetchingSuggestion,
+    values.assignedUserIds,
+  ]);
 
-  return null
-}
+  return null;
+};
 
 export const CreateTaskForm: React.FC = () => {
-  const { types, brands, users, loading: dataLoading } = useTaskData()
-  const [loading, setLoading] = useState(false)
-  const [selectedKind, setSelectedKind] = useState<'UX/UI' | 'Graphic'>('UX/UI')
+  const { types, brands, users, loading: dataLoading } = useTaskData();
+  const [loading, setLoading] = useState(false);
+  const [selectedKind, setSelectedKind] = useState<"UX/UI" | "Graphic">(
+    "UX/UI"
+  );
   const [resetCategory, setResetCategory] = useState(false)
-  const [assignedUsersDisplay, setAssignedUsersDisplay] = useState<User[]>([])
 
   // ✅ ESTADOS PARA LA SUGERENCIA EN EL COMPONENTE PADRE
-  const [suggestedAssignment, setSuggestedAssignment] = useState<{ userId: string; durationDays: number } | null>(null)
-  const [fetchingSuggestion, setFetchingSuggestion] = useState(false)
+  const [suggestedAssignment, setSuggestedAssignment] = useState<{
+    userId: string;
+    durationDays: number;
+  } | null>(null);
+  const [fetchingSuggestion, setFetchingSuggestion] = useState(false);
 
   // ✅ CÁLCULO DE suggestedUser A PARTIR DEL ESTADO DEL PADRE
-  const suggestedUser = suggestedAssignment ? users.find(u => u.id === suggestedAssignment.userId) : null
+  const suggestedUser = suggestedAssignment
+    ? users.find((u) => u.id === suggestedAssignment.userId)
+    : null;
 
-  useSocket()
+  useSocket();
 
   useEffect(() => {
-    setResetCategory(true)
-  }, [selectedKind])
+    setResetCategory(true);
+  }, [selectedKind]);
 
   const filteredTypes = types.filter((type) => {
-    const typeKind = getTypeKind(type.name)
-    return typeKind === selectedKind
-  })
+    const typeKind = getTypeKind(type.name);
+    return typeKind === selectedKind;
+  });
 
   const initialValues: FormValues = {
-    name: 'Task 1',
-    description: '',
-    categoryId: '',
-    priority: 'NORMAL',
-    brandId: '',
+    name: "Task 1",
+    description: "",
+    categoryId: "",
+    priority: "NORMAL",
+    brandId: "",
     assignedUserIds: [],
-    durationDays: '',
-  }
+    durationDays: "",
+  };
 
   const handleSubmit = async (values: FormValues) => {
     try {
       const selectedType = filteredTypes.find((type) =>
         type.categories.some((cat) => cat.id === Number(values.categoryId))
-      )
+      );
 
       if (!selectedType) {
-        toast.error('No se pudo encontrar el tipo de tarea para la categoría seleccionada')
-        return
+        toast.error(
+          "No se pudo encontrar el tipo de tarea para la categoría seleccionada"
+        );
+        return;
       }
 
-      const finalDurationDays = parseFloat(values.durationDays as string) // Asegurar que sea string para parseFloat
+      const finalDurationDays = parseFloat(values.durationDays as string);
 
       if (finalDurationDays <= 0) {
-        toast.error('La duración de la tarea debe ser mayor a cero.')
-        return
+        toast.error("La duración de la tarea debe ser mayor a cero.");
+        return;
       }
 
       const payload = {
@@ -133,158 +159,189 @@ export const CreateTaskForm: React.FC = () => {
         categoryId: Number(values.categoryId),
         priority: values.priority,
         brandId: values.brandId,
-        assignedUserIds: values.assignedUserIds.length > 0 ? values.assignedUserIds : undefined,
+        assignedUserIds:
+          values.assignedUserIds.length > 0
+            ? values.assignedUserIds
+            : undefined,
         durationDays: finalDurationDays,
-      }
+      };
 
-      setLoading(true)
+      setLoading(true);
 
-      const taskResponse = await axios.post('/api/tasks', payload)
+      const taskResponse = await axios.post("/api/tasks", payload);
       const createdTask = taskResponse.data
 
-      setAssignedUsersDisplay(createdTask.assignees.map((a: any) => a.user))
+      setLoading(false);
 
-      setLoading(false)
+      const assignedUserNames =
+        createdTask.assignees?.map((a: any) => a.user.name).join(", ") ??
+        "alguien";
+      const brandName = createdTask.brand?.name ?? "Brand desconocido";
 
-      const assignedUserNames = createdTask.assignees?.map((a: any) => a.user.name).join(', ') ?? 'alguien'
-      const brandName = createdTask.brand?.name ?? 'Brand desconocido'
-
-      const startDate = new Date(createdTask.startDate).toLocaleDateString('es-PE', {
-        year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-      })
-      const endDate = new Date(createdTask.deadline).toLocaleDateString('es-PE', {
-        year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-      })
+      const startDate = new Date(createdTask.startDate).toLocaleDateString(
+        "es-PE",
+        {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        }
+      );
+      const endDate = new Date(createdTask.deadline).toLocaleDateString(
+        "es-PE",
+        {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        }
+      );
 
       toast.success(
         `"${createdTask.name}" creada para ${brandName} y asignada a ${assignedUserNames}. Inicio: ${startDate} - Fin: ${endDate}`
-      )
-
+      );
     } catch (error: unknown) {
-      setLoading(false)
+      setLoading(false);
       if (axios.isAxiosError(error) && error.response?.data?.error) {
-        toast.error(error.response.data.error)
+        toast.error(error.response.data.error);
       } else if (axios.isAxiosError(error) && error.response?.data?.details) {
-        toast.error(`Error: ${error.response.data.details}`)
+        toast.error(`Error: ${error.response.data.details}`);
       } else {
-        toast.error('Error inesperado al crear la tarea')
+        toast.error("Error inesperado al crear la tarea");
       }
     }
-  }
-
-  if (dataLoading) {
-    return <Spinner isActive={true} />
-  }
+  };
 
   return (
     <>
-      <Spinner isActive={loading} />
-      <div className="p-4 max-w-md mx-auto">
-        <TaskKindSwitch
-          selectedKind={selectedKind}
-          onKindChange={setSelectedKind}
-        />
+      <SpinnerCreatingTask isActive={ loading } />
+      <SpinnerSearching isActive={ fetchingSuggestion } />
+      <Formik
+        initialValues={initialValues}
+        validationSchema={validationSchema}
+        onSubmit={handleSubmit}
+        enableReinitialize={true}
+      >
+        {({ values, errors, touched, setFieldValue }) => {
+          const allCategories = filteredTypes.flatMap((type) =>
+            type.categories.map((cat) => ({
+              ...cat,
+              typeName: type.name,
+            }))
+          );
+          return (
+            <Form className="flex flex-col gap-4">
+              <FormikSuggestionLogic
+                users={users}
+                setSuggestedAssignment={setSuggestedAssignment}
+                setFetchingSuggestion={setFetchingSuggestion}
+                resetCategory={resetCategory}
+                setResetCategory={setResetCategory}
+              />
+              <TaskKindSwitch
+                selectedKind={selectedKind}
+                onKindChange={(kind) => {
+                  setSelectedKind(kind);
+                  // ✅ Al cambiar TaskKind solo limpiar category, duration y assignees
+                  // NO limpiar brand porque es independiente
+                  setTimeout(() => {
+                    setFieldValue("categoryId", "");
+                    setFieldValue("durationDays", "");
+                    setFieldValue("assignedUserIds", []);
+                    setSuggestedAssignment(null);
+                  }, 0);
+                }}
+              />
+              <TaskNameField touched={touched.name} error={errors.name} />
 
-        <Formik
-          initialValues={initialValues}
-          validationSchema={validationSchema}
-          onSubmit={handleSubmit}
-          enableReinitialize={true}
-        >
-          {({ values, errors, touched, setFieldValue }) => {
-            const allCategories = filteredTypes.flatMap((type) =>
-              type.categories.map(cat => ({
-                ...cat,
-                typeName: type.name
-              }))
-            )
-            return (
-              <Form className="space-y-4">
-                <FormikSuggestionLogic
-                  users={users}
-                  setSuggestedAssignment={setSuggestedAssignment}
-                  setFetchingSuggestion={setFetchingSuggestion}
-                  resetCategory={resetCategory}
-                  setResetCategory={setResetCategory}
-                />
+              {/* <TaskDescriptionField
+                touched={touched.description}
+                error={errors.description}
+              /> */}
 
-                <TaskNameField
-                  touched={touched.name}
-                  error={errors.name}
-                />
+              <BrandSelect
+                brands={brands}
+                value={values.brandId}
+                onChange={(value) => {
+                  setFieldValue("brandId", value);
+                  // ✅ Al cambiar Brand NO limpiar category
+                  // Solo limpiar duration y assignees porque dependen de la sugerencia
+                  setTimeout(() => {
+                    setFieldValue("durationDays", "");
+                    setFieldValue("assignedUserIds", []);
+                    setSuggestedAssignment(null);
+                  }, 0);
+                }}
+                touched={touched.brandId}
+                error={errors.brandId}
+                loading={dataLoading}
+              />
 
-                <TaskDescriptionField
-                  touched={touched.description}
-                  error={errors.description}
-                />
+              <CategorySelect
+                categories={allCategories}
+                value={values.categoryId}
+                onChange={(value) => setFieldValue("categoryId", value)}
+                onCategoryChange={() => {
+                  // ✅ Al cambiar Category solo limpiar duration y assignees
+                  setTimeout(() => {
+                    setFieldValue("durationDays", "");
+                    setFieldValue("assignedUserIds", []);
+                    setSuggestedAssignment(null);
+                  }, 0);
+                }}
+                touched={touched.categoryId}
+                error={errors.categoryId}
+                loading={dataLoading}
+              />
 
-                <BrandSelect
-                  brands={brands}
-                  value={values.brandId}
-                  onChange={(value) => setFieldValue('brandId', value)}
-                  touched={touched.brandId}
-                  error={errors.brandId}
-                />
+              <PrioritySelect
+                value={values.priority}
+                onChange={(value) => setFieldValue("priority", value)}
+                touched={touched.priority}
+                error={errors.priority}
+              />
 
-                <CategorySelect
-                  categories={allCategories}
-                  value={values.categoryId}
-                  onChange={(value) => setFieldValue('categoryId', value)}
-                  onCategoryChange={() => {
-                    setFieldValue('durationDays', '')
-                    setFieldValue('assignedUserIds', [])
-                  }}
-                  touched={touched.categoryId}
-                  error={errors.categoryId}
-                />
+              <DurationField
+                fetchingSuggestion={fetchingSuggestion}
+                touched={touched.durationDays}
+                error={errors.durationDays}
+              />
 
-                <PrioritySelect
-                  value={values.priority}
-                  onChange={(value) => setFieldValue('priority', value)}
-                  touched={touched.priority}
-                  error={errors.priority}
-                />
+              <UserAssignmentSelect
+                users={users}
+                values={values.assignedUserIds}
+                onChange={(value) => setFieldValue("assignedUserIds", value)}
+                suggestedUser={suggestedUser}
+                fetchingSuggestion={fetchingSuggestion}
+                touched={touched.assignedUserIds}
+                error={
+                  Array.isArray(errors.assignedUserIds)
+                    ? errors.assignedUserIds.join(", ")
+                    : errors.assignedUserIds
+                }
+                loading={dataLoading}
+              />
 
-                <DurationField
-                  fetchingSuggestion={fetchingSuggestion}
-                  touched={touched.durationDays}
-                  error={errors.durationDays}
-                />
+              <Button
+                type="submit"
+                fullWidth
+                disabled={loading || (brands.length === 0 && !dataLoading) || fetchingSuggestion}
+                size="lg"
+              >
+                Create Task
+              </Button>
 
-                <UserAssignmentSelect
-                  users={users}
-                  values={values.assignedUserIds}
-                  onChange={(value) => setFieldValue('assignedUserIds', value)}
-                  suggestedUser={suggestedUser}
-                  fetchingSuggestion={fetchingSuggestion}
-                  touched={touched.assignedUserIds}
-                  error={Array.isArray(errors.assignedUserIds) ? errors.assignedUserIds.join(', ') : errors.assignedUserIds}
-                />
-
-                {assignedUsersDisplay.length > 0 && (
-                  <Typography level="body-sm">
-                    Asignado(s) a: {assignedUsersDisplay.map(u => u.name).join(', ')}
-                  </Typography>
-                )}
-
-                <Button
-                  type="submit"
-                  fullWidth
-                  disabled={loading || brands.length === 0 || fetchingSuggestion}
-                >
-                  {loading ? 'Creando...' : 'Crear Tarea'}
-                </Button>
-
-                {brands.length === 0 && (
-                  <Typography level="body-xs" color="warning" textAlign="center">
-                    No hay brands activos disponibles
-                  </Typography>
-                )}
-              </Form>
-            )
-          }}
-        </Formik>
-      </div>
+              {brands.length === 0 && !dataLoading && (
+                <Typography level="body-xs" color="warning" textAlign="center">
+                  No hay brands activos disponibles
+                </Typography>
+              )}
+            </Form>
+          );
+        }}
+      </Formik>
     </>
-  )
-}
+  );
+};
