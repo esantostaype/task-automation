@@ -36,9 +36,21 @@ model User {
   email String @unique
   active Boolean @default(false)  
   roles UserRole[]
-  tasks TaskAssignment[]  
+  tasks TaskAssignment[]
+  vacations UserVacation[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model UserVacation {
+  id Int @id @default(autoincrement())
+  userId String
+  user User @relation(fields: [userId], references: [id])
+  startDate DateTime
+  endDate DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([userId, startDate, endDate])
 }
 
 model Brand {
