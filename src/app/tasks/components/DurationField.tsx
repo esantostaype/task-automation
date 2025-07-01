@@ -1,11 +1,11 @@
 import React from 'react'
 import { Field, useFormikContext } from 'formik'
-import { FormLabel, Input, Typography } from '@mui/joy'
+import { FormLabel, Input } from '@mui/joy'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { DateTimeIcon } from '@hugeicons/core-free-icons'
 import { FormValues } from '@/interfaces'
-import { formatDaysToReadable } from '@/utils/duration-utils' // ✅ Importar la nueva utilidad
-import { TextFieldError } from '@/components'
+import { formatDaysToReadable } from '@/utils/duration-utils'
+import { TextFieldError, TextFieldHelp } from '@/components'
 
 interface DurationFieldProps {
   fetchingSuggestion: boolean
@@ -45,21 +45,18 @@ export const DurationField: React.FC<DurationFieldProps> = ({
           },
         }}
       />
-      
-      {/* ✅ Mostrar duración efectiva con formato legible cuando hay múltiples usuarios */}
       {numberOfAssignees > 1 && originalDuration > 0 && (
-        <Typography level="body-sm" color="primary" sx={{ mt: 0.5 }}>
+        <TextFieldHelp>
           Effective duration per user: {formatDaysToReadable(effectiveDuration)}
           <br />
           ({numberOfAssignees} users working in parallel)
-        </Typography>
+        </TextFieldHelp>
       )}
       
-      {/* ✅ Mostrar duración total con formato legible */}
       {numberOfAssignees === 1 && originalDuration > 0 && (
-        <Typography level="body-sm" color="neutral" sx={{ mt: 0.5 }}>
+        <TextFieldHelp>
           Total duration: {formatDaysToReadable(originalDuration)}
-        </Typography>
+        </TextFieldHelp>
       )}
       
       { touched && error && ( <TextFieldError label={ error } /> )}

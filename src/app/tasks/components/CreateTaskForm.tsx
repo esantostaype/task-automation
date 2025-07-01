@@ -10,7 +10,6 @@ import { toast } from 'react-toastify'
 import { SpinnerCreatingTask, SpinnerSearching } from '@/components'
 import { TaskKindSwitch } from './TaskKindSwitch'
 import { TaskNameField } from './TaskNameField'
-// import { TaskDescriptionField } from './TaskDescriptionField'
 import { BrandSelect } from './BrandSelect'
 import { CategorySelect } from './CategorySelect'
 import { PrioritySelect } from './PrioritySelect'
@@ -23,15 +22,16 @@ import { useTaskSuggestion } from '@/hooks/useTaskSuggestion'
 import { getTypeKind } from '@/utils/taskUtils'
 import { validationSchema } from '@/validation/taskValidation'
 import { FormValues, User } from '@/interfaces'
+import { TaskCreatedToastContent } from './TaskCreatedToastContent'
 
 interface FormikSuggestionLogicProps {
-  users: User[];
+  users: User[]
   setSuggestedAssignment: React.Dispatch<
     React.SetStateAction<{ userId: string; durationDays: number } | null>
-  >;
-  setFetchingSuggestion: React.Dispatch<React.SetStateAction<boolean>>;
-  resetCategory: boolean;
-  setResetCategory: React.Dispatch<React.SetStateAction<boolean>>;
+  >
+  setFetchingSuggestion: React.Dispatch<React.SetStateAction<boolean>>
+  resetCategory: boolean
+  setResetCategory: React.Dispatch<React.SetStateAction<boolean>>
 }
 
 const FormikSuggestionLogic: React.FC<FormikSuggestionLogicProps> = ({
@@ -40,40 +40,40 @@ const FormikSuggestionLogic: React.FC<FormikSuggestionLogicProps> = ({
   resetCategory,
   setResetCategory,
 }) => {
-  const { values, setFieldValue } = useFormikContext<FormValues>();
+  const { values, setFieldValue } = useFormikContext<FormValues>()
 
   const { suggestedAssignment, fetchingSuggestion } = useTaskSuggestion(
     values.brandId,
     values.categoryId,
     values.priority
-  );
+  )
 
   useEffect(() => {
     if (resetCategory) {
-      setFieldValue("categoryId", "");
-      setResetCategory(false);
+      setFieldValue("categoryId", "")
+      setResetCategory(false)
     }
-  }, [resetCategory, setFieldValue, setResetCategory]);
+  }, [resetCategory, setFieldValue, setResetCategory])
 
   useEffect(() => {
-    setFetchingSuggestion(fetchingSuggestion);
-    setSuggestedAssignment(suggestedAssignment);
+    setFetchingSuggestion(fetchingSuggestion)
+    setSuggestedAssignment(suggestedAssignment)
 
     if (suggestedAssignment) {
       setFieldValue(
         "durationDays",
         suggestedAssignment.durationDays.toString()
-      );
+      )
       if (
         values.assignedUserIds.length === 0 ||
         values.assignedUserIds[0] !== suggestedAssignment.userId
       ) {
-        setFieldValue("assignedUserIds", [suggestedAssignment.userId]);
+        setFieldValue("assignedUserIds", [suggestedAssignment.userId])
       }
     } else if (!fetchingSuggestion && values.brandId && values.categoryId) {
-      setFieldValue("durationDays", "");
+      setFieldValue("durationDays", "")
       if (values.assignedUserIds.length === 0) {
-        setFieldValue("assignedUserIds", []);
+        setFieldValue("assignedUserIds", [])
       }
     }
   }, [
@@ -86,41 +86,39 @@ const FormikSuggestionLogic: React.FC<FormikSuggestionLogicProps> = ({
     setSuggestedAssignment,
     setFetchingSuggestion,
     values.assignedUserIds,
-  ]);
+  ])
 
-  return null;
-};
+  return null
+}
 
 export const CreateTaskForm: React.FC = () => {
-  const { types, brands, users, loading: dataLoading } = useTaskData();
-  const [loading, setLoading] = useState(false);
+  const { types, brands, users, loading: dataLoading } = useTaskData()
+  const [loading, setLoading] = useState(false)
   const [selectedKind, setSelectedKind] = useState<"UX/UI" | "Graphic">(
     "UX/UI"
-  );
+  )
   const [resetCategory, setResetCategory] = useState(false)
 
-  // ✅ ESTADOS PARA LA SUGERENCIA EN EL COMPONENTE PADRE
   const [suggestedAssignment, setSuggestedAssignment] = useState<{
-    userId: string;
-    durationDays: number;
-  } | null>(null);
-  const [fetchingSuggestion, setFetchingSuggestion] = useState(false);
+    userId: string
+    durationDays: number
+  } | null>(null)
+  const [fetchingSuggestion, setFetchingSuggestion] = useState(false)
 
-  // ✅ CÁLCULO DE suggestedUser A PARTIR DEL ESTADO DEL PADRE
   const suggestedUser = suggestedAssignment
     ? users.find((u) => u.id === suggestedAssignment.userId)
-    : null;
+    : null
 
-  useSocket();
+  useSocket()
 
   useEffect(() => {
-    setResetCategory(true);
-  }, [selectedKind]);
+    setResetCategory(true)
+  }, [selectedKind])
 
   const filteredTypes = types.filter((type) => {
-    const typeKind = getTypeKind(type.name);
-    return typeKind === selectedKind;
-  });
+    const typeKind = getTypeKind(type.name)
+    return typeKind === selectedKind
+  })
 
   const initialValues: FormValues = {
     name: "Task 1",
@@ -130,26 +128,26 @@ export const CreateTaskForm: React.FC = () => {
     brandId: "",
     assignedUserIds: [],
     durationDays: "",
-  };
+  }
 
   const handleSubmit = async (values: FormValues) => {
     try {
       const selectedType = filteredTypes.find((type) =>
         type.categories.some((cat) => cat.id === Number(values.categoryId))
-      );
+      )
 
       if (!selectedType) {
         toast.error(
           "No se pudo encontrar el tipo de tarea para la categoría seleccionada"
-        );
-        return;
+        )
+        return
       }
 
-      const finalDurationDays = parseFloat(values.durationDays as string);
+      const finalDurationDays = parseFloat(values.durationDays as string)
 
       if (finalDurationDays <= 0) {
-        toast.error("La duración de la tarea debe ser mayor a cero.");
-        return;
+        toast.error("La duración de la tarea debe ser mayor a cero.")
+        return
       }
 
       const payload = {
@@ -164,19 +162,17 @@ export const CreateTaskForm: React.FC = () => {
             ? values.assignedUserIds
             : undefined,
         durationDays: finalDurationDays,
-      };
+      }
 
-      setLoading(true);
+      setLoading(true)
 
-      const taskResponse = await axios.post("/api/tasks", payload);
+      const taskResponse = await axios.post("/api/tasks", payload)
       const createdTask = taskResponse.data
 
-      setLoading(false);
+      setLoading(false)
 
       const assignedUserNames =
-        createdTask.assignees?.map((a: any) => a.user.name).join(", ") ??
-        "alguien";
-      const brandName = createdTask.brand?.name ?? "Brand desconocido";
+        createdTask.assignees?.map((a: any) => a.user.name).join(", ") ?? "somebody"
 
       const startDate = new Date(createdTask.startDate).toLocaleDateString(
         "es-PE",
@@ -187,7 +183,7 @@ export const CreateTaskForm: React.FC = () => {
           hour: "2-digit",
           minute: "2-digit",
         }
-      );
+      )
       const endDate = new Date(createdTask.deadline).toLocaleDateString(
         "es-PE",
         {
@@ -197,22 +193,22 @@ export const CreateTaskForm: React.FC = () => {
           hour: "2-digit",
           minute: "2-digit",
         }
-      );
+      )
 
       toast.success(
-        `"${createdTask.name}" creada para ${brandName} y asignada a ${assignedUserNames}. Inicio: ${startDate} - Fin: ${endDate}`
-      );
+        <TaskCreatedToastContent assignedUserNames={ assignedUserNames } startDate={ startDate } endDate={ endDate } />
+      )
     } catch (error: unknown) {
-      setLoading(false);
+      setLoading(false)
       if (axios.isAxiosError(error) && error.response?.data?.error) {
-        toast.error(error.response.data.error);
+        toast.error(error.response.data.error)
       } else if (axios.isAxiosError(error) && error.response?.data?.details) {
-        toast.error(`Error: ${error.response.data.details}`);
+        toast.error(`Error: ${error.response.data.details}`)
       } else {
-        toast.error("Error inesperado al crear la tarea");
+        toast.error("Error inesperado al crear la tarea")
       }
     }
-  };
+  }
 
   return (
     <>
@@ -230,7 +226,7 @@ export const CreateTaskForm: React.FC = () => {
               ...cat,
               typeName: type.name,
             }))
-          );
+          )
           return (
             <Form className="flex flex-col gap-4">
               <FormikSuggestionLogic
@@ -243,36 +239,27 @@ export const CreateTaskForm: React.FC = () => {
               <TaskKindSwitch
                 selectedKind={selectedKind}
                 onKindChange={(kind) => {
-                  setSelectedKind(kind);
-                  // ✅ Al cambiar TaskKind solo limpiar category, duration y assignees
-                  // NO limpiar brand porque es independiente
+                  setSelectedKind(kind)
                   setTimeout(() => {
-                    setFieldValue("categoryId", "");
-                    setFieldValue("durationDays", "");
-                    setFieldValue("assignedUserIds", []);
-                    setSuggestedAssignment(null);
-                  }, 0);
+                    setFieldValue("categoryId", "")
+                    setFieldValue("durationDays", "")
+                    setFieldValue("assignedUserIds", [])
+                    setSuggestedAssignment(null)
+                  }, 0)
                 }}
               />
               <TaskNameField touched={touched.name} error={errors.name} />
-
-              {/* <TaskDescriptionField
-                touched={touched.description}
-                error={errors.description}
-              /> */}
 
               <BrandSelect
                 brands={brands}
                 value={values.brandId}
                 onChange={(value) => {
-                  setFieldValue("brandId", value);
-                  // ✅ Al cambiar Brand NO limpiar category
-                  // Solo limpiar duration y assignees porque dependen de la sugerencia
+                  setFieldValue("brandId", value)
                   setTimeout(() => {
-                    setFieldValue("durationDays", "");
-                    setFieldValue("assignedUserIds", []);
-                    setSuggestedAssignment(null);
-                  }, 0);
+                    setFieldValue("durationDays", "")
+                    setFieldValue("assignedUserIds", [])
+                    setSuggestedAssignment(null)
+                  }, 0)
                 }}
                 touched={touched.brandId}
                 error={errors.brandId}
@@ -284,12 +271,11 @@ export const CreateTaskForm: React.FC = () => {
                 value={values.categoryId}
                 onChange={(value) => setFieldValue("categoryId", value)}
                 onCategoryChange={() => {
-                  // ✅ Al cambiar Category solo limpiar duration y assignees
                   setTimeout(() => {
-                    setFieldValue("durationDays", "");
-                    setFieldValue("assignedUserIds", []);
-                    setSuggestedAssignment(null);
-                  }, 0);
+                    setFieldValue("durationDays", "")
+                    setFieldValue("assignedUserIds", [])
+                    setSuggestedAssignment(null)
+                  }, 0)
                 }}
                 touched={touched.categoryId}
                 error={errors.categoryId}
@@ -339,9 +325,9 @@ export const CreateTaskForm: React.FC = () => {
                 </Typography>
               )}
             </Form>
-          );
+          )
         }}
       </Formik>
     </>
-  );
-};
+  )
+}
