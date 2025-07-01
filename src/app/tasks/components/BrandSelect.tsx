@@ -1,8 +1,9 @@
 import React from 'react'
-import { Select, Option, Typography, FormLabel } from '@mui/joy'
+import { Select, Option, FormLabel } from '@mui/joy'
 import { Brand } from '@/interfaces'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Bookmark02Icon  } from '@hugeicons/core-free-icons'
+import { TextFieldError } from '@/components'
 
 interface BrandSelectProps {
   brands: Brand[]
@@ -49,8 +50,6 @@ export const BrandSelect: React.FC<BrandSelectProps> = ({
         </>
       )}
     </Select>
-    {touched && error && (
-      <Typography level="body-sm" color="danger">{error}</Typography>
-    )}
+    { touched && error && ( <TextFieldError label={ error } /> )}
   </div>
 )

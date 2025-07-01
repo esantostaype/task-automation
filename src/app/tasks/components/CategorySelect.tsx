@@ -1,8 +1,9 @@
 import React from 'react'
-import { Select, Option, Typography, FormLabel } from '@mui/joy'
+import { Select, Option, FormLabel } from '@mui/joy'
 import { TaskCategory } from '@/interfaces'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { LabelImportantIcon } from '@hugeicons/core-free-icons'
+import { TextFieldError } from '@/components'
 
 interface CategorySelectProps {
   categories: (TaskCategory & { typeName: string })[]
@@ -54,8 +55,6 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
         </>
       )}
     </Select>
-    {touched && error && (
-      <Typography level="body-sm" color="danger">{error}</Typography>
-    )}
+    { touched && error && ( <TextFieldError label={ error } /> )}
 </div>
 )

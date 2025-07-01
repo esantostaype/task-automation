@@ -5,6 +5,7 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { DateTimeIcon } from '@hugeicons/core-free-icons'
 import { FormValues } from '@/interfaces'
 import { formatDaysToReadable } from '@/utils/duration-utils' // ✅ Importar la nueva utilidad
+import { TextFieldError } from '@/components'
 
 interface DurationFieldProps {
   fetchingSuggestion: boolean
@@ -61,9 +62,7 @@ export const DurationField: React.FC<DurationFieldProps> = ({
         </Typography>
       )}
       
-      {touched && error && (
-        <Typography level="body-sm" color="danger">{error}</Typography>
-      )}
+      { touched && error && ( <TextFieldError label={ error } /> )}
     </div>
   )
 }

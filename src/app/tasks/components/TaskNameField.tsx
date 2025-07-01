@@ -1,8 +1,9 @@
 import React from 'react'
 import { Field } from 'formik'
-import { FormLabel, Input, Typography } from '@mui/joy'
+import { FormLabel, Input } from '@mui/joy'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Note01Icon } from '@hugeicons/core-free-icons'
+import { TextFieldError } from '@/components'
 
 interface TaskNameFieldProps {
   touched?: boolean
@@ -24,8 +25,6 @@ export const TaskNameField: React.FC<TaskNameFieldProps> = ({ touched, error }) 
       name="name"
       error={touched && !!error}
     />
-    {touched && error && (
-      <Typography level="body-sm" color="danger">{error}</Typography>
-    )}
+    { touched && error && ( <TextFieldError label={ error } /> )}
   </div>
 )

@@ -1,13 +1,11 @@
 'use client'
 
 import React from 'react'
-import { Select, Option, Typography, Chip, FormLabel } from '@mui/joy'
+import { Select, Option, Chip, FormLabel } from '@mui/joy'
 import { User } from '@/interfaces'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { UserCheck01Icon } from '@hugeicons/core-free-icons'
-import { useFormikContext } from 'formik'
-import { FormValues } from '@/interfaces'
-import { formatDaysToReadable } from '@/utils/duration-utils' // ✅ Importar la nueva utilidad
+import { TextFieldError } from '@/components'
 
 interface UserAssignmentSelectProps {
   users: User[]
@@ -30,18 +28,12 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
   error,
   loading = false,
 }) => {
-  const { values: formValues } = useFormikContext<FormValues>()
   
   const getPlaceholder = () => {
     if (fetchingSuggestion) return "Searching for suggestion.."
     if (loading) return "Loading designers..."
     return "Assign User(s)"
   }
-
-  // Calcular duración efectiva
-  const originalDuration = parseFloat(formValues.durationDays as string) || 0
-  const numberOfAssignees = values.length
-  const effectiveDuration = numberOfAssignees > 0 ? originalDuration / numberOfAssignees : originalDuration
 
   return (
     <div>
@@ -81,22 +73,7 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
           ))
         )}
       </Select>
-      
-      {/* ✅ Mostrar información de duración con formato legible cuando hay usuarios seleccionados */}
-      {numberOfAssignees > 1 && originalDuration > 0 && (
-        <Typography level="body-sm" color="success" sx={{ mt: 0.5 }}>
-          💡 With {numberOfAssignees} users: {formatDaysToReadable(effectiveDuration)} each (parallel work)
-        </Typography>
-      )}
-      
-      {touched && error && (
-        <Typography level="body-sm" color="danger">{error}</Typography>
-      )}
-      {suggestedUser && values.length === 0 && !fetchingSuggestion && !loading && (
-        <Typography level="body-sm" color="warning" sx={{ mt: 0.5 }}>
-          Suggestion: {suggestedUser.name}
-        </Typography>
-      )}
+      { touched && error && ( <TextFieldError label={ error } /> )}
     </div>
   )
 }

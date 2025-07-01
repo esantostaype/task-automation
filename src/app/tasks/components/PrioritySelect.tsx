@@ -1,7 +1,8 @@
 import React from 'react'
-import { Select, Option, Typography, FormLabel } from '@mui/joy'
+import { Select, Option, FormLabel } from '@mui/joy'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Flag02Icon } from '@hugeicons/core-free-icons'
+import { TextFieldError } from '@/components'
 
 interface PrioritySelectProps {
   value: string
@@ -34,8 +35,6 @@ export const PrioritySelect: React.FC<PrioritySelectProps> = ({
       <Option value="HIGH">High</Option>
       <Option value="URGENT">Urgent</Option>
     </Select>
-    {touched && error && (
-      <Typography level="body-sm" color="danger">{error}</Typography>
-    )}
+    { touched && error && ( <TextFieldError label={ error } /> )}
 </div>
 )
