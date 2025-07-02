@@ -5,7 +5,7 @@ import { Status } from '@prisma/client';
 
 // ✅ HORARIOS PARA PERÚ (UTC-5) = 15:00-24:00 UTC
 const WORK_START_HOUR = 15;    // 10:00 AM Perú = 15:00 UTC
-const WORK_LUNCH_START = 19;   // 2:00 PM Perú = 19:00 UTC  
+const WORK_LUNCH_START = 19;   // 2:00 PM Perú = 19:00 UTC
 const WORK_LUNCH_END = 20;     // 3:00 PM Perú = 20:00 UTC
 const WORK_END_HOUR = 24;      // 7:00 PM Perú = 24:00 UTC (medianoche)
 
@@ -133,14 +133,19 @@ export async function calculateWorkingDeadline(start: Date, hoursNeeded: number)
 
 /**
  * ✅ CONSERVADOR: Reorganiza tareas sin transacciones complejas
+ * Esta función es llamada por processUserAssignments para reacomodar las tareas existentes
+ * de un usuario cuando se inserta una nueva tarea.
  */
 export async function shiftUserTasks(userId: string, newTaskId: string, newDeadline: Date, startPosition: number) {
   console.log(`🔀 Iniciando reordenamiento de cola para el usuario ${userId} desde la posición ${startPosition}.`);
+  console.log(`   - Nueva tarea ID (para exclusión): ${newTaskId}, Deadline de la nueva tarea: ${newDeadline.toISOString()}`);
 
   // 1. Obtener tareas que necesitan ser desplazadas
+  // Excluimos la nueva tarea (si ya existe en la DB, lo cual no es el caso aquí al crearla)
+  // y solo consideramos tareas activas (no completadas).
   const tasksToShift = await prisma.task.findMany({
     where: {
-      id: { not: newTaskId },
+      id: { not: newTaskId }, // Asegurarse de no incluir la tarea que se acaba de crear/se va a crear
       status: { in: [Status.TO_DO, Status.IN_PROGRESS, Status.ON_APPROVAL] },
       assignees: {
         some: { userId: userId }
@@ -150,19 +155,28 @@ export async function shiftUserTasks(userId: string, newTaskId: string, newDeadl
     include: { category: true }
   });
 
+  // Filtrar solo las tareas que están en o después de la posición de inserción
+  // Esto es crucial para desplazar solo las tareas que vienen después de la nueva.
   const filteredTasksToShift = tasksToShift.filter(t => t.queuePosition >= startPosition);
-  
+  console.log(`   - Tareas existentes para el usuario ${userId} (filtradas por posición >= ${startPosition}): ${filteredTasksToShift.length}`);
+  filteredTasksToShift.forEach(t => console.log(`     - ID: ${t.id}, Nombre: "${t.name}", Posición Original: ${t.queuePosition}, StartDate: ${t.startDate.toISOString()}, Deadline: ${t.deadline.toISOString()}`));
+
+
   if(filteredTasksToShift.length === 0) {
     console.log("💨 No hay tareas para desplazar. Fin del reordenamiento.");
     return;
   }
 
   // 2. La primera tarea desplazada comenzará después de la nueva tarea
+  // Usamos la newDeadline de la tarea que se acaba de insertar como punto de partida.
   let lastDeadline = await getNextAvailableStart(newDeadline);
+  console.log(`   - La primera tarea desplazada comenzará después de: ${lastDeadline.toISOString()}`);
 
-  // 3. Actualizar cada tarea con nuevas fechas
+
+  // 3. Actualizar cada tarea con nuevas fechas y posiciones
   for (let i = 0; i < filteredTasksToShift.length; i++) {
     const task = filteredTasksToShift[i];
+    // La nueva posición será la posición de inserción + el índice actual + 1 (para la nueva tarea)
     const newPosition = startPosition + i + 1;
 
     console.log(`  -> Desplazando tarea "${task.name}" (ID: ${task.id}) a la posición ${newPosition}.`);
@@ -170,6 +184,10 @@ export async function shiftUserTasks(userId: string, newTaskId: string, newDeadl
     const taskHours = task.category.duration * 8;
     const newStartDate = await getNextAvailableStart(lastDeadline);
     const newDeadlineForTask = await calculateWorkingDeadline(newStartDate, taskHours);
+
+    console.log(`     - Antiguo: Start=${task.startDate.toISOString()}, Deadline=${task.deadline.toISOString()}, Pos=${task.queuePosition}`);
+    console.log(`     - Nuevo:   Start=${newStartDate.toISOString()}, Deadline=${newDeadlineForTask.toISOString()}, Pos=${newPosition}`);
+
 
     await prisma.task.update({
       where: { id: task.id },
@@ -180,6 +198,7 @@ export async function shiftUserTasks(userId: string, newTaskId: string, newDeadl
       },
     });
 
+    // La fecha de finalización de esta tarea se convierte en el punto de partida para la siguiente.
     lastDeadline = newDeadlineForTask;
   }
 

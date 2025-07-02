@@ -1,9 +1,9 @@
 // services/task-assignment.service.ts - VERSIÓN CONSERVADORA
 
-import { prisma, isPostgreSQL, createUniqueTimestamp, getDatabaseTimestamp } from '@/utils/prisma'
+import { prisma } from '@/utils/prisma'
 import { Priority, Status } from '@prisma/client'
 import { UserSlot, UserWithRoles, Task, QueueCalculationResult, TaskTimingResult } from '@/interfaces'
-import { getNextAvailableStart, calculateWorkingDeadline } from '@/utils/task-calculation-utils'
+import { getNextAvailableStart, calculateWorkingDeadline, shiftUserTasks } from '@/utils/task-calculation-utils' // Importar shiftUserTasks
 
 const GENERALIST_CONSIDERATION_THRESHOLD = 3
 
@@ -37,8 +37,8 @@ export async function calculateUserSlots(
       where: {
         typeId: typeId,
         brandId: brandId,
-        status: { 
-          notIn: [Status.COMPLETE] 
+        status: {
+          notIn: [Status.COMPLETE]
         },
         assignees: {
           some: { userId: user.id }
@@ -60,18 +60,7 @@ export async function calculateUserSlots(
       const lastTask = tasks[tasks.length - 1]
       availableDate = await getNextAvailableStart(new Date(lastTask.deadline))
     } else {
-      if (isPostgreSQL()) {
-        try {
-          const dbNow = await getDatabaseTimestamp()
-          availableDate = createUniqueTimestamp(dbNow)
-          availableDate = await getNextAvailableStart(availableDate)
-        } catch (error) {
-          console.warn('⚠️ Error con timestamp de DB, usando local:', error)
-          availableDate = await getNextAvailableStart(new Date())
-        }
-      } else {
-        availableDate = await getNextAvailableStart(new Date())
-      }
+      availableDate = await getNextAvailableStart(new Date())
     }
 
     const matchingRoles = user.roles.filter(role => role.typeId === typeId)
@@ -143,16 +132,9 @@ export async function calculateQueuePosition(userSlot: UserSlot, priority: Prior
   switch (priority) {
     case 'URGENT':
       insertAt = 0
-      if (userSlot.tasks.length > 0) {
-        calculatedStartDate = isPostgreSQL() ? 
-          createUniqueTimestamp(userSlot.availableDate) : 
-          userSlot.availableDate
-      } else {
-        calculatedStartDate = isPostgreSQL() ? 
-          createUniqueTimestamp(await getNextAvailableStart(new Date())) : 
-          await getNextAvailableStart(new Date())
-      }
-      affectedTasks.push(...userSlot.tasks)
+      // Las tareas URGENT deben comenzar inmediatamente, desplazando a las demás.
+      calculatedStartDate = await getNextAvailableStart(new Date())
+      affectedTasks.push(...userSlot.tasks) // Todas las tareas existentes son afectadas
       break
 
     case 'HIGH':
@@ -161,34 +143,26 @@ export async function calculateQueuePosition(userSlot: UserSlot, priority: Prior
         const firstTaskTier = firstTask.category?.tier
 
         if (firstTaskTier && ['E', 'D'].includes(firstTaskTier)) {
+          // Si la primera tarea es de tier bajo, insertar después de ella
           insertAt = 1
           calculatedStartDate = await getNextAvailableStart(new Date(firstTask.deadline))
-          if (isPostgreSQL()) {
-            calculatedStartDate = createUniqueTimestamp(calculatedStartDate)
-          }
-          affectedTasks.push(...userSlot.tasks.slice(1))
+          affectedTasks.push(...userSlot.tasks.slice(1)) // Las tareas desde el índice 1 en adelante son afectadas
         } else if (firstTaskTier && ['C', 'B', 'A', 'S'].includes(firstTaskTier)) {
+          // Si la primera tarea es de tier alto, insertar al inicio
           insertAt = 0
-          if (userSlot.tasks.length > 0) {
-            calculatedStartDate = isPostgreSQL() ? 
-              createUniqueTimestamp(userSlot.availableDate) : 
-              userSlot.availableDate
-          } else {
-            calculatedStartDate = await getNextAvailableStart(new Date())
-            if (isPostgreSQL()) {
-              calculatedStartDate = createUniqueTimestamp(calculatedStartDate)
-            }
-          }
-          affectedTasks.push(...userSlot.tasks)
+          calculatedStartDate = await getNextAvailableStart(new Date()) // Comenzar inmediatamente
+          affectedTasks.push(...userSlot.tasks) // Todas las tareas existentes son afectadas
         } else {
-          return await calculateNormalPriorityPosition(userSlot)
+          // Si el tier no está definido o es inesperado, por seguridad, tratar como si fuera tier alto
+          // Esto es un WARN porque Tier es un enum y esto no debería pasar si los datos son consistentes.
+          console.warn(`⚠️ Tier inesperado para la primera tarea de prioridad HIGH: ${firstTaskTier}. Se asumirá tier alto y se insertará al inicio.`)
+          insertAt = 0
+          calculatedStartDate = await getNextAvailableStart(new Date())
+          affectedTasks.push(...userSlot.tasks)
         }
-      } else {
+      } else { // No hay tareas en la cola, por lo tanto, es la primera tarea
         insertAt = 0
         calculatedStartDate = await getNextAvailableStart(new Date())
-        if (isPostgreSQL()) {
-          calculatedStartDate = createUniqueTimestamp(calculatedStartDate)
-        }
       }
       break
 
@@ -197,17 +171,19 @@ export async function calculateQueuePosition(userSlot: UserSlot, priority: Prior
 
     case 'LOW':
       insertAt = userSlot.tasks.length
-      calculatedStartDate = isPostgreSQL() ? 
-        createUniqueTimestamp(userSlot.availableDate) : 
-        userSlot.availableDate
+      calculatedStartDate = userSlot.availableDate // Las tareas LOW comienzan cuando el usuario está disponible después de todas las tareas actuales
       break
 
     default:
+      // No debería alcanzarse si todas las prioridades están manejadas, pero como salvaguarda
       insertAt = userSlot.tasks.length
       calculatedStartDate = userSlot.availableDate
   }
 
   console.log(`✅ Resultado: insertAt=${insertAt}, fecha=${calculatedStartDate.toISOString()}`)
+  // Añadir log para las tareas afectadas
+  console.log(`📋 Tareas afectadas identificadas para ${userSlot.userName}: ${affectedTasks.length} tareas. IDs: ${affectedTasks.map(t => t.id).join(', ')}`);
+
 
   return {
     insertAt,
@@ -244,22 +220,10 @@ async function calculateNormalPriorityPosition(userSlot: UserSlot): Promise<Queu
   }
 
   if (insertAt === 0) {
-    if (userSlot.tasks.length > 0) {
-      calculatedStartDate = isPostgreSQL() ? 
-        createUniqueTimestamp(userSlot.availableDate) : 
-        userSlot.availableDate
-    } else {
-      calculatedStartDate = await getNextAvailableStart(new Date())
-      if (isPostgreSQL()) {
-        calculatedStartDate = createUniqueTimestamp(calculatedStartDate)
-      }
-    }
+    calculatedStartDate = userSlot.availableDate
   } else {
     const prevTask = userSlot.tasks[insertAt - 1]
     calculatedStartDate = await getNextAvailableStart(new Date(prevTask.deadline))
-    if (isPostgreSQL()) {
-      calculatedStartDate = createUniqueTimestamp(calculatedStartDate)
-    }
   }
 
   return {
@@ -269,23 +233,20 @@ async function calculateNormalPriorityPosition(userSlot: UserSlot): Promise<Queu
   }
 }
 
+// Esta función ya no se usa directamente desde processUserAssignments,
+// en su lugar, se llama a shiftUserTasks directamente desde processUserAssignments
+// con los datos de queueResult.affectedTasks.
 export async function updateAffectedTasksPositions(
   userId: string,
   insertAt: number,
   affectedTasks: Task[]
 ): Promise<void> {
-  for (let i = 0; i < affectedTasks.length; i++) {
-    const task = affectedTasks[i]
-    const newPosition = insertAt + i + 1
-
-    await prisma.task.update({
-      where: { id: task.id },
-      data: { queuePosition: newPosition }
-    })
-  }
-
-  console.log(`✅ Actualizadas ${affectedTasks.length} posiciones de tareas para usuario ${userId}`)
+  // Esta función ahora es un wrapper para shiftUserTasks para mantener la compatibilidad
+  // y la claridad de la llamada.
+  await shiftUserTasks(userId, 'NEW_TASK_PLACEHOLDER', new Date(), insertAt); // new Date() y 'NEW_TASK_PLACEHOLDER' son placeholders aquí
+  console.log(`✅ Actualizadas ${affectedTasks.length} posiciones de tareas para usuario ${userId} (vía updateAffectedTasksPositions -> shiftUserTasks)`);
 }
+
 
 export async function processUserAssignments(
   usersToAssign: string[],
@@ -316,9 +277,22 @@ export async function processUserAssignments(
     const userStartDate = queueResult.calculatedStartDate
     const userDeadline = await calculateWorkingDeadline(userStartDate, newTaskHours)
 
+    // Aquí es donde se llama a shiftUserTasks para reacomodar las tareas
+    // Se pasa la nueva tarea como 'newTaskId' con un placeholder,
+    // y la fecha de finalización de la nueva tarea como 'newDeadline'
+    // y la posición de inserción de la nueva tarea como 'startPosition'
     if (queueResult.affectedTasks.length > 0) {
-      await updateAffectedTasksPositions(userId, queueResult.insertAt, queueResult.affectedTasks)
+      console.log(`🔄 Preparando para reacomodar ${queueResult.affectedTasks.length} tareas para el usuario ${userSlot.userName}.`)
+      // La clave aquí es que shiftUserTasks necesita el ID de la *nueva* tarea
+      // para excluirla de la consulta inicial. Como aún no se ha creado en la DB,
+      // pasamos un placeholder temporal y la lógica de filtrado en shiftUserTasks
+      // debe manejar esto o ajustarse para que no excluya la nueva tarea si aún no existe.
+      // Por ahora, asumimos que la nueva tarea se insertará *después* de este cálculo.
+      // La función shiftUserTasks ya filtra por `id: { not: newTaskId }`
+      // Entonces, la nueva tarea no estará en la lista de tareas a desplazar.
+      await shiftUserTasks(userSlot.userId, 'temp-new-task-id', userDeadline, queueResult.insertAt);
     }
+
 
     if (userId === usersToAssign[0]) {
       earliestStartDate = userStartDate
