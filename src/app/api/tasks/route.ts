@@ -63,24 +63,22 @@ export async function GET(req: Request) {
   }
 }
 
-// app/api/tasks/route.ts - SECCIÓN MODIFICADA
-
 export async function POST(req: Request) {
   if (!CLICKUP_TOKEN) {
-    console.error('ERROR: CLICKUP_API_TOKEN no configurado.');
-    return NextResponse.json({ error: 'CLICKUP_API_TOKEN no configurado' }, { status: 500 });
+    console.error('ERROR: CLICKUP_API_TOKEN no configurado.')
+    return NextResponse.json({ error: 'CLICKUP_API_TOKEN no configurado' }, { status: 500 })
   }
 
   try {
-    const body = await req.json();
+    const body = await req.json()
     const { name, description, typeId, categoryId, priority, brandId, assignedUserIds, durationDays }: TaskCreationParams = body
 
     if (!name || !typeId || !categoryId || !priority || !brandId || typeof durationDays !== 'number' || durationDays <= 0) {
       return NextResponse.json({ error: 'Faltan campos requeridos o duración inválida' }, { status: 400 })
     }
 
-    console.log(`🚀 === CREANDO TAREA "${name}" ===`);
-    console.log(`📋 Parámetros: Priority=${priority}, Duration=${durationDays}d, Users=${assignedUserIds || 'AUTO'}`);
+    console.log(`🚀 === CREANDO TAREA "${name}" ===`)
+    console.log(`📋 Parámetros: Priority=${priority}, Duration=${durationDays}d, Users=${assignedUserIds || 'AUTO'}`)
 
     const [category, brand] = await Promise.all([
       prisma.taskCategory.findUnique({
@@ -104,8 +102,8 @@ export async function POST(req: Request) {
     let userSlots: UserSlot[] = []
 
     if (assignedUserIds && assignedUserIds.length > 0) {
-      usersToAssign = assignedUserIds;
-      console.log('✅ Asignación manual de usuarios:', usersToAssign);
+      usersToAssign = assignedUserIds
+      console.log('✅ Asignación manual de usuarios:', usersToAssign)
 
       const specificUsersPromises = usersToAssign.map(userId => 
         prisma.user.findUnique({
@@ -157,18 +155,17 @@ export async function POST(req: Request) {
       console.log('✅ Usuario seleccionado automáticamente:', bestUser.userName)
     }
 
-    // 🔍 DEBUG: Estado de usuarios ANTES de asignar
-    console.log('🔍 DEBUG - Estados de usuarios ANTES de asignar:');
+    console.log('🔍 DEBUG - Estados de usuarios ANTES de asignar:')
     userSlots.forEach(slot => {
       if (usersToAssign.includes(slot.userId)) {
-        console.log(`  👤 ${slot.userName}: ${slot.cargaTotal} tareas, disponible: ${slot.availableDate.toISOString()}`);
+        console.log(`  👤 ${slot.userName}: ${slot.cargaTotal} tareas, disponible: ${slot.availableDate.toISOString()}`)
         if (slot.tasks.length > 0) {
-          console.log(`    📋 Última tarea termina: ${slot.tasks[slot.tasks.length - 1].deadline}`);
+          console.log(`    📋 Última tarea termina: ${slot.tasks[slot.tasks.length - 1].deadline}`)
         }
       }
-    });
+    })
 
-    const taskTiming = await processUserAssignments(usersToAssign, userSlots, priority, durationDays);
+    const taskTiming = await processUserAssignments(usersToAssign, userSlots, priority, durationDays)
 
     console.log('✅ Fechas calculadas para nueva tarea:', {
       name,
@@ -227,24 +224,22 @@ export async function POST(req: Request) {
           }
         }
       },
-    });
+    })
 
     await prisma.taskAssignment.createMany({
       data: usersToAssign.map(userId => ({
         userId: userId,
         taskId: task.id,
       })),
-    });
+    })
 
-    // ✅ CRÍTICO: Recalcular fechas de tareas existentes DESPUÉS de crear la nueva tarea
-    console.log('🔄 Iniciando recálculo de fechas de tareas existentes...');
+    console.log('🔄 Iniciando recálculo de fechas de tareas existentes...')
     for (const userId of usersToAssign) {
       try {
-        await shiftUserTasks(userId, task.id, taskTiming.deadline, taskTiming.insertAt);
-        console.log(`✅ Fechas recalculadas para usuario ${userId}`);
+        await shiftUserTasks(userId, task.id, taskTiming.deadline, taskTiming.insertAt)
+        console.log(`✅ Fechas recalculadas para usuario ${userId}`)
       } catch (shiftError) {
-        console.error(`❌ Error recalculando fechas para usuario ${userId}:`, shiftError);
-        // No fallar la creación por esto, pero logearlo
+        console.error(`❌ Error recalculando fechas para usuario ${userId}:`, shiftError)
       }
     }
 
@@ -263,7 +258,7 @@ export async function POST(req: Request) {
     })
 
     // 🔍 DEBUG: Estado DESPUÉS de crear la tarea
-    console.log('🔍 DEBUG - Estado DESPUÉS de crear tarea:');
+    console.log('🔍 DEBUG - Estado DESPUÉS de crear tarea:')
     for (const userId of usersToAssign) {
       const userTasks = await prisma.task.findMany({
         where: {
@@ -272,12 +267,12 @@ export async function POST(req: Request) {
         },
         orderBy: { queuePosition: 'asc' },
         include: { category: true }
-      });
+      })
       
-      console.log(`  👤 Usuario ${userId} ahora tiene ${userTasks.length} tareas:`);
+      console.log(`  👤 Usuario ${userId} ahora tiene ${userTasks.length} tareas:`)
       userTasks.forEach((t, i) => {
-        console.log(`    ${i + 1}. [${t.queuePosition}] "${t.name}": ${t.startDate.toISOString()} → ${t.deadline.toISOString()}`);
-      });
+        console.log(`    ${i + 1}. [${t.queuePosition}] "${t.name}": ${t.startDate.toISOString()} → ${t.deadline.toISOString()}`)
+      })
     }
 
     try {
@@ -285,17 +280,17 @@ export async function POST(req: Request) {
         eventName: 'task_update',
         data: taskWithAssignees,
       })
-      console.log('✅ Evento task_update enviado al socket-emitter.');
+      console.log('✅ Evento task_update enviado al socket-emitter.')
     } catch (emitterError) {
       console.error('⚠️ Error al enviar evento a socket-emitter:', emitterError)
     }
 
-    console.log(`🎉 === TAREA "${name}" CREADA EXITOSAMENTE ===\n`);
+    console.log(`🎉 === TAREA "${name}" CREADA EXITOSAMENTE ===\n`)
 
-    return NextResponse.json(taskWithAssignees);
+    return NextResponse.json(taskWithAssignees)
 
   } catch (error) {
-    console.error('❌ Error general al crear tarea:', error);
+    console.error('❌ Error general al crear tarea:', error)
     
     if (error instanceof Error && error.message.includes('ClickUp')) {
       return NextResponse.json({
