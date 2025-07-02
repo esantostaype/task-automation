@@ -74,6 +74,7 @@ export interface UserSlot {
   tasks: Task[]
   cargaTotal: number
   isSpecialist: boolean
+  lastTaskDeadline?: Date
 }
 
 export interface QueueCalculationResult {

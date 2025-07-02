@@ -3,9 +3,18 @@
 import { prisma } from '@/utils/prisma'
 import { Priority, Status } from '@prisma/client'
 import { UserSlot, UserWithRoles, Task, QueueCalculationResult, TaskTimingResult } from '@/interfaces'
-import { getNextAvailableStart, calculateWorkingDeadline, shiftUserTasks } from '@/utils/task-calculation-utils' // Importar shiftUserTasks
+import { getNextAvailableStart, calculateWorkingDeadline, shiftUserTasks } from '@/utils/task-calculation-utils'
 
-const GENERALIST_CONSIDERATION_THRESHOLD = 3
+// Nueva y única constante para el umbral de deadline para forzar al generalista
+const DEADLINE_DIFFERENCE_TO_FORCE_GENERALIST = 10; // Días: si el especialista tiene un deadline +10 días más lejano que el generalista, FORZAR al generalista.
+
+// Las siguientes constantes y su lógica asociada han sido eliminadas para simplificar el sistema:
+// const GENERALIST_CONSIDERATION_THRESHOLD_TASKS = 3;
+// const SPECIALIST_DEADLINE_DIFFERENCE_THRESHOLD_TO_CONSIDER_GENERALIST = 10;
+// const SPECIALIST_DEADLINE_DIFFERENCE_THRESHOLD_TO_FORCE_GENERALIST = 15;
+// const SPECIALIST_DEADLINE_THRESHOLD_CLOSE_TO_TODAY = 5;
+// const GENERALIST_AVAILABILITY_ADVANTAGE_MS = 1 * 24 * 60 * 60 * 1000;
+
 
 export async function findCompatibleUsers(typeId: number, brandId: string): Promise<UserWithRoles[]> {
   const allUsersWithRoles = await prisma.user.findMany({
@@ -56,9 +65,12 @@ export async function calculateUserSlots(
     const cargaTotal = tasks.length
 
     let availableDate: Date
+    let lastTaskDeadline: Date | undefined; // Declara la nueva variable
+
     if (tasks.length > 0) {
       const lastTask = tasks[tasks.length - 1]
       availableDate = await getNextAvailableStart(new Date(lastTask.deadline))
+      lastTaskDeadline = new Date(lastTask.deadline); // Asigna el deadline aquí
     } else {
       availableDate = await getNextAvailableStart(new Date())
     }
@@ -73,6 +85,7 @@ export async function calculateUserSlots(
       tasks,
       cargaTotal,
       isSpecialist,
+      lastTaskDeadline, // Incluye el nuevo campo en el objeto retornado
     }
   }))
 }
@@ -83,42 +96,65 @@ export function selectBestUser(userSlots: UserSlot[]): UserSlot | null {
 
   const sortUsers = (users: UserSlot[]) => {
     return users.sort((a, b) => {
+      // Orden principal por carga total (menos tareas es mejor)
+      // Aunque no se use para la decisión final, mantener el ordenamiento puede ser útil para logs o depuración.
       if (a.cargaTotal !== b.cargaTotal) return a.cargaTotal - b.cargaTotal
+      // Orden secundario por fecha disponible (más temprano es mejor)
       return a.availableDate.getTime() - b.availableDate.getTime()
     })
   }
 
-  let bestSlot: UserSlot | null = null
+  const sortedSpecialists = sortUsers(specialists)
+  const sortedGeneralists = sortUsers(generalists)
 
-  if (specialists.length > 0) {
-    const sortedSpecialists = sortUsers(specialists)
-    bestSlot = sortedSpecialists[0]
-    console.log(`Asignación: Especialista preferido encontrado: ${bestSlot.userName} (Carga: ${bestSlot.cargaTotal})`)
-  }
+  const bestSpecialist: UserSlot | null = sortedSpecialists.length > 0 ? sortedSpecialists[0] : null
+  const bestGeneralist: UserSlot | null = sortedGeneralists.length > 0 ? sortedGeneralists[0] : null
 
-  if (!bestSlot || bestSlot.cargaTotal >= GENERALIST_CONSIDERATION_THRESHOLD) {
-    if (generalists.length > 0) {
-      const sortedGeneralists = sortUsers(generalists)
-      const bestGeneralist = sortedGeneralists[0]
-
-      if (bestSlot) {
-        const shouldUseGeneralist = bestGeneralist.cargaTotal < bestSlot.cargaTotal ||
-          bestGeneralist.availableDate.getTime() < bestSlot.availableDate.getTime() - (2 * 24 * 60 * 60 * 1000)
-
-        if (shouldUseGeneralist) {
-          bestSlot = bestGeneralist
-          console.log(`Asignación: Generalista ${bestSlot.userName} elegido sobre especialista por menor carga/disponibilidad.`)
-        } else {
-          console.log(`Asignación: Especialista ${bestSlot.userName} mantenido, generalista no es significativamente mejor.`)
-        }
-      } else {
-        bestSlot = bestGeneralist
-        console.log(`Asignación: No hay especialistas, mejor generalista encontrado: ${bestSlot.userName} (Carga: ${bestSlot.cargaTotal})`)
-      }
+  // Casos base: si no hay un tipo de usuario disponible
+  if (!bestSpecialist) {
+    if (bestGeneralist) {
+      console.log(`Asignación: No hay especialistas. Elegido el mejor generalista: ${bestGeneralist.userName} (Carga: ${bestGeneralist.cargaTotal}).`);
+    } else {
+      console.log(`Asignación: No hay usuarios disponibles.`);
     }
+    return bestGeneralist;
+  }
+  if (!bestGeneralist) {
+    console.log(`Asignación: No hay generalistas. Elegido el mejor especialista: ${bestSpecialist.userName} (Carga: ${bestSpecialist.cargaTotal}).`);
+    return bestSpecialist;
   }
 
-  return bestSlot
+  // === Lógica de Asignación Basada Exclusivamente en Deadlines Simplificada ===
+
+  // Calcula el "deadline efectivo" para la comparación de especialista
+  // Si tiene tareas, usa el deadline de la última. Si no, usa su fecha de disponibilidad (que es cercana a hoy si no hay tareas).
+  let effectiveSpecialistDeadline: Date;
+  if (bestSpecialist.tasks.length > 0 && bestSpecialist.lastTaskDeadline) {
+    effectiveSpecialistDeadline = bestSpecialist.lastTaskDeadline;
+  } else {
+    effectiveSpecialistDeadline = bestSpecialist.availableDate;
+  }
+
+  // Calcula el "deadline efectivo" para la comparación de generalista
+  let effectiveGeneralistDeadline: Date;
+  if (bestGeneralist.tasks.length > 0 && bestGeneralist.lastTaskDeadline) {
+    effectiveGeneralistDeadline = bestGeneralist.lastTaskDeadline;
+  } else {
+    effectiveGeneralistDeadline = bestGeneralist.availableDate;
+  }
+
+  // Calcula la diferencia en días entre los deadlines efectivos (especialista - generalista)
+  const deadlineDifferenceDays = (effectiveSpecialistDeadline.getTime() - effectiveGeneralistDeadline.getTime()) / (1000 * 60 * 60 * 24);
+
+  // ÚNICA REGLA: Si el deadline del especialista es MÁS DE 10 días más lejano que el del generalista, FORZAR al generalista.
+  if (deadlineDifferenceDays > DEADLINE_DIFFERENCE_TO_FORCE_GENERALIST) {
+    console.log(`Asignación: Generalista ${bestGeneralist.userName} FORZADO sobre especialista ${bestSpecialist.userName}. Deadline del especialista (${effectiveSpecialistDeadline.toISOString()}) es más de ${DEADLINE_DIFFERENCE_TO_FORCE_GENERALIST} días más lejano que el del generalista (${effectiveGeneralistDeadline.toISOString()}). Diferencia: ${deadlineDifferenceDays.toFixed(1)} días.`);
+    return bestGeneralist;
+  }
+
+  // Por defecto: Si la regla anterior no se cumple, se elige al mejor especialista.
+  console.log(`Asignación: Especialista ${bestSpecialist.userName} mantenido, ya que su deadline no es excesivamente lejano en comparación con el generalista.`);
+  return bestSpecialist;
 }
 
 export async function calculateQueuePosition(userSlot: UserSlot, priority: Priority): Promise<QueueCalculationResult> {
