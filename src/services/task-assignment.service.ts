@@ -1,13 +1,14 @@
-// services/task-assignment.service.ts
-import { prisma } from '@/utils/prisma';
-import { Priority } from '@prisma/client';
-import {UserSlot,UserWithRoles,Task,QueueCalculationResult,TaskTimingResult } from '@/interfaces';
+// services/task-assignment.service.ts - VERSIÓN CONSERVADORA
+
+import { prisma, isPostgreSQL, createUniqueTimestamp, getDatabaseTimestamp } from '@/utils/prisma';
+import { Priority, Status } from '@prisma/client';
+import { UserSlot, UserWithRoles, Task, QueueCalculationResult, TaskTimingResult } from '@/interfaces';
 import { getNextAvailableStart, calculateWorkingDeadline } from '@/utils/task-calculation-utils';
 
 const GENERALIST_CONSIDERATION_THRESHOLD = 3;
 
 /**
- * Encuentra usuarios compatibles para un tipo de tarea específico
+ * ✅ CONSERVADOR: Encuentra usuarios compatibles (SIN transacciones complejas)
  */
 export async function findCompatibleUsers(typeId: number, brandId: string): Promise<UserWithRoles[]> {
   const allUsersWithRoles = await prisma.user.findMany({
@@ -30,7 +31,7 @@ export async function findCompatibleUsers(typeId: number, brandId: string): Prom
 }
 
 /**
- * Calcula slots de usuarios con información de carga y disponibilidad
+ * ✅ CONSERVADOR: Calcula slots (CON mejora mínima para PostgreSQL)
  */
 export async function calculateUserSlots(
   users: UserWithRoles[],
@@ -42,6 +43,9 @@ export async function calculateUserSlots(
       where: {
         typeId: typeId,
         brandId: brandId,
+        status: { 
+          notIn: [Status.COMPLETE] 
+        },
         assignees: {
           some: { userId: user.id }
         }
@@ -59,9 +63,22 @@ export async function calculateUserSlots(
 
     let availableDate: Date;
     if (tasks.length > 0) {
-      availableDate = new Date(tasks[tasks.length - 1].deadline);
+      const lastTask = tasks[tasks.length - 1];
+      availableDate = await getNextAvailableStart(new Date(lastTask.deadline));
     } else {
-      availableDate = await getNextAvailableStart(new Date());
+      // ✅ MEJORA MÍNIMA: Solo para PostgreSQL, crear timestamp único
+      if (isPostgreSQL()) {
+        try {
+          const dbNow = await getDatabaseTimestamp();
+          availableDate = createUniqueTimestamp(dbNow);
+          availableDate = await getNextAvailableStart(availableDate);
+        } catch (error) {
+          console.warn('⚠️ Error con timestamp de DB, usando local:', error);
+          availableDate = await getNextAvailableStart(new Date());
+        }
+      } else {
+        availableDate = await getNextAvailableStart(new Date());
+      }
     }
 
     const matchingRoles = user.roles.filter(role => role.typeId === typeId);
@@ -79,14 +96,12 @@ export async function calculateUserSlots(
 }
 
 /**
- * Selecciona el mejor usuario para asignación automática
+ * ✅ CONSERVADOR: Selección de mejor usuario (SIN cambios)
  */
 export function selectBestUser(userSlots: UserSlot[]): UserSlot | null {
-  // Separar especialistas y generalistas
   const specialists = userSlots.filter(slot => slot.isSpecialist);
   const generalists = userSlots.filter(slot => !slot.isSpecialist);
 
-  // Función de ordenamiento común
   const sortUsers = (users: UserSlot[]) => {
     return users.sort((a, b) => {
       if (a.cargaTotal !== b.cargaTotal) return a.cargaTotal - b.cargaTotal;
@@ -96,21 +111,18 @@ export function selectBestUser(userSlots: UserSlot[]): UserSlot | null {
 
   let bestSlot: UserSlot | null = null;
 
-  // Priorizar especialistas
   if (specialists.length > 0) {
     const sortedSpecialists = sortUsers(specialists);
     bestSlot = sortedSpecialists[0];
     console.log(`Asignación: Especialista preferido encontrado: ${bestSlot.userName} (Carga: ${bestSlot.cargaTotal})`);
   }
 
-  // Considerar generalistas si el especialista tiene mucha carga
   if (!bestSlot || bestSlot.cargaTotal >= GENERALIST_CONSIDERATION_THRESHOLD) {
     if (generalists.length > 0) {
       const sortedGeneralists = sortUsers(generalists);
       const bestGeneralist = sortedGeneralists[0];
 
       if (bestSlot) {
-        // Comparar generalista vs especialista
         const shouldUseGeneralist = bestGeneralist.cargaTotal < bestSlot.cargaTotal ||
           bestGeneralist.availableDate.getTime() < bestSlot.availableDate.getTime() - (2 * 24 * 60 * 60 * 1000);
 
@@ -131,18 +143,29 @@ export function selectBestUser(userSlots: UserSlot[]): UserSlot | null {
 }
 
 /**
- * Calcula la posición en la cola y fecha de inicio basada en la prioridad
+ * ✅ CONSERVADOR: Calcula posición (CON mejora mínima para PostgreSQL)
  */
-export function calculateQueuePosition(userSlot: UserSlot, priority: Priority): QueueCalculationResult {
+export async function calculateQueuePosition(userSlot: UserSlot, priority: Priority): Promise<QueueCalculationResult> {
   let insertAt = 0;
   let calculatedStartDate: Date;
   const affectedTasks: Task[] = [];
 
+  console.log(`🎯 Calculando posición para usuario ${userSlot.userName}`);
+  console.log(`📅 Usuario disponible desde: ${userSlot.availableDate.toISOString()}`);
+
   switch (priority) {
     case 'URGENT':
       insertAt = 0;
-      calculatedStartDate = new Date(); // Inmediatamente
-      // Todas las tareas existentes se ven afectadas
+      if (userSlot.tasks.length > 0) {
+        // ✅ MEJORA MÍNIMA: Solo para PostgreSQL, crear timestamp único
+        calculatedStartDate = isPostgreSQL() ? 
+          createUniqueTimestamp(userSlot.availableDate) : 
+          userSlot.availableDate;
+      } else {
+        calculatedStartDate = isPostgreSQL() ? 
+          createUniqueTimestamp(await getNextAvailableStart(new Date())) : 
+          await getNextAvailableStart(new Date());
+      }
       affectedTasks.push(...userSlot.tasks);
       break;
 
@@ -152,32 +175,45 @@ export function calculateQueuePosition(userSlot: UserSlot, priority: Priority): 
         const firstTaskTier = firstTask.category?.tier;
 
         if (firstTaskTier && ['E', 'D'].includes(firstTaskTier)) {
-          // Insertar después de la primera tarea de tier alto
           insertAt = 1;
-          calculatedStartDate = new Date(firstTask.deadline);
+          calculatedStartDate = await getNextAvailableStart(new Date(firstTask.deadline));
+          if (isPostgreSQL()) {
+            calculatedStartDate = createUniqueTimestamp(calculatedStartDate);
+          }
           affectedTasks.push(...userSlot.tasks.slice(1));
         } else if (firstTaskTier && ['C', 'B', 'A', 'S'].includes(firstTaskTier)) {
-          // Insertar al principio
           insertAt = 0;
-          calculatedStartDate = new Date();
+          if (userSlot.tasks.length > 0) {
+            calculatedStartDate = isPostgreSQL() ? 
+              createUniqueTimestamp(userSlot.availableDate) : 
+              userSlot.availableDate;
+          } else {
+            calculatedStartDate = await getNextAvailableStart(new Date());
+            if (isPostgreSQL()) {
+              calculatedStartDate = createUniqueTimestamp(calculatedStartDate);
+            }
+          }
           affectedTasks.push(...userSlot.tasks);
         } else {
-          // Tratar como NORMAL si no hay tier definido
-          return calculateNormalPriorityPosition(userSlot);
+          return await calculateNormalPriorityPosition(userSlot);
         }
       } else {
         insertAt = 0;
-        calculatedStartDate = new Date();
+        calculatedStartDate = await getNextAvailableStart(new Date());
+        if (isPostgreSQL()) {
+          calculatedStartDate = createUniqueTimestamp(calculatedStartDate);
+        }
       }
       break;
 
     case 'NORMAL':
-      return calculateNormalPriorityPosition(userSlot);
+      return await calculateNormalPriorityPosition(userSlot);
 
     case 'LOW':
       insertAt = userSlot.tasks.length;
-      calculatedStartDate = userSlot.availableDate;
-      // No se afectan tareas existentes
+      calculatedStartDate = isPostgreSQL() ? 
+        createUniqueTimestamp(userSlot.availableDate) : 
+        userSlot.availableDate;
       break;
 
     default:
@@ -185,27 +221,27 @@ export function calculateQueuePosition(userSlot: UserSlot, priority: Priority): 
       calculatedStartDate = userSlot.availableDate;
   }
 
+  console.log(`✅ Resultado: insertAt=${insertAt}, fecha=${calculatedStartDate.toISOString()}`);
+
   return {
     insertAt,
-    calculatedStartDate: calculatedStartDate,
+    calculatedStartDate,
     affectedTasks
   };
 }
 
 /**
- * Calcula posición para tareas con prioridad NORMAL
+ * ✅ CONSERVADOR: Calcula posición NORMAL (CON mejora mínima)
  */
-function calculateNormalPriorityPosition(userSlot: UserSlot): QueueCalculationResult {
+async function calculateNormalPriorityPosition(userSlot: UserSlot): Promise<QueueCalculationResult> {
   let insertAt = userSlot.tasks.length;
   let calculatedStartDate: Date;
   const affectedTasks: Task[] = [];
 
-  // Buscar posición óptima para tareas NORMAL
   for (let i = 0; i < userSlot.tasks.length; i++) {
     const currentTask = userSlot.tasks[i];
 
     if (currentTask.priority === 'LOW') {
-      // Contar tareas NORMAL antes de esta LOW
       let normalTasksBeforeThisLow = 0;
       for (let j = 0; j < i; j++) {
         if (userSlot.tasks[j].priority === 'NORMAL') {
@@ -224,12 +260,23 @@ function calculateNormalPriorityPosition(userSlot: UserSlot): QueueCalculationRe
     }
   }
 
-  // Calcular fecha de inicio
   if (insertAt === 0) {
-    calculatedStartDate = new Date();
+    if (userSlot.tasks.length > 0) {
+      calculatedStartDate = isPostgreSQL() ? 
+        createUniqueTimestamp(userSlot.availableDate) : 
+        userSlot.availableDate;
+    } else {
+      calculatedStartDate = await getNextAvailableStart(new Date());
+      if (isPostgreSQL()) {
+        calculatedStartDate = createUniqueTimestamp(calculatedStartDate);
+      }
+    }
   } else {
     const prevTask = userSlot.tasks[insertAt - 1];
-    calculatedStartDate = new Date(prevTask.deadline);
+    calculatedStartDate = await getNextAvailableStart(new Date(prevTask.deadline));
+    if (isPostgreSQL()) {
+      calculatedStartDate = createUniqueTimestamp(calculatedStartDate);
+    }
   }
 
   return {
@@ -240,17 +287,16 @@ function calculateNormalPriorityPosition(userSlot: UserSlot): QueueCalculationRe
 }
 
 /**
- * Actualiza las posiciones de las tareas afectadas por la inserción
+ * ✅ CONSERVADOR: Actualiza posiciones (SIN cambios)
  */
 export async function updateAffectedTasksPositions(
   userId: string,
   insertAt: number,
   affectedTasks: Task[]
 ): Promise<void> {
-  // Actualizar posiciones de las tareas que se mueven hacia abajo
   for (let i = 0; i < affectedTasks.length; i++) {
     const task = affectedTasks[i];
-    const newPosition = insertAt + i + 1; // +1 porque la nueva tarea ocupa insertAt
+    const newPosition = insertAt + i + 1;
 
     await prisma.task.update({
       where: { id: task.id },
@@ -262,7 +308,7 @@ export async function updateAffectedTasksPositions(
 }
 
 /**
- * Procesa la asignación de usuarios y calcula posiciones para cada uno
+ * ✅ CONSERVADOR: Procesa asignaciones (CON mejora mínima)
  */
 export async function processUserAssignments(
   usersToAssign: string[],
@@ -278,7 +324,8 @@ export async function processUserAssignments(
   let latestDeadline = new Date();
   let primaryInsertAt = 0;
 
-  // Procesar cada usuario asignado
+  console.log(`🚀 Procesando asignación para ${usersToAssign.length} usuarios`);
+
   for (const userId of usersToAssign) {
     const userSlot = userSlots.find(slot => slot.userId === userId);
 
@@ -287,25 +334,21 @@ export async function processUserAssignments(
       continue;
     }
 
-    // Calcular posición y fechas para este usuario
-    const queueResult = calculateQueuePosition(userSlot, priority);
+    const queueResult = await calculateQueuePosition(userSlot, priority);
 
-    // Actualizar posiciones de tareas afectadas
+    // ✅ CONSERVADOR: Usar directamente la fecha calculada
+    const userStartDate = queueResult.calculatedStartDate;
+    const userDeadline = await calculateWorkingDeadline(userStartDate, newTaskHours);
+
     if (queueResult.affectedTasks.length > 0) {
       await updateAffectedTasksPositions(userId, queueResult.insertAt, queueResult.affectedTasks);
     }
 
-    // Calcular fechas para este usuario específico
-    const userStartDate = await getNextAvailableStart(queueResult.calculatedStartDate);
-    const userDeadline = await calculateWorkingDeadline(userStartDate, newTaskHours);
-
-    // Usar las fechas del primer usuario como referencia principal
     if (userId === usersToAssign[0]) {
       earliestStartDate = userStartDate;
       latestDeadline = userDeadline;
       primaryInsertAt = queueResult.insertAt;
     } else {
-      // Ajustar fechas si es necesario (tomar la más temprana para inicio, más tardía para deadline)
       if (userStartDate < earliestStartDate) {
         earliestStartDate = userStartDate;
       }
@@ -314,7 +357,7 @@ export async function processUserAssignments(
       }
     }
 
-    console.log(`✅ Usuario ${userSlot.userName}: insertAt=${queueResult.insertAt}, start=${userStartDate.toISOString()}, deadline=${userDeadline.toISOString()}`);
+    console.log(`✅ Usuario ${userSlot.userName}: start=${userStartDate.toISOString()}, deadline=${userDeadline.toISOString()}`);
   }
 
   return {

@@ -5,6 +5,7 @@ import { Status, Priority } from '@prisma/client'
 import { calculateUserSlots, findCompatibleUsers, processUserAssignments, selectBestUser } from '@/services/task-assignment.service'
 import { createTaskInClickUp } from '@/services/clickup.service'
 import { TaskCreationParams, UserSlot, UserWithRoles, ClickUpBrand, TaskWhereInput } from '@/interfaces'
+import { shiftUserTasks } from '@/utils/task-calculation-utils'
 
 const CLICKUP_TOKEN = process.env.CLICKUP_API_TOKEN
 
@@ -62,6 +63,8 @@ export async function GET(req: Request) {
   }
 }
 
+// app/api/tasks/route.ts - SECCIÓN MODIFICADA
+
 export async function POST(req: Request) {
   if (!CLICKUP_TOKEN) {
     console.error('ERROR: CLICKUP_API_TOKEN no configurado.');
@@ -75,6 +78,9 @@ export async function POST(req: Request) {
     if (!name || !typeId || !categoryId || !priority || !brandId || typeof durationDays !== 'number' || durationDays <= 0) {
       return NextResponse.json({ error: 'Faltan campos requeridos o duración inválida' }, { status: 400 })
     }
+
+    console.log(`🚀 === CREANDO TAREA "${name}" ===`);
+    console.log(`📋 Parámetros: Priority=${priority}, Duration=${durationDays}d, Users=${assignedUserIds || 'AUTO'}`);
 
     const [category, brand] = await Promise.all([
       prisma.taskCategory.findUnique({
@@ -151,16 +157,23 @@ export async function POST(req: Request) {
       console.log('✅ Usuario seleccionado automáticamente:', bestUser.userName)
     }
 
+    // 🔍 DEBUG: Estado de usuarios ANTES de asignar
+    console.log('🔍 DEBUG - Estados de usuarios ANTES de asignar:');
+    userSlots.forEach(slot => {
+      if (usersToAssign.includes(slot.userId)) {
+        console.log(`  👤 ${slot.userName}: ${slot.cargaTotal} tareas, disponible: ${slot.availableDate.toISOString()}`);
+        if (slot.tasks.length > 0) {
+          console.log(`    📋 Última tarea termina: ${slot.tasks[slot.tasks.length - 1].deadline}`);
+        }
+      }
+    });
+
     const taskTiming = await processUserAssignments(usersToAssign, userSlots, priority, durationDays);
 
-    console.log('✅ Creando tarea con los siguientes parámetros:', {
+    console.log('✅ Fechas calculadas para nueva tarea:', {
       name,
-      categoryDuration: category.duration,
-      userProvidedDurationDays: durationDays,
-      adjustedHours: (durationDays / usersToAssign.length) * 8,
       startDate: taskTiming.startDate.toISOString(),
       deadline: taskTiming.deadline.toISOString(),
-      assignedUsers: usersToAssign,
       insertAt: taskTiming.insertAt
     })
 
@@ -223,6 +236,18 @@ export async function POST(req: Request) {
       })),
     });
 
+    // ✅ CRÍTICO: Recalcular fechas de tareas existentes DESPUÉS de crear la nueva tarea
+    console.log('🔄 Iniciando recálculo de fechas de tareas existentes...');
+    for (const userId of usersToAssign) {
+      try {
+        await shiftUserTasks(userId, task.id, taskTiming.deadline, taskTiming.insertAt);
+        console.log(`✅ Fechas recalculadas para usuario ${userId}`);
+      } catch (shiftError) {
+        console.error(`❌ Error recalculando fechas para usuario ${userId}:`, shiftError);
+        // No fallar la creación por esto, pero logearlo
+      }
+    }
+
     const taskWithAssignees = await prisma.task.findUnique({
       where: { id: task.id },
       include: {
@@ -237,6 +262,24 @@ export async function POST(req: Request) {
       }
     })
 
+    // 🔍 DEBUG: Estado DESPUÉS de crear la tarea
+    console.log('🔍 DEBUG - Estado DESPUÉS de crear tarea:');
+    for (const userId of usersToAssign) {
+      const userTasks = await prisma.task.findMany({
+        where: {
+          assignees: { some: { userId } },
+          status: { notIn: ['COMPLETE'] }
+        },
+        orderBy: { queuePosition: 'asc' },
+        include: { category: true }
+      });
+      
+      console.log(`  👤 Usuario ${userId} ahora tiene ${userTasks.length} tareas:`);
+      userTasks.forEach((t, i) => {
+        console.log(`    ${i + 1}. [${t.queuePosition}] "${t.name}": ${t.startDate.toISOString()} → ${t.deadline.toISOString()}`);
+      });
+    }
+
     try {
       await axios.post('https://task-automation-zeta.vercel.app/api/socket_emitter', {
         eventName: 'task_update',
@@ -246,6 +289,8 @@ export async function POST(req: Request) {
     } catch (emitterError) {
       console.error('⚠️ Error al enviar evento a socket-emitter:', emitterError)
     }
+
+    console.log(`🎉 === TAREA "${name}" CREADA EXITOSAMENTE ===\n`);
 
     return NextResponse.json(taskWithAssignees);
 
