@@ -6,11 +6,11 @@ import {
   ClickUpTaskCreationParams,
   ClickUpTaskResponse,
   AssigneeDebugInfo,
-  Task // Importar el tipo Task
+  Task
 } from '@/interfaces'
 import { clickupPriorityMap, getClickUpStatusName } from '@/utils/clickup-task-mapping-utils'
+import { API_CONFIG } from '@/config'
 
-const CLICKUP_API_BASE = 'https://api.clickup.com/api/v2'
 const CLICKUP_TOKEN = process.env.CLICKUP_API_TOKEN
 
 export async function createTaskInClickUp(params: ClickUpTaskCreationParams): Promise<ClickUpTaskResponse> {
@@ -64,13 +64,13 @@ export async function createTaskInClickUp(params: ClickUpTaskCreationParams): Pr
   }
 
   console.log('📤 Enviando a ClickUp API:', {
-    url: `${CLICKUP_API_BASE}/list/${brand.id}/task`,
+    url: `${ API_CONFIG.CLICKUP_API_BASE }/list/${brand.id}/task`,
     payload: clickUpPayload,
   })
 
   try {
     const response = await axios.post(
-      `${CLICKUP_API_BASE}/list/${brand.id}/task`,
+      `${ API_CONFIG.CLICKUP_API_BASE }/list/${brand.id}/task`,
       clickUpPayload,
       {
         headers: {
@@ -148,13 +148,13 @@ export async function updateTaskInClickUp(taskId: string, updatedTaskData: Task)
   };
 
   console.log(`📤 Enviando actualización a ClickUp API para tarea ${taskId}:`);
-  console.log('   URL:', `${CLICKUP_API_BASE}/task/${taskId}`);
+  console.log('   URL:', `${ API_CONFIG.CLICKUP_API_BASE }/task/${taskId}`);
   console.log('   Payload:', JSON.stringify(clickUpPayload, null, 2));
 
 
   try {
     const response = await axios.put(
-      `${CLICKUP_API_BASE}/task/${taskId}`,
+      `${ API_CONFIG.CLICKUP_API_BASE }/task/${taskId}`,
       clickUpPayload,
       {
         headers: {

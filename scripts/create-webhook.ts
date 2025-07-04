@@ -1,12 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// scripts/create-webhook.ts
-import axios from 'axios';
+import axios from 'axios'
+import { API_CONFIG } from '@/config'
 
 
 async function createWebhook() {
   try {
     const res = await axios.post(
-      `https://api.clickup.com/api/v2/team/9017044866/webhook`,
+      `${ API_CONFIG.CLICKUP_API_BASE }/team/9017044866/webhook`,
       {
         endpoint: 'https://task-automation-zeta.vercel.app/api/clickup-webhook',
         events: ['taskCreated', 'taskUpdated', 'taskDeleted']

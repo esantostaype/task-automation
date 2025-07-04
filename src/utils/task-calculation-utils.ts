@@ -1,15 +1,10 @@
-// utils/task-calculation-utils.ts - VERSIÓN CONSERVADORA
+// src/utils/task-calculation-utils.ts - VERSIÓN CONSERVADORA
 
 import { Task } from '@/interfaces';
 import { emitTaskUpdateEvent, updateTaskInClickUp } from '@/services/clickup.service';
 import { prisma } from '@/utils/prisma';
 import { Status } from '@prisma/client';
-
-// ✅ HORARIOS PARA PERÚ (UTC-5) = 15:00-24:00 UTC
-const WORK_START_HOUR = 15;    // 10:00 AM Perú = 15:00 UTC
-const WORK_LUNCH_START = 19;   // 2:00 PM Perú = 19:00 UTC
-const WORK_LUNCH_END = 20;     // 3:00 PM Perú = 20:00 UTC
-const WORK_END_HOUR = 24;      // 7:00 PM Perú = 24:00 UTC (medianoche)
+import { WORK_HOURS } from '@/config'; // <-- Importar WORK_HOURS desde config
 
 /**
  * ✅ CONSERVADOR: Redondea una fecha a la siguiente media hora
@@ -43,18 +38,18 @@ export async function getNextAvailableStart(date: Date): Promise<Date> {
     if (day === 0 || day === 6) {
       const daysToAdd = day === 0 ? 1 : 2;
       result.setUTCDate(result.getUTCDate() + daysToAdd);
-      result.setUTCHours(WORK_START_HOUR, 0, 0, 0);
+      result.setUTCHours(WORK_HOURS.START, 0, 0, 0); // Usar constante
       continue;
     }
 
     // Ajustar a horario laboral si está fuera de él
-    if (hour < WORK_START_HOUR) {
-      result.setUTCHours(WORK_START_HOUR, 0, 0, 0);
-    } else if (hour >= WORK_LUNCH_START && hour < WORK_LUNCH_END) {
-      result.setUTCHours(WORK_LUNCH_END, 0, 0, 0);
-    } else if (hour >= WORK_END_HOUR) {
+    if (hour < WORK_HOURS.START) { // Usar constante
+      result.setUTCHours(WORK_HOURS.START, 0, 0, 0); // Usar constante
+    } else if (hour >= WORK_HOURS.LUNCH_START && hour < WORK_HOURS.LUNCH_END) { // Usar constantes
+      result.setUTCHours(WORK_HOURS.LUNCH_END, 0, 0, 0); // Usar constante
+    } else if (hour >= WORK_HOURS.END) { // Usar constante
       result.setUTCDate(result.getUTCDate() + 1);
-      result.setUTCHours(WORK_START_HOUR, 0, 0, 0);
+      result.setUTCHours(WORK_HOURS.START, 0, 0, 0); // Usar constante
       continue;
     }
 
@@ -70,8 +65,8 @@ export async function calculateWorkingDeadline(start: Date, hoursNeeded: number)
   let current = new Date(start);
 
   const workBlocks = [
-    { from: WORK_START_HOUR, to: WORK_LUNCH_START },
-    { from: WORK_LUNCH_END, to: WORK_END_HOUR },
+    { from: WORK_HOURS.START, to: WORK_HOURS.LUNCH_START }, // Usar constantes
+    { from: WORK_HOURS.LUNCH_END, to: WORK_HOURS.END }, // Usar constantes
   ];
 
   while (remaining > 0) {
@@ -80,7 +75,7 @@ export async function calculateWorkingDeadline(start: Date, hoursNeeded: number)
     if (day === 0 || day === 6) {
       const daysToAdd = day === 0 ? 1 : 2;
       current.setUTCDate(current.getUTCDate() + daysToAdd);
-      current.setUTCHours(WORK_START_HOUR, 0, 0, 0);
+      current.setUTCHours(WORK_HOURS.START, 0, 0, 0); // Usar constante
       continue;
     }
 
@@ -126,7 +121,7 @@ export async function calculateWorkingDeadline(start: Date, hoursNeeded: number)
         if (!crossedIntoNextDay) {
             current.setUTCDate(current.getUTCDate() + 1);
         }
-        current.setUTCHours(WORK_START_HOUR, 0, 0, 0);
+        current.setUTCHours(WORK_HOURS.START, 0, 0, 0); // Usar constante
     }
   }
 

@@ -2,10 +2,12 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/utils/prisma'
 import axios from 'axios'
 import { Status, Priority } from '@prisma/client'
-import { calculateUserSlots, findCompatibleUsers, processUserAssignments, selectBestUser } from '@/services/task-assignment.service'
+import { calculateUserSlots, processUserAssignments, getBestUserWithCache } from '@/services/task-assignment.service' // Importar getBestUserWithCache
 import { createTaskInClickUp } from '@/services/clickup.service'
 import { TaskCreationParams, UserSlot, UserWithRoles, ClickUpBrand, TaskWhereInput } from '@/interfaces'
 import { shiftUserTasks } from '@/utils/task-calculation-utils'
+import { invalidateAllCache } from '@/utils/cache'; // <-- Importar la función para invalidar toda la caché
+import { API_CONFIG } from '@/config'; // Importar API_CONFIG para la URL de socket_emitter
 
 const CLICKUP_TOKEN = process.env.CLICKUP_API_TOKEN
 
@@ -99,13 +101,13 @@ export async function POST(req: Request) {
     }
 
     let usersToAssign: string[] = []
-    let userSlots: UserSlot[] = []
+    let userSlotsForProcessing: UserSlot[] = [] // Usar un nombre diferente para evitar confusión
 
     if (assignedUserIds && assignedUserIds.length > 0) {
       usersToAssign = assignedUserIds
       console.log('✅ Asignación manual de usuarios:', usersToAssign)
 
-      const specificUsersPromises = usersToAssign.map(userId => 
+      const specificUsersPromises = usersToAssign.map(userId =>
         prisma.user.findUnique({
           where: { id: userId },
           include: {
@@ -124,9 +126,9 @@ export async function POST(req: Request) {
       const specificUsersResults = await Promise.all(specificUsersPromises)
 
       const validUsers: UserWithRoles[] = specificUsersResults
-        .filter((user): user is NonNullable<typeof user> => 
-          user !== null && 
-          user.active && 
+        .filter((user): user is NonNullable<typeof user> =>
+          user !== null &&
+          user.active &&
           user.roles.some(role => role.typeId === typeId)
         ) as UserWithRoles[]
 
@@ -134,29 +136,25 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'Ninguno de los usuarios especificados es compatible con este tipo de tarea' }, { status: 400 })
       }
 
-      userSlots = await calculateUserSlots(validUsers, typeId, brandId)
+      // Calcular userSlots para los usuarios validados manualmente
+      userSlotsForProcessing = await calculateUserSlots(validUsers, typeId, brandId)
     } else {
       console.log('🤖 Iniciando asignación automática...')
-      
-      const compatibleUsers = await findCompatibleUsers(typeId, brandId)
-      
-      if (compatibleUsers.length === 0) {
-        return NextResponse.json({ error: 'No hay usuarios compatibles disponibles para asignación automática' }, { status: 400 })
-      }
 
-      userSlots = await calculateUserSlots(compatibleUsers, typeId, brandId)
-      const bestUser = selectBestUser(userSlots)
+      // Usar getBestUserWithCache para la asignación automática
+      const bestUser = await getBestUserWithCache(typeId, brandId, priority)
 
       if (!bestUser) {
         return NextResponse.json({ error: 'No se pudo encontrar un diseñador óptimo para la asignación automática.' }, { status: 400 })
       }
 
       usersToAssign = [bestUser.userId]
+      userSlotsForProcessing = [bestUser] // Si se elige uno, usar su slot ya calculado
       console.log('✅ Usuario seleccionado automáticamente:', bestUser.userName)
     }
 
     console.log('🔍 DEBUG - Estados de usuarios ANTES de asignar:')
-    userSlots.forEach(slot => {
+    userSlotsForProcessing.forEach(slot => { // Usar userSlotsForProcessing
       if (usersToAssign.includes(slot.userId)) {
         console.log(`  👤 ${slot.userName}: ${slot.cargaTotal} tareas, disponible: ${slot.availableDate.toISOString()}`)
         if (slot.tasks.length > 0) {
@@ -165,7 +163,7 @@ export async function POST(req: Request) {
       }
     })
 
-    const taskTiming = await processUserAssignments(usersToAssign, userSlots, priority, durationDays)
+    const taskTiming = await processUserAssignments(usersToAssign, userSlotsForProcessing, priority, durationDays) // Usar userSlotsForProcessing
 
     console.log('✅ Fechas calculadas para nueva tarea:', {
       name,
@@ -268,7 +266,7 @@ export async function POST(req: Request) {
         orderBy: { queuePosition: 'asc' },
         include: { category: true }
       })
-      
+
       console.log(`  👤 Usuario ${userId} ahora tiene ${userTasks.length} tareas:`)
       userTasks.forEach((t, i) => {
         console.log(`    ${i + 1}. [${t.queuePosition}] "${t.name}": ${t.startDate.toISOString()} → ${t.deadline.toISOString()}`)
@@ -276,7 +274,7 @@ export async function POST(req: Request) {
     }
 
     try {
-      await axios.post('https://task-automation-zeta.vercel.app/api/socket_emitter', {
+      await axios.post(API_CONFIG.SOCKET_EMITTER_URL, { // Usar constante
         eventName: 'task_update',
         data: taskWithAssignees,
       })
@@ -285,13 +283,16 @@ export async function POST(req: Request) {
       console.error('⚠️ Error al enviar evento a socket-emitter:', emitterError)
     }
 
+    // INVALIDAR TODA LA CACHÉ AQUÍ, YA QUE SE CREÓ UNA TAREA
+    invalidateAllCache(); // <-- Invalida toda la caché
+
     console.log(`🎉 === TAREA "${name}" CREADA EXITOSAMENTE ===\n`)
 
     return NextResponse.json(taskWithAssignees)
 
   } catch (error) {
     console.error('❌ Error general al crear tarea:', error)
-    
+
     if (error instanceof Error && error.message.includes('ClickUp')) {
       return NextResponse.json({
         error: 'Error al crear tarea en ClickUp',

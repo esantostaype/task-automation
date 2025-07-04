@@ -1,22 +1,22 @@
-// services/task-assignment.service.ts - VERSIÓN CONSERVADORA
+// src/services/task-assignment.service.ts - VERSIÓN CONSERVADORA
 
-import { prisma } from '@/utils/prisma'
-import { Priority, Status } from '@prisma/client'
-import { UserSlot, UserWithRoles, Task, QueueCalculationResult, TaskTimingResult } from '@/interfaces'
-import { getNextAvailableStart, calculateWorkingDeadline, shiftUserTasks } from '@/utils/task-calculation-utils'
-
-// Nueva y única constante para el umbral de deadline para forzar al generalista
-const DEADLINE_DIFFERENCE_TO_FORCE_GENERALIST = 10; // Días: si el especialista tiene un deadline +10 días más lejano que el generalista, FORZAR al generalista.
-
-// Las siguientes constantes y su lógica asociada han sido eliminadas para simplificar el sistema:
-// const GENERALIST_CONSIDERATION_THRESHOLD_TASKS = 3;
-// const SPECIALIST_DEADLINE_DIFFERENCE_THRESHOLD_TO_CONSIDER_GENERALIST = 10;
-// const SPECIALIST_DEADLINE_DIFFERENCE_THRESHOLD_TO_FORCE_GENERALIST = 15;
-// const SPECIALIST_DEADLINE_THRESHOLD_CLOSE_TO_TODAY = 5;
-// const GENERALIST_AVAILABILITY_ADVANTAGE_MS = 1 * 24 * 60 * 60 * 1000;
-
+import { prisma } from '@/utils/prisma';
+import { Priority, Status } from '@prisma/client';
+import { UserSlot, UserWithRoles, Task, QueueCalculationResult, TaskTimingResult } from '@/interfaces';
+import { getNextAvailableStart, calculateWorkingDeadline, shiftUserTasks } from '@/utils/task-calculation-utils';
+import { TASK_ASSIGNMENT_THRESHOLDS, CACHE_KEYS } from '@/config'; // Importar umbrales y claves de caché
+import { getFromCache, setInCache } from '@/utils/cache'; // Importar funciones de caché
 
 export async function findCompatibleUsers(typeId: number, brandId: string): Promise<UserWithRoles[]> {
+  const cacheKey = `${CACHE_KEYS.COMPATIBLE_USERS_PREFIX}${typeId}-${brandId}`;
+  const compatibleUsers = getFromCache<UserWithRoles[]>(cacheKey);
+
+  if (compatibleUsers) {
+    console.log(`Cache hit for compatible users: ${cacheKey}`);
+    return compatibleUsers;
+  }
+  console.log(`Cache miss for compatible users: ${cacheKey}, calculating...`);
+
   const allUsersWithRoles = await prisma.user.findMany({
     where: { active: true },
     include: {
@@ -29,11 +29,14 @@ export async function findCompatibleUsers(typeId: number, brandId: string): Prom
         }
       },
     },
-  })
+  });
 
-  return allUsersWithRoles.filter(user =>
+  const filteredUsers = allUsersWithRoles.filter(user =>
     user.roles.some(role => role.typeId === typeId)
-  ) as UserWithRoles[]
+  ) as UserWithRoles[];
+
+  setInCache(cacheKey, filteredUsers);
+  return filteredUsers;
 }
 
 export async function calculateUserSlots(
@@ -41,53 +44,88 @@ export async function calculateUserSlots(
   typeId: number,
   brandId: string
 ): Promise<UserSlot[]> {
-  return Promise.all(users.map(async (user) => {
-    const tasks = await prisma.task.findMany({
-      where: {
-        typeId: typeId,
-        brandId: brandId,
-        status: {
-          notIn: [Status.COMPLETE]
-        },
-        assignees: {
-          some: { userId: user.id }
+  // Genera una clave de caché que incluya los IDs de usuario para garantizar unicidad
+  const userIdsSorted = users.map(u => u.id).sort().join('-');
+  const cacheKey = `${CACHE_KEYS.USER_SLOTS_PREFIX}${typeId}-${brandId}-${userIdsSorted}`;
+  const cachedUserSlots = getFromCache<UserSlot[]>(cacheKey);
+
+  if (cachedUserSlots) {
+    console.log(`Cache hit for userSlots: ${cacheKey}`);
+    return cachedUserSlots;
+  }
+  console.log(`Cache miss for userSlots: ${cacheKey}, calculating...`);
+
+  const userIds = users.map(user => user.id);
+
+  const allRelevantTasks = await prisma.task.findMany({
+    where: {
+      typeId: typeId,
+      brandId: brandId,
+      status: {
+        notIn: [Status.COMPLETE]
+      },
+      assignees: {
+        some: {
+          userId: { in: userIds }
         }
-      },
-      orderBy: { queuePosition: 'asc' },
-      include: {
-        category: { include: { type: true } },
-        type: true,
-        brand: true,
-        assignees: { include: { user: true } }
-      },
-    }) as unknown as Task[]
+      }
+    },
+    orderBy: { queuePosition: 'asc' },
+    include: {
+      category: { include: { type: true } },
+      type: true,
+      brand: true,
+      assignees: { include: { user: true } }
+    },
+  }) as unknown as Task[];
 
-    const cargaTotal = tasks.length
+  const tasksByUser: Record<string, Task[]> = {};
+  for (const task of allRelevantTasks) {
+    for (const assignee of task.assignees) {
+      if (userIds.includes(assignee.userId)) {
+        if (!tasksByUser[assignee.userId]) {
+          tasksByUser[assignee.userId] = [];
+        }
+        tasksByUser[assignee.userId].push(task);
+      }
+    }
+  }
 
-    let availableDate: Date
-    let lastTaskDeadline: Date | undefined; // Declara la nueva variable
+  for (const userId in tasksByUser) {
+    tasksByUser[userId].sort((a, b) => a.queuePosition - b.queuePosition);
+  }
 
-    if (tasks.length > 0) {
-      const lastTask = tasks[tasks.length - 1]
-      availableDate = await getNextAvailableStart(new Date(lastTask.deadline))
-      lastTaskDeadline = new Date(lastTask.deadline); // Asigna el deadline aquí
+  const resultSlots = await Promise.all(users.map(async (user) => {
+    const userTasks = tasksByUser[user.id] || [];
+    const cargaTotal = userTasks.length;
+
+    let availableDate: Date;
+    let lastTaskDeadline: Date | undefined;
+
+    if (userTasks.length > 0) {
+      const lastTask = userTasks[userTasks.length - 1];
+      availableDate = await getNextAvailableStart(new Date(lastTask.deadline));
+      lastTaskDeadline = new Date(lastTask.deadline);
     } else {
-      availableDate = await getNextAvailableStart(new Date())
+      availableDate = await getNextAvailableStart(new Date());
     }
 
-    const matchingRoles = user.roles.filter(role => role.typeId === typeId)
-    const isSpecialist = matchingRoles.length === 1 && user.roles.length === 1
+    const matchingRoles = user.roles.filter(role => role.typeId === typeId);
+    const isSpecialist = matchingRoles.length === 1 && user.roles.length === 1;
 
     return {
       userId: user.id,
       userName: user.name,
       availableDate,
-      tasks,
+      tasks: userTasks,
       cargaTotal,
       isSpecialist,
-      lastTaskDeadline, // Incluye el nuevo campo en el objeto retornado
-    }
-  }))
+      lastTaskDeadline,
+    };
+  }));
+
+  setInCache(cacheKey, resultSlots);
+  return resultSlots;
 }
 
 export function selectBestUser(userSlots: UserSlot[]): UserSlot | null {
@@ -96,10 +134,7 @@ export function selectBestUser(userSlots: UserSlot[]): UserSlot | null {
 
   const sortUsers = (users: UserSlot[]) => {
     return users.sort((a, b) => {
-      // Orden principal por carga total (menos tareas es mejor)
-      // Aunque no se use para la decisión final, mantener el ordenamiento puede ser útil para logs o depuración.
       if (a.cargaTotal !== b.cargaTotal) return a.cargaTotal - b.cargaTotal
-      // Orden secundario por fecha disponible (más temprano es mejor)
       return a.availableDate.getTime() - b.availableDate.getTime()
     })
   }
@@ -110,7 +145,6 @@ export function selectBestUser(userSlots: UserSlot[]): UserSlot | null {
   const bestSpecialist: UserSlot | null = sortedSpecialists.length > 0 ? sortedSpecialists[0] : null
   const bestGeneralist: UserSlot | null = sortedGeneralists.length > 0 ? sortedGeneralists[0] : null
 
-  // Casos base: si no hay un tipo de usuario disponible
   if (!bestSpecialist) {
     if (bestGeneralist) {
       console.log(`Asignación: No hay especialistas. Elegido el mejor generalista: ${bestGeneralist.userName} (Carga: ${bestGeneralist.cargaTotal}).`);
@@ -124,10 +158,6 @@ export function selectBestUser(userSlots: UserSlot[]): UserSlot | null {
     return bestSpecialist;
   }
 
-  // === Lógica de Asignación Basada Exclusivamente en Deadlines Simplificada ===
-
-  // Calcula el "deadline efectivo" para la comparación de especialista
-  // Si tiene tareas, usa el deadline de la última. Si no, usa su fecha de disponibilidad (que es cercana a hoy si no hay tareas).
   let effectiveSpecialistDeadline: Date;
   if (bestSpecialist.tasks.length > 0 && bestSpecialist.lastTaskDeadline) {
     effectiveSpecialistDeadline = bestSpecialist.lastTaskDeadline;
@@ -135,7 +165,6 @@ export function selectBestUser(userSlots: UserSlot[]): UserSlot | null {
     effectiveSpecialistDeadline = bestSpecialist.availableDate;
   }
 
-  // Calcula el "deadline efectivo" para la comparación de generalista
   let effectiveGeneralistDeadline: Date;
   if (bestGeneralist.tasks.length > 0 && bestGeneralist.lastTaskDeadline) {
     effectiveGeneralistDeadline = bestGeneralist.lastTaskDeadline;
@@ -143,19 +172,44 @@ export function selectBestUser(userSlots: UserSlot[]): UserSlot | null {
     effectiveGeneralistDeadline = bestGeneralist.availableDate;
   }
 
-  // Calcula la diferencia en días entre los deadlines efectivos (especialista - generalista)
   const deadlineDifferenceDays = (effectiveSpecialistDeadline.getTime() - effectiveGeneralistDeadline.getTime()) / (1000 * 60 * 60 * 24);
 
-  // ÚNICA REGLA: Si el deadline del especialista es MÁS DE 10 días más lejano que el del generalista, FORZAR al generalista.
-  if (deadlineDifferenceDays > DEADLINE_DIFFERENCE_TO_FORCE_GENERALIST) {
-    console.log(`Asignación: Generalista ${bestGeneralist.userName} FORZADO sobre especialista ${bestSpecialist.userName}. Deadline del especialista (${effectiveSpecialistDeadline.toISOString()}) es más de ${DEADLINE_DIFFERENCE_TO_FORCE_GENERALIST} días más lejano que el del generalista (${effectiveGeneralistDeadline.toISOString()}). Diferencia: ${deadlineDifferenceDays.toFixed(1)} días.`);
+  if (deadlineDifferenceDays > TASK_ASSIGNMENT_THRESHOLDS.DEADLINE_DIFFERENCE_TO_FORCE_GENERALIST) {
+    console.log(`Asignación: Generalista ${bestGeneralist.userName} FORZADO sobre especialista ${bestSpecialist.userName}. Deadline del especialista (${effectiveSpecialistDeadline.toISOString()}) es más de ${TASK_ASSIGNMENT_THRESHOLDS.DEADLINE_DIFFERENCE_TO_FORCE_GENERALIST} días más lejano que el del generalista (${effectiveGeneralistDeadline.toISOString()}). Diferencia: ${deadlineDifferenceDays.toFixed(1)} días.`);
     return bestGeneralist;
   }
 
-  // Por defecto: Si la regla anterior no se cumple, se elige al mejor especialista.
   console.log(`Asignación: Especialista ${bestSpecialist.userName} mantenido, ya que su deadline no es excesivamente lejano en comparación con el generalista.`);
   return bestSpecialist;
 }
+
+/**
+ * Función centralizada y cacheada para obtener el mejor usuario.
+ * Utiliza findCompatibleUsers, calculateUserSlots y selectBestUser internamente.
+ */
+export async function getBestUserWithCache(typeId: number, brandId: string, priority: Priority): Promise<UserSlot | null> {
+  const cacheKey = `${CACHE_KEYS.BEST_USER_SELECTION_PREFIX}${typeId}-${brandId}-${priority}`;
+  let bestSlot = getFromCache<UserSlot | null>(cacheKey);
+
+  if (bestSlot !== undefined) { // Usar !== undefined para manejar 'null' como un valor cacheado válido
+    console.log(`Cache hit for best user selection: ${cacheKey}`);
+    return bestSlot;
+  }
+  console.log(`Cache miss for best user selection: ${cacheKey}, calculating...`);
+
+  const compatibleUsers = await findCompatibleUsers(typeId, brandId);
+  if (compatibleUsers.length === 0) {
+    setInCache(cacheKey, null); // Cachear null si no hay usuarios compatibles
+    return null;
+  }
+
+  const userSlots = await calculateUserSlots(compatibleUsers, typeId, brandId);
+  bestSlot = selectBestUser(userSlots);
+
+  setInCache(cacheKey, bestSlot);
+  return bestSlot;
+}
+
 
 export async function calculateQueuePosition(userSlot: UserSlot, priority: Priority): Promise<QueueCalculationResult> {
   let insertAt = 0
@@ -168,9 +222,8 @@ export async function calculateQueuePosition(userSlot: UserSlot, priority: Prior
   switch (priority) {
     case 'URGENT':
       insertAt = 0
-      // Las tareas URGENT deben comenzar inmediatamente, desplazando a las demás.
       calculatedStartDate = await getNextAvailableStart(new Date())
-      affectedTasks.push(...userSlot.tasks) // Todas las tareas existentes son afectadas
+      affectedTasks.push(...userSlot.tasks)
       break
 
     case 'HIGH':
@@ -179,24 +232,20 @@ export async function calculateQueuePosition(userSlot: UserSlot, priority: Prior
         const firstTaskTier = firstTask.category?.tier
 
         if (firstTaskTier && ['E', 'D'].includes(firstTaskTier)) {
-          // Si la primera tarea es de tier bajo, insertar después de ella
           insertAt = 1
           calculatedStartDate = await getNextAvailableStart(new Date(firstTask.deadline))
-          affectedTasks.push(...userSlot.tasks.slice(1)) // Las tareas desde el índice 1 en adelante son afectadas
+          affectedTasks.push(...userSlot.tasks.slice(1))
         } else if (firstTaskTier && ['C', 'B', 'A', 'S'].includes(firstTaskTier)) {
-          // Si la primera tarea es de tier alto, insertar al inicio
           insertAt = 0
-          calculatedStartDate = await getNextAvailableStart(new Date()) // Comenzar inmediatamente
-          affectedTasks.push(...userSlot.tasks) // Todas las tareas existentes son afectadas
+          calculatedStartDate = await getNextAvailableStart(new Date())
+          affectedTasks.push(...userSlot.tasks)
         } else {
-          // Si el tier no está definido o es inesperado, por seguridad, tratar como si fuera tier alto
-          // Esto es un WARN porque Tier es un enum y esto no debería pasar si los datos son consistentes.
           console.warn(`⚠️ Tier inesperado para la primera tarea de prioridad HIGH: ${firstTaskTier}. Se asumirá tier alto y se insertará al inicio.`)
           insertAt = 0
           calculatedStartDate = await getNextAvailableStart(new Date())
           affectedTasks.push(...userSlot.tasks)
         }
-      } else { // No hay tareas en la cola, por lo tanto, es la primera tarea
+      } else {
         insertAt = 0
         calculatedStartDate = await getNextAvailableStart(new Date())
       }
@@ -206,18 +255,33 @@ export async function calculateQueuePosition(userSlot: UserSlot, priority: Prior
       return await calculateNormalPriorityPosition(userSlot)
 
     case 'LOW':
-      insertAt = userSlot.tasks.length
-      calculatedStartDate = userSlot.availableDate // Las tareas LOW comienzan cuando el usuario está disponible después de todas las tareas actuales
+      let consecutiveLowCount = 0;
+      for (let i = userSlot.tasks.length - 1; i >= 0; i--) {
+        if (userSlot.tasks[i].priority === 'LOW') {
+          consecutiveLowCount++;
+        } else {
+          break;
+        }
+      }
+
+      console.log(`  -> LOW: ${consecutiveLowCount} tareas LOW consecutivas al final`);
+
+      if (consecutiveLowCount < TASK_ASSIGNMENT_THRESHOLDS.CONSECUTIVE_LOW_TASKS_THRESHOLD) {
+        console.log(`  -> LOW: Insertando al final en posición ${userSlot.tasks.length}`);
+        insertAt = userSlot.tasks.length;
+      } else {
+        insertAt = userSlot.tasks.length - consecutiveLowCount;
+        console.log(`  -> LOW: Límite alcanzado, insertando en posición ${insertAt}`);
+      }
+      calculatedStartDate = userSlot.availableDate;
       break
 
     default:
-      // No debería alcanzarse si todas las prioridades están manejadas, pero como salvaguarda
       insertAt = userSlot.tasks.length
       calculatedStartDate = userSlot.availableDate
   }
 
   console.log(`✅ Resultado: insertAt=${insertAt}, fecha=${calculatedStartDate.toISOString()}`)
-  // Añadir log para las tareas afectadas
   console.log(`📋 Tareas afectadas identificadas para ${userSlot.userName}: ${affectedTasks.length} tareas. IDs: ${affectedTasks.map(t => t.id).join(', ')}`);
 
 
@@ -244,7 +308,7 @@ async function calculateNormalPriorityPosition(userSlot: UserSlot): Promise<Queu
         }
       }
 
-      if (normalTasksBeforeThisLow < 5) {
+      if (normalTasksBeforeThisLow < TASK_ASSIGNMENT_THRESHOLDS.NORMAL_TASKS_BEFORE_LOW_THRESHOLD) {
         insertAt = i
         affectedTasks.push(...userSlot.tasks.slice(i))
         break
@@ -269,17 +333,12 @@ async function calculateNormalPriorityPosition(userSlot: UserSlot): Promise<Queu
   }
 }
 
-// Esta función ya no se usa directamente desde processUserAssignments,
-// en su lugar, se llama a shiftUserTasks directamente desde processUserAssignments
-// con los datos de queueResult.affectedTasks.
 export async function updateAffectedTasksPositions(
   userId: string,
   insertAt: number,
   affectedTasks: Task[]
 ): Promise<void> {
-  // Esta función ahora es un wrapper para shiftUserTasks para mantener la compatibilidad
-  // y la claridad de la llamada.
-  await shiftUserTasks(userId, 'NEW_TASK_PLACEHOLDER', new Date(), insertAt); // new Date() y 'NEW_TASK_PLACEHOLDER' son placeholders aquí
+  await shiftUserTasks(userId, 'NEW_TASK_PLACEHOLDER', new Date(), insertAt);
   console.log(`✅ Actualizadas ${affectedTasks.length} posiciones de tareas para usuario ${userId} (vía updateAffectedTasksPositions -> shiftUserTasks)`);
 }
 
@@ -313,19 +372,8 @@ export async function processUserAssignments(
     const userStartDate = queueResult.calculatedStartDate
     const userDeadline = await calculateWorkingDeadline(userStartDate, newTaskHours)
 
-    // Aquí es donde se llama a shiftUserTasks para reacomodar las tareas
-    // Se pasa la nueva tarea como 'newTaskId' con un placeholder,
-    // y la fecha de finalización de la nueva tarea como 'newDeadline'
-    // y la posición de inserción de la nueva tarea como 'startPosition'
     if (queueResult.affectedTasks.length > 0) {
       console.log(`🔄 Preparando para reacomodar ${queueResult.affectedTasks.length} tareas para el usuario ${userSlot.userName}.`)
-      // La clave aquí es que shiftUserTasks necesita el ID de la *nueva* tarea
-      // para excluirla de la consulta inicial. Como aún no se ha creado en la DB,
-      // pasamos un placeholder temporal y la lógica de filtrado en shiftUserTasks
-      // debe manejar esto o ajustarse para que no excluya la nueva tarea si aún no existe.
-      // Por ahora, asumimos que la nueva tarea se insertará *después* de este cálculo.
-      // La función shiftUserTasks ya filtra por `id: { not: newTaskId }`
-      // Entonces, la nueva tarea no estará en la lista de tareas a desplazar.
       await shiftUserTasks(userSlot.userId, 'temp-new-task-id', userDeadline, queueResult.insertAt);
     }
 
@@ -351,4 +399,24 @@ export async function processUserAssignments(
     deadline: latestDeadline,
     insertAt: primaryInsertAt
   }
+}
+
+export async function getTaskHours(taskId: string): Promise<number> {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    include: {
+      category: true,
+      type: true,
+      assignees: {
+        include: {
+          user: true
+        }
+      }
+    },
+  });
+
+  if (!task) throw new Error('Tarea no encontrada');
+  if (!task.assignees.length) throw new Error('Tarea sin asignaciones');
+
+  return task.category.duration * 8;
 }
