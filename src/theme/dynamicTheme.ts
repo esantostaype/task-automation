@@ -70,7 +70,7 @@ export const dynamicTheme = extendTheme({
           '&:hover': {
             backgroundColor: 'var(--soft-bg-hover)'
           },
-          transition: 'background-color 0.1s ease-in-out'          
+          transition: 'background-color 0.1s ease-in-out'
         }),
       },
     },
@@ -169,9 +169,11 @@ export const dynamicTheme = extendTheme({
     },
     JoyButton: {
       styleOverrides: {
-        root: () => ({
-          padding: '0.8rem 1rem',
-        }),
+        root: ({ ownerState }) => ({
+          ...(ownerState.size === 'md' && {
+            padding: '0.8rem 1rem',
+          }),
+        })
       },
     },
     JoyChip: {

@@ -5,8 +5,8 @@
 const axios = require('axios');
 
 // Tu información de ClickUp
-const CLICKUP_TOKEN = 'pk_114240449_Z7E2UHHHWSF14M6T98OZTQUJ9WC83U47';
-const FOLDER_ID = '90170099166'; // ID del folder "Brands"
+const CLICKUP_TOKEN = 'pk_96653458_GR8RPBWKQ6EW9MZYAHUL0QMYZUHWG8MJ';
+const FOLDER_ID = '90132231450'; // ID del folder "Brands"
 
 const CLICKUP_API_BASE = 'https://api.clickup.com/api/v2';
 

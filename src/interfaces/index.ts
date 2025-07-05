@@ -39,7 +39,35 @@ export interface UserRole {
   brandId?: string | null
 }
 
+export interface UserVacation {
+  id: number
+  userId: string
+  startDate: Date
+  endDate: Date
+}
+
+export interface VacationAwareUserSlot extends UserSlot {
+  upcomingVacations: UserVacation[]
+  potentialTaskStart: Date
+  potentialTaskEnd: Date
+  hasVacationConflict: boolean
+  workingDaysUntilAvailable: number
+  vacationConflictDetails?: {
+    conflictingVacation: UserVacation
+    daysSavedByWaiting: number
+  }
+}
+
+export interface AssignmentCandidate {
+  user: VacationAwareUserSlot
+  type: 'specialist_eligible' | 'specialist_on_vacation' | 'generalist'
+  priority: number
+  workingDaysUntilStart: number
+  reason: string
+}
+
 export interface Task {
+  createdAt: string | number | Date
   id: string
   name: string
   description?: string
@@ -102,6 +130,7 @@ export interface TaskTimingResult {
 
 // Interfaz específica para ClickUp que garantiza statusMapping como Record<string, string>
 export interface ClickUpBrand {
+  teamId: string
   id: string
   name: string
   isActive: boolean

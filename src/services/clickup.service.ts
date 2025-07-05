@@ -13,6 +13,270 @@ import { API_CONFIG } from '@/config'
 
 const CLICKUP_TOKEN = process.env.CLICKUP_API_TOKEN
 
+// ✅ CONFIGURACIÓN: Cambiar a true cuando tengas plan Unlimited
+const USE_CUSTOM_FIELDS = false // Cambiar a true cuando upgrades el plan
+const USE_TABLE_COMMENTS = true // Usar tablas en comentarios como alternativa
+
+/**
+ * ✅ NUEVA FUNCIÓN: Crea texto plano estructurado para mostrar Type y Category
+ * ClickUp mostrará esto como texto simple pero bien formateado
+ */
+function createMetadataTable(typeName: string, categoryName: string): string {
+  // Crear texto plano bien estructurado que se ve profesional
+  const metadata = `
+  Type: ${typeName}
+  Category: ${categoryName}`
+  
+  return metadata
+}
+
+/**
+ * ✅ NUEVA FUNCIÓN: Crea un comentario con tabla de metadata en ClickUp
+ */
+async function createMetadataComment(
+  taskId: string,
+  typeName: string,
+  categoryName: string
+): Promise<void> {
+  try {
+    const markdownTable = createMetadataTable(typeName, categoryName)
+    
+    console.log(`📝 Creando comentario con tabla de metadata para tarea ${taskId}`)
+    
+    await axios.post(
+      `${API_CONFIG.CLICKUP_API_BASE}/task/${taskId}/comment`,
+      {
+        comment_text: markdownTable,
+        notify_all: false // No notificar a todos los miembros
+      },
+      {
+        headers: {
+          'Authorization': CLICKUP_TOKEN,
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+    
+    console.log(`✅ Comentario con tabla de metadata creado exitosamente`)
+    
+  } catch (error: any) {
+    console.error('❌ Error creando comentario con metadata:', error.response?.data || error.message)
+    // No lanzar error, ya que es información adicional
+  }
+}
+
+// ✅ INTERFACES PARA CUSTOM FIELDS (para cuando upgrades)
+interface ClickUpCustomField {
+  id: string
+  name: string
+  type: string
+  type_config?: {
+    default?: number
+    placeholder?: string
+    options?: Array<{
+      id: string
+      name: string
+      color?: string
+    }>
+  }
+}
+
+interface ClickUpCustomFieldValue {
+  id: string
+  value: string | number | boolean
+}
+
+interface CustomFieldsCache {
+  [teamId: string]: {
+    typeField?: ClickUpCustomField
+    categoryField?: ClickUpCustomField
+    timestamp: number
+  }
+}
+
+const customFieldsCache: CustomFieldsCache = {}
+const CACHE_DURATION = 5 * 60 * 1000 // 5 minutos
+
+/**
+ * ✅ FUNCIÓN HÍBRIDA: Usa custom fields, tabla en comentarios, o tags según la configuración
+ */
+async function prepareTaskMetadata(
+  teamId: string | undefined,
+  typeName: string,
+  categoryName: string
+): Promise<{
+  customFields?: ClickUpCustomFieldValue[]
+  tags?: string[]
+  useTableComment?: boolean
+}> {
+  if (USE_CUSTOM_FIELDS && teamId) {
+    try {
+      const customFields = await prepareCustomFields(teamId, typeName, categoryName)
+      console.log(`✅ Usando Custom Fields para Type y Category`)
+      return { customFields }
+    } catch (error) {
+      console.error('❌ Error con Custom Fields, fallback a tabla en comentarios:', error)
+    }
+  }
+  
+  if (USE_TABLE_COMMENTS) {
+    console.log(`📊 Usando tabla en comentarios para Type y Category`)
+    return { useTableComment: true }
+  }
+  
+  // Fallback final a tags
+  const tags = [`type:${typeName}`, `category:${categoryName}`]
+  console.log(`🏷️ Usando Tags para Type y Category: ${tags.join(', ')}`)
+  return { tags }
+}
+
+/**
+ * ✅ CUSTOM FIELDS FUNCTIONS (para cuando tengas plan Unlimited)
+ */
+async function getCustomFields(teamId: string): Promise<{
+  typeField?: ClickUpCustomField
+  categoryField?: ClickUpCustomField
+}> {
+  const cached = customFieldsCache[teamId]
+  if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
+    console.log(`📋 Custom fields obtenidos del cache para team ${teamId}`)
+    return {
+      typeField: cached.typeField,
+      categoryField: cached.categoryField
+    }
+  }
+
+  try {
+    console.log(`🔍 Obteniendo custom fields de ClickUp para team ${teamId}`)
+    const response = await axios.get(
+      `${API_CONFIG.CLICKUP_API_BASE}/team/${teamId}/customfields`,
+      {
+        headers: {
+          'Authorization': CLICKUP_TOKEN,
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+
+    const customFields: ClickUpCustomField[] = response.data.fields || []
+    
+    const typeField = customFields.find(field => 
+      field.name.toLowerCase() === 'type' && field.type === 'drop_down'
+    )
+    
+    const categoryField = customFields.find(field => 
+      field.name.toLowerCase() === 'category' && field.type === 'label'
+    )
+
+    customFieldsCache[teamId] = {
+      typeField,
+      categoryField,
+      timestamp: Date.now()
+    }
+
+    console.log(`✅ Custom fields encontrados:`)
+    console.log(`   - Type Field (dropdown): ${typeField ? `✓ ID: ${typeField.id}` : '✗ No encontrado'}`)
+    console.log(`   - Category Field (label): ${categoryField ? `✓ ID: ${categoryField.id}` : '✗ No encontrado'}`)
+
+    return { typeField, categoryField }
+
+  } catch (error: any) {
+    console.error('❌ Error obteniendo custom fields:', error.response?.data || error.message)
+    return {}
+  }
+}
+
+async function findOrCreateDropdownOption(
+  teamId: string,
+  fieldId: string,
+  optionName: string,
+  field: ClickUpCustomField
+): Promise<string | null> {
+  try {
+    const existingOption = field.type_config?.options?.find(
+      option => option.name.toLowerCase() === optionName.toLowerCase()
+    )
+
+    if (existingOption) {
+      console.log(`✅ Opción existente encontrada: "${optionName}" -> ID: ${existingOption.id}`)
+      return existingOption.id
+    }
+
+    console.log(`🔄 Creando nueva opción "${optionName}" en custom field ${field.name}`)
+    
+    const createResponse = await axios.post(
+      `${API_CONFIG.CLICKUP_API_BASE}/team/${teamId}/customfields/${fieldId}/options`,
+      {
+        name: optionName,
+        color: null
+      },
+      {
+        headers: {
+          'Authorization': CLICKUP_TOKEN,
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+
+    const newOptionId = createResponse.data.id
+    console.log(`✅ Nueva opción creada: "${optionName}" -> ID: ${newOptionId}`)
+
+    if (!field.type_config) field.type_config = {}
+    if (!field.type_config.options) field.type_config.options = []
+    field.type_config.options.push({
+      id: newOptionId,
+      name: optionName
+    })
+
+    return newOptionId
+
+  } catch (error: any) {
+    console.error(`❌ Error creando opción "${optionName}":`, error.response?.data || error.message)
+    return null
+  }
+}
+
+function processLabelField(categoryName: string): string {
+  console.log(`🏷️ Configurando label field con valor: "${categoryName}"`)
+  return categoryName
+}
+
+async function prepareCustomFields(
+  teamId: string,
+  typeName: string,
+  categoryName: string
+): Promise<ClickUpCustomFieldValue[]> {
+  const customFieldsValues: ClickUpCustomFieldValue[] = []
+  
+  const { typeField, categoryField } = await getCustomFields(teamId)
+
+  if (typeField) {
+    const typeOptionId = await findOrCreateDropdownOption(teamId, typeField.id, typeName, typeField)
+    if (typeOptionId) {
+      customFieldsValues.push({
+        id: typeField.id,
+        value: typeOptionId
+      })
+      console.log(`📋 Type custom field configurado: ${typeName} (Option ID: ${typeOptionId})`)
+    }
+  } else {
+    console.warn(`⚠️ Custom field "Type" (dropdown) no encontrado en ClickUp para team ${teamId}`)
+  }
+
+  if (categoryField) {
+    const labelValue = processLabelField(categoryName)
+    customFieldsValues.push({
+      id: categoryField.id,
+      value: labelValue
+    })
+    console.log(`🏷️ Category custom field configurado: ${categoryName} (Label: ${labelValue})`)
+  } else {
+    console.warn(`⚠️ Custom field "Category" (label) no encontrado en ClickUp para team ${teamId}`)
+  }
+
+  return customFieldsValues
+}
+
 export async function createTaskInClickUp(params: ClickUpTaskCreationParams): Promise<ClickUpTaskResponse> {
   const { name, description, priority, deadline, startDate, usersToAssign, category, brand } = params
 
@@ -52,19 +316,35 @@ export async function createTaskInClickUp(params: ClickUpTaskCreationParams): Pr
     assigneeDebugInfo,
   })
 
-  const clickUpPayload = {
+  // ✅ PREPARAR METADATA (Custom Fields, Table Comment, o Tags)
+  const metadata = await prepareTaskMetadata(
+    brand.teamId ?? undefined,
+    category.type.name,
+    category.name
+  )
+
+  const clickUpPayload: any = {
     name: name,
     description: description || '',
     priority: clickupPriorityMap[priority] || 3,
-    due_date: deadline.getTime().toString(),
-    start_date: startDate.getTime().toString(),
+    due_date: deadline.getTime(),
+    start_date: startDate.getTime(),
     assignees: clickupAssignees,
-    tags: [`type:${category.type.name}`, `category:${category.name}`],
     status: getClickUpStatusName(brand.defaultStatus, brand.statusMapping),
   }
 
+  // Agregar custom fields o tags según configuración
+  if (metadata.customFields) {
+    clickUpPayload.custom_fields = metadata.customFields
+  } else if (metadata.tags) {
+    clickUpPayload.tags = metadata.tags
+  }
+  // Si useTableComment es true, se manejará después de crear la tarea
+
   console.log('📤 Enviando a ClickUp API:', {
     url: `${ API_CONFIG.CLICKUP_API_BASE }/list/${brand.id}/task`,
+    useCustomFields: USE_CUSTOM_FIELDS,
+    useTableComment: USE_TABLE_COMMENTS,
     payload: clickUpPayload,
   })
 
@@ -82,6 +362,15 @@ export async function createTaskInClickUp(params: ClickUpTaskCreationParams): Pr
 
     await createSyncLog('Task', null, response.data.id, 'CREATE', 'SUCCESS', undefined, response.data)
     console.log(`✅ Tarea creada en ClickUp: ${response.data.id}`)
+
+    // ✅ CREAR COMENTARIO CON TABLA SI ESTÁ HABILITADO
+    if (metadata.useTableComment) {
+      await createMetadataComment(
+        response.data.id,
+        category.type.name,
+        category.name
+      )
+    }
 
     return {
       clickupTaskId: response.data.id,
@@ -106,23 +395,17 @@ export async function createTaskInClickUp(params: ClickUpTaskCreationParams): Pr
   }
 }
 
-/**
- * Actualiza una tarea existente en ClickUp.
- * @param taskId El ID de la tarea de ClickUp.
- * @param updatedTaskData Los datos de la tarea local (de Prisma) con las actualizaciones.
- */
 export async function updateTaskInClickUp(taskId: string, updatedTaskData: Task): Promise<void> {
   if (!CLICKUP_TOKEN) {
     console.error('ERROR: CLICKUP_API_TOKEN no configurado para actualizar tarea en ClickUp.')
     throw new Error('CLICKUP_API_TOKEN no configurado.')
   }
 
-  // Asegurarse de que tenemos la información más reciente de la marca para el mapeo de estado
   const brand = await prisma.brand.findUnique({ where: { id: updatedTaskData.brandId } });
   if (!brand) {
     console.warn(`Brand no encontrado para la tarea ${taskId}. No se puede actualizar el estado en ClickUp.`);
     await createSyncLog('Task', null, taskId, 'UPDATE_CLICKUP', 'WARNING', 'Brand no encontrado para mapeo de estado.');
-    // Continuar sin actualizar el estado si no se encuentra la marca
+    return;
   }
 
   const clickupAssignees: number[] = [];
@@ -135,22 +418,34 @@ export async function updateTaskInClickUp(taskId: string, updatedTaskData: Task)
     }
   }
 
+  // ✅ PREPARAR METADATA PARA ACTUALIZACIÓN
+  const metadata = await prepareTaskMetadata(
+    brand.teamId ?? undefined,
+    updatedTaskData.type.name,
+    updatedTaskData.category.name
+  )
+
   const clickUpPayload: any = {
     name: updatedTaskData.name,
     description: updatedTaskData.description || '',
     priority: clickupPriorityMap[updatedTaskData.priority] || 3,
-    due_date: updatedTaskData.deadline.getTime().toString(), // Asegurar que es un string de timestamp
-    start_date: updatedTaskData.startDate.getTime().toString(), // Asegurar que es un string de timestamp
+    due_date: updatedTaskData.deadline.getTime(),
+    start_date: updatedTaskData.startDate.getTime(),
     assignees: clickupAssignees,
-    // No actualizamos tags aquí a menos que sea necesario, ya que pueden ser complejos.
-    // Si el estado es importante, lo incluimos usando el mapeo de la marca.
-    status: brand ? getClickUpStatusName(updatedTaskData.status, brand.statusMapping) : undefined,
+    status: getClickUpStatusName(updatedTaskData.status, brand.statusMapping),
   };
+
+  // Agregar custom fields o tags según configuración
+  if (metadata.customFields) {
+    clickUpPayload.custom_fields = metadata.customFields
+  } else if (metadata.tags) {
+    clickUpPayload.tags = metadata.tags
+  }
 
   console.log(`📤 Enviando actualización a ClickUp API para tarea ${taskId}:`);
   console.log('   URL:', `${ API_CONFIG.CLICKUP_API_BASE }/task/${taskId}`);
-  console.log('   Payload:', JSON.stringify(clickUpPayload, null, 2));
-
+  console.log('   Use Custom Fields:', USE_CUSTOM_FIELDS);
+  console.log('   Use Table Comments:', USE_TABLE_COMMENTS);
 
   try {
     const response = await axios.put(
@@ -163,8 +458,19 @@ export async function updateTaskInClickUp(taskId: string, updatedTaskData: Task)
         },
       }
     );
-    console.log(`✅ Tarea ${taskId} actualizada en ClickUp. Respuesta:`);
-    console.log(JSON.stringify(response.data, null, 2));
+
+    // ✅ ACTUALIZAR COMENTARIO CON TABLA SI ESTÁ HABILITADO
+    if (metadata.useTableComment) {
+      // Nota: Para actualizaciones, podrías crear un nuevo comentario o implementar lógica
+      // para buscar y actualizar el comentario existente con metadata
+      await createMetadataComment(
+        taskId,
+        updatedTaskData.type.name,
+        updatedTaskData.category.name
+      )
+    }
+
+    console.log(`✅ Tarea ${taskId} actualizada en ClickUp.`);
     await createSyncLog('Task', null, taskId, 'UPDATE_CLICKUP', 'SUCCESS', undefined, response.data);
   } catch (error: unknown) {
     const axiosError = error as any;
@@ -178,14 +484,13 @@ export async function updateTaskInClickUp(taskId: string, updatedTaskData: Task)
       message: axiosError.message,
     });
     await createSyncLog('Task', null, taskId, 'UPDATE_CLICKUP', 'ERROR', errorMessage, axiosError.response?.data);
-    throw error; // Propagar el error para manejo superior si es necesario
+    throw error;
   }
 }
 
-
 export async function emitTaskUpdateEvent(taskData: unknown): Promise<void> {
   try {
-    await axios.post('https://task-automation-zeta.vercel.app/api/socket_emitter', {
+    await axios.post(API_CONFIG.SOCKET_EMITTER_URL, {
       eventName: 'task_update',
       data: taskData,
     })
@@ -193,4 +498,26 @@ export async function emitTaskUpdateEvent(taskData: unknown): Promise<void> {
   } catch (emitterError) {
     console.error('⚠️ Error al enviar evento a socket-emitter:', emitterError)
   }
+}
+
+/**
+ * ✅ FUNCIÓN PARA CAMBIAR ENTRE MODOS
+ */
+export function enableCustomFields(): void {
+  console.log('🔄 Habilitando Custom Fields para futuras tareas...')
+  // En producción, esto debería ser una variable de entorno
+  // USE_CUSTOM_FIELDS = true
+  // USE_TABLE_COMMENTS = false
+}
+
+export function invalidateCustomFieldsCache(teamId: string): void {
+  delete customFieldsCache[teamId]
+  console.log(`🗑️ Cache de custom fields invalidado para team ${teamId}`)
+}
+
+/**
+ * ✅ NUEVA FUNCIÓN: Preview de cómo se ve la tabla
+ */
+export function previewMetadataTable(typeName: string, categoryName: string): string {
+  return createMetadataTable(typeName, categoryName)
 }
