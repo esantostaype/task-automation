@@ -317,8 +317,7 @@ export async function POST(req: Request) {
 
     const brandForClickUp: ClickUpBrand = {
       ...brand,
-      teamId: brand.teamId ?? '',
-      statusMapping: (brand.statusMapping as Record<string, string>) || {}
+      teamId: brand.teamId ?? ''
     }
 
     // ===== CREAR TAREA EN CLICKUP =====

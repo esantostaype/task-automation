@@ -137,7 +137,6 @@ export interface ClickUpBrand {
   isActive: boolean
   clickupListId?: string
   defaultStatus: Status
-  statusMapping: Record<string, string>
 }
 
 export interface ClickUpTaskCreationParams {

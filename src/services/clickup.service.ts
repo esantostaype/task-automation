@@ -332,7 +332,7 @@ export async function createTaskInClickUp(params: ClickUpTaskCreationParams & { 
     start_date: startTimestamp,  
     start_date_time: true,
     assignees: clickupAssignees,
-    status: getClickUpStatusName(brand.defaultStatus, brand.statusMapping),
+    status: getClickUpStatusName(brand.defaultStatus),
   }
 
   // Agregar custom fields o tags según configuración
@@ -409,13 +409,6 @@ export async function createTaskInClickUp(params: ClickUpTaskCreationParams & { 
 // También agregar debug en updateTaskInClickUp
 
 export async function updateTaskInClickUp(taskId: string, updatedTaskData: Task): Promise<void> {
-  console.log(`\n🔄 === DEBUG ACTUALIZACIÓN TAREA: "${updatedTaskData.name}" ===`)
-  console.log('📅 Nuevas fechas:')
-  console.log(`   startDate: ${updatedTaskData.startDate.toISOString()} (UTC)`)
-  console.log(`   deadline: ${updatedTaskData.deadline.toISOString()} (UTC)`)
-  console.log('🇵🇪 En hora de Perú:')
-  console.log(`   startDate: ${updatedTaskData.startDate.toLocaleString('es-PE', { timeZone: 'America/Lima' })}`)
-  console.log(`   deadline: ${updatedTaskData.deadline.toLocaleString('es-PE', { timeZone: 'America/Lima' })}`)
   if (!CLICKUP_TOKEN) {
     console.error('ERROR: CLICKUP_API_TOKEN no configurado para actualizar tarea en ClickUp.')
     throw new Error('CLICKUP_API_TOKEN no configurado.')
@@ -455,7 +448,7 @@ export async function updateTaskInClickUp(taskId: string, updatedTaskData: Task)
     start_date: updatedTaskData.startDate.getTime(),
     start_date_time: true,        // ✅ NUEVO: Incluir tiempo en start_date
     assignees: clickupAssignees,
-    status: getClickUpStatusName(updatedTaskData.status, brand.statusMapping),
+    status: getClickUpStatusName(updatedTaskData.status)
   };
 
   // Agregar custom fields o tags según configuración

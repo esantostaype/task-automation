@@ -62,7 +62,6 @@ model Brand {
   isActive Boolean @default(true)
   description String?  
   defaultStatus Status @default(TO_DO)
-  statusMapping Json?  
   tasks Task[]
   userRoles UserRole[]  
   createdAt DateTime @default(now())
