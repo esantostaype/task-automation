@@ -78,6 +78,7 @@ model Task {
   startDate DateTime
   deadline DateTime
   timeEstimate Int?
+  customDuration Float?
   points Int?
   tags String?
   url String?

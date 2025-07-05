@@ -1,3 +1,5 @@
+// src/services/clickup.service.ts - VERSIÓN CORREGIDA CON CAMPOS DE TIEMPO
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import axios from 'axios'
 import { prisma } from '@/utils/prisma'
@@ -277,7 +279,7 @@ async function prepareCustomFields(
   return customFieldsValues
 }
 
-export async function createTaskInClickUp(params: ClickUpTaskCreationParams): Promise<ClickUpTaskResponse> {
+export async function createTaskInClickUp(params: ClickUpTaskCreationParams & { customDurationDays?: number }): Promise<ClickUpTaskResponse> {
   const { name, description, priority, deadline, startDate, usersToAssign, category, brand } = params
 
   const clickupAssignees: number[] = []
@@ -310,12 +312,6 @@ export async function createTaskInClickUp(params: ClickUpTaskCreationParams): Pr
     assigneeDebugInfo.push(debugInfo)
   }
 
-  console.log('🎯 DEBUG - Procesamiento de asignados para ClickUp:', {
-    localUsersToAssign: usersToAssign,
-    clickupAssigneesToSend: clickupAssignees,
-    assigneeDebugInfo,
-  })
-
   // ✅ PREPARAR METADATA (Custom Fields, Table Comment, o Tags)
   const metadata = await prepareTaskMetadata(
     brand.teamId ?? undefined,
@@ -323,12 +319,18 @@ export async function createTaskInClickUp(params: ClickUpTaskCreationParams): Pr
     category.name
   )
 
+  // ✅ TIMESTAMPS para ClickUp
+  const startTimestamp = startDate.getTime()
+  const deadlineTimestamp = deadline.getTime()
+
   const clickUpPayload: any = {
     name: name,
     description: description || '',
     priority: clickupPriorityMap[priority] || 3,
-    due_date: deadline.getTime(),
-    start_date: startDate.getTime(),
+    due_date: deadlineTimestamp,
+    due_date_time: true,
+    start_date: startTimestamp,  
+    start_date_time: true,
     assignees: clickupAssignees,
     status: getClickUpStatusName(brand.defaultStatus, brand.statusMapping),
   }
@@ -339,16 +341,10 @@ export async function createTaskInClickUp(params: ClickUpTaskCreationParams): Pr
   } else if (metadata.tags) {
     clickUpPayload.tags = metadata.tags
   }
-  // Si useTableComment es true, se manejará después de crear la tarea
-
-  console.log('📤 Enviando a ClickUp API:', {
-    url: `${ API_CONFIG.CLICKUP_API_BASE }/list/${brand.id}/task`,
-    useCustomFields: USE_CUSTOM_FIELDS,
-    useTableComment: USE_TABLE_COMMENTS,
-    payload: clickUpPayload,
-  })
 
   try {
+    console.log(`📡 Enviando request a ClickUp: ${API_CONFIG.CLICKUP_API_BASE}/list/${brand.id}/task`)
+    
     const response = await axios.post(
       `${ API_CONFIG.CLICKUP_API_BASE }/list/${brand.id}/task`,
       clickUpPayload,
@@ -360,8 +356,21 @@ export async function createTaskInClickUp(params: ClickUpTaskCreationParams): Pr
       }
     )
 
+    console.log('✅ Respuesta de ClickUp:')
+    console.log(`   Task ID: ${response.data.id}`)
+    console.log(`   Task URL: ${response.data.url}`)
+    
+    // 🧪 DEBUG: Verificar qué devolvió ClickUp
+    if (response.data.start_date) {
+      const returnedStart = new Date(parseInt(response.data.start_date))
+      console.log(`   Start date returned: ${returnedStart.toISOString()} (${returnedStart.toLocaleString('es-PE', { timeZone: 'America/Lima' })})`)
+    }
+    if (response.data.due_date) {
+      const returnedDue = new Date(parseInt(response.data.due_date))
+      console.log(`   Due date returned: ${returnedDue.toISOString()} (${returnedDue.toLocaleString('es-PE', { timeZone: 'America/Lima' })})`)
+    }
+
     await createSyncLog('Task', null, response.data.id, 'CREATE', 'SUCCESS', undefined, response.data)
-    console.log(`✅ Tarea creada en ClickUp: ${response.data.id}`)
 
     // ✅ CREAR COMENTARIO CON TABLA SI ESTÁ HABILITADO
     if (metadata.useTableComment) {
@@ -371,6 +380,8 @@ export async function createTaskInClickUp(params: ClickUpTaskCreationParams): Pr
         category.name
       )
     }
+
+    console.log(`🎉 === TAREA "${name}" CREADA EN CLICKUP EXITOSAMENTE ===\n`)
 
     return {
       clickupTaskId: response.data.id,
@@ -385,7 +396,7 @@ export async function createTaskInClickUp(params: ClickUpTaskCreationParams): Pr
       status: axiosError.response?.status,
       statusText: axiosError.response?.statusText,
       errorData: axiosError.response?.data,
-      sentPayload: axiosError.config?.data,
+      sentPayload: clickUpPayload,
       url: axiosError.config?.url,
       message: axiosError.message,
     })
@@ -395,7 +406,16 @@ export async function createTaskInClickUp(params: ClickUpTaskCreationParams): Pr
   }
 }
 
+// También agregar debug en updateTaskInClickUp
+
 export async function updateTaskInClickUp(taskId: string, updatedTaskData: Task): Promise<void> {
+  console.log(`\n🔄 === DEBUG ACTUALIZACIÓN TAREA: "${updatedTaskData.name}" ===`)
+  console.log('📅 Nuevas fechas:')
+  console.log(`   startDate: ${updatedTaskData.startDate.toISOString()} (UTC)`)
+  console.log(`   deadline: ${updatedTaskData.deadline.toISOString()} (UTC)`)
+  console.log('🇵🇪 En hora de Perú:')
+  console.log(`   startDate: ${updatedTaskData.startDate.toLocaleString('es-PE', { timeZone: 'America/Lima' })}`)
+  console.log(`   deadline: ${updatedTaskData.deadline.toLocaleString('es-PE', { timeZone: 'America/Lima' })}`)
   if (!CLICKUP_TOKEN) {
     console.error('ERROR: CLICKUP_API_TOKEN no configurado para actualizar tarea en ClickUp.')
     throw new Error('CLICKUP_API_TOKEN no configurado.')
@@ -425,12 +445,15 @@ export async function updateTaskInClickUp(taskId: string, updatedTaskData: Task)
     updatedTaskData.category.name
   )
 
+  // ✅ SOLUCIÓN: Agregar campos de tiempo para actualizaciones también
   const clickUpPayload: any = {
     name: updatedTaskData.name,
     description: updatedTaskData.description || '',
     priority: clickupPriorityMap[updatedTaskData.priority] || 3,
     due_date: updatedTaskData.deadline.getTime(),
+    due_date_time: true,          // ✅ NUEVO: Incluir tiempo en due_date
     start_date: updatedTaskData.startDate.getTime(),
+    start_date_time: true,        // ✅ NUEVO: Incluir tiempo en start_date
     assignees: clickupAssignees,
     status: getClickUpStatusName(updatedTaskData.status, brand.statusMapping),
   };
@@ -446,6 +469,8 @@ export async function updateTaskInClickUp(taskId: string, updatedTaskData: Task)
   console.log('   URL:', `${ API_CONFIG.CLICKUP_API_BASE }/task/${taskId}`);
   console.log('   Use Custom Fields:', USE_CUSTOM_FIELDS);
   console.log('   Use Table Comments:', USE_TABLE_COMMENTS);
+  console.log('   Start DateTime:', new Date(updatedTaskData.startDate).toISOString());
+  console.log('   Due DateTime:', new Date(updatedTaskData.deadline).toISOString());
 
   try {
     const response = await axios.put(

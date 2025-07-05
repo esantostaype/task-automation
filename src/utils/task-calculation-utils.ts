@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // src/utils/task-calculation-utils.ts - VERSIÓN CONSERVADORA
 
 import { Task } from '@/interfaces';
@@ -118,10 +119,10 @@ export async function calculateWorkingDeadline(start: Date, hoursNeeded: number)
     const crossedIntoNextDay = current.getUTCDate() !== originalCurrentDay;
 
     if (remaining > 0 && (crossedIntoNextDay || !processedAnyBlock || timeUsedToday === 0)) {
-        if (!crossedIntoNextDay) {
-            current.setUTCDate(current.getUTCDate() + 1);
-        }
-        current.setUTCHours(WORK_HOURS.START, 0, 0, 0); // Usar constante
+      if (!crossedIntoNextDay) {
+        current.setUTCDate(current.getUTCDate() + 1);
+      }
+      current.setUTCHours(WORK_HOURS.START, 0, 0, 0); // Usar constante
     }
   }
 
@@ -153,7 +154,7 @@ export async function shiftUserTasks(userId: string, newTaskId: string, newDeadl
   console.log(`   - Tareas existentes para el usuario ${userId} (filtradas por posición >= ${startPosition}): ${filteredTasksToShift.length}`);
   filteredTasksToShift.forEach(t => console.log(`     - ID: ${t.id}, Nombre: "${t.name}", Posición Original: ${t.queuePosition}, StartDate: ${t.startDate.toISOString()}, Deadline: ${t.deadline.toISOString()}`));
 
-  if(filteredTasksToShift.length === 0) {
+  if (filteredTasksToShift.length === 0) {
     console.log("💨 No hay tareas para desplazar. Fin del reordenamiento.");
     return;
   }
@@ -167,7 +168,8 @@ export async function shiftUserTasks(userId: string, newTaskId: string, newDeadl
 
     console.log(`  -> Desplazando tarea "${task.name}" (ID: ${task.id}) a la posición ${newPosition}.`);
 
-    const taskHours = task.category.duration * 8;
+    const effectiveDurationDays = (task as any).customDuration ?? task.category.duration;
+    const taskHours = effectiveDurationDays * 8
     const newStartDate = await getNextAvailableStart(lastDeadline); //
     const newDeadlineForTask = await calculateWorkingDeadline(newStartDate, taskHours); //
 
@@ -192,18 +194,18 @@ export async function shiftUserTasks(userId: string, newTaskId: string, newDeadl
 
     // Call updateTaskInClickUp to synchronize changes with ClickUp
     try {
-        await updateTaskInClickUp(updatedPrismaTask.id, updatedPrismaTask as unknown as Task); //
-        console.log(`✅ Tarea ClickUp actualizada para el desplazamiento: ${updatedPrismaTask.name} (ID: ${updatedPrismaTask.id})`); //
+      await updateTaskInClickUp(updatedPrismaTask.id, updatedPrismaTask as unknown as Task); //
+      console.log(`✅ Tarea ClickUp actualizada para el desplazamiento: ${updatedPrismaTask.name} (ID: ${updatedPrismaTask.id})`); //
     } catch (clickUpUpdateError) {
-        console.error(`❌ Error al actualizar tarea ${updatedPrismaTask.id} en ClickUp durante el desplazamiento:`, clickUpUpdateError); //
+      console.error(`❌ Error al actualizar tarea ${updatedPrismaTask.id} en ClickUp durante el desplazamiento:`, clickUpUpdateError); //
     }
 
     // Emit Socket.IO event to update clients in real-time
     try {
-        await emitTaskUpdateEvent(updatedPrismaTask); //
-        console.log(`✅ Evento task_update emitido para tarea desplazada: ${updatedPrismaTask.id}`); //
+      await emitTaskUpdateEvent(updatedPrismaTask); //
+      console.log(`✅ Evento task_update emitido para tarea desplazada: ${updatedPrismaTask.id}`); //
     } catch (socketEmitError) {
-        console.error(`⚠️ Error al emitir evento de socket para tarea desplazada ${updatedPrismaTask.id}:`, socketEmitError); //
+      console.error(`⚠️ Error al emitir evento de socket para tarea desplazada ${updatedPrismaTask.id}:`, socketEmitError); //
     }
 
     lastDeadline = newDeadlineForTask;

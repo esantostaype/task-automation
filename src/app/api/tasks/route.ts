@@ -4,9 +4,9 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/utils/prisma'
 import axios from 'axios'
 import { Status, Priority } from '@prisma/client'
-import { 
-  calculateUserSlots, 
-  processUserAssignments, 
+import {
+  calculateUserSlots,
+  processUserAssignments,
   getBestUserWithCache
 } from '@/services/task-assignment.service'
 import { createTaskInClickUp } from '@/services/clickup.service'
@@ -58,8 +58,8 @@ export async function GET(req: Request) {
         },
         type: true,
         brand: true,
-        assignees: { 
-          include: { 
+        assignees: {
+          include: {
             user: {
               select: {
                 id: true,
@@ -155,20 +155,20 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json()
-    const { 
-      name, 
-      description, 
-      typeId, 
-      categoryId, 
-      priority, 
-      brandId, 
-      assignedUserIds, 
-      durationDays 
+    const {
+      name,
+      description,
+      typeId,
+      categoryId,
+      priority,
+      brandId,
+      assignedUserIds,
+      durationDays
     }: TaskCreationParams = body
 
     // Validar campos requeridos
     if (!name || !typeId || !categoryId || !priority || !brandId || typeof durationDays !== 'number' || durationDays <= 0) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Faltan campos requeridos o duración inválida',
         required: ['name', 'typeId', 'categoryId', 'priority', 'brandId', 'durationDays']
       }, { status: 400 })
@@ -240,14 +240,14 @@ export async function POST(req: Request) {
         ) as UserWithRoles[]
 
       if (validUsers.length === 0) {
-        return NextResponse.json({ 
+        return NextResponse.json({
           error: 'Ninguno de los usuarios especificados es compatible con este tipo de tarea',
           details: 'Verifique que los usuarios existan, estén activos y tengan roles compatibles'
         }, { status: 400 })
       }
 
       if (validUsers.length !== usersToAssign.length) {
-        const invalidUsers = usersToAssign.filter(id => 
+        const invalidUsers = usersToAssign.filter(id =>
           !validUsers.some(user => user.id === id)
         )
         console.warn(`⚠️ Usuarios no válidos ignorados: ${invalidUsers.join(', ')}`)
@@ -268,7 +268,7 @@ export async function POST(req: Request) {
       const bestUser = await getBestUserWithCache(typeId, brandId, priority, durationDays)
 
       if (!bestUser) {
-        return NextResponse.json({ 
+        return NextResponse.json({
           error: 'No se pudo encontrar un diseñador óptimo para la asignación automática',
           details: 'No hay usuarios disponibles que cumplan con los criterios de asignación considerando vacaciones y carga de trabajo'
         }, { status: 400 })
@@ -352,6 +352,7 @@ export async function POST(req: Request) {
         url: clickupTaskUrl,
         lastSyncAt: new Date(),
         syncStatus: 'SYNCED',
+        customDuration: durationDays !== category.duration ? durationDays : null
       },
       include: {
         category: {

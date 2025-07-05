@@ -1,5 +1,5 @@
 /* eslint-disable prefer-const */
-// src/services/task-assignment.service.ts - VERSIÓN COMPLETA CON LÓGICA DE VACACIONES
+// src/services/task-assignment.service.ts - VERSIÓN COMPLETA CON NUEVA LÓGICA DE PRIORIDADES
 
 import { prisma } from '@/utils/prisma';
 import { Priority, Status } from '@prisma/client';
@@ -24,9 +24,6 @@ function getUSHolidays(startDate: Date, endDate: Date): Date[] {
   return holidays;
 }
 
-/**
- * Calcula días laborales entre dos fechas considerando festivos y vacaciones
- */
 function calculateWorkingDaysBetween(startDate: Date, endDate: Date, excludeVacations: UserVacation[] = []): number {
   if (startDate >= endDate) return 0;
   
@@ -37,14 +34,11 @@ function calculateWorkingDaysBetween(startDate: Date, endDate: Date, excludeVaca
   while (current < endDate) {
     const dayOfWeek = current.getUTCDay();
     
-    // Excluir fines de semana
     if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-      // Verificar si no es día festivo
       const isHoliday = holidays.some(holiday => 
         holiday.toISOString().split('T')[0] === current.toISOString().split('T')[0]
       );
       
-      // Verificar si no está en vacaciones
       const isOnVacation = excludeVacations.some(vacation => {
         const vacStart = new Date(vacation.startDate);
         const vacEnd = new Date(vacation.endDate);
@@ -62,9 +56,6 @@ function calculateWorkingDaysBetween(startDate: Date, endDate: Date, excludeVaca
   return workingDays;
 }
 
-/**
- * Verifica si una tarea se solapará con vacaciones
- */
 function checkVacationConflict(
   taskStart: Date, 
   taskEnd: Date, 
@@ -82,9 +73,6 @@ function checkVacationConflict(
   return { hasConflict: false };
 }
 
-/**
- * Calcula la próxima fecha disponible después de vacaciones
- */
 async function getNextAvailableStartAfterVacations(
   baseDate: Date, 
   vacations: UserVacation[]
@@ -105,17 +93,13 @@ async function getNextAvailableStartAfterVacations(
   return availableDate;
 }
 
-// ✅ FUNCIONES PRINCIPALES
-
 export async function findCompatibleUsers(typeId: number, brandId: string): Promise<UserWithRoles[]> {
   const cacheKey = `${CACHE_KEYS.COMPATIBLE_USERS_PREFIX}${typeId}-${brandId}`;
   const compatibleUsers = getFromCache<UserWithRoles[]>(cacheKey);
 
   if (compatibleUsers) {
-    console.log(`Cache hit for compatible users: ${cacheKey}`);
     return compatibleUsers;
   }
-  console.log(`Cache miss for compatible users: ${cacheKey}, calculating...`);
 
   const allUsersWithRoles = await prisma.user.findMany({
     where: { active: true },
@@ -149,10 +133,8 @@ export async function calculateUserSlots(
   const cachedUserSlots = getFromCache<UserSlot[]>(cacheKey);
 
   if (cachedUserSlots) {
-    console.log(`Cache hit for userSlots: ${cacheKey}`);
     return cachedUserSlots;
   }
-  console.log(`Cache miss for userSlots: ${cacheKey}, calculating...`);
 
   const userIds = users.map(user => user.id);
 
@@ -227,9 +209,6 @@ export async function calculateUserSlots(
   return resultSlots;
 }
 
-/**
- * ✅ NUEVA FUNCIÓN: Obtiene usuarios compatibles con información de vacaciones
- */
 async function getVacationAwareUserSlots(
   typeId: number, 
   brandId: string, 
@@ -364,9 +343,6 @@ async function getVacationAwareUserSlots(
   return vacationAwareSlots;
 }
 
-/**
- * ✅ FUNCIÓN PRINCIPAL: Selecciona el mejor usuario usando la nueva lógica de vacaciones
- */
 async function selectBestUserWithVacationLogic(
   userSlots: VacationAwareUserSlot[]
 ): Promise<VacationAwareUserSlot | null> {
@@ -378,12 +354,6 @@ async function selectBestUserWithVacationLogic(
   const eligibleSpecialists = specialists.filter(s => !s.hasVacationConflict);
   const vacationSpecialists = specialists.filter(s => s.hasVacationConflict);
 
-  console.log('🎯 === ANÁLISIS DE ASIGNACIÓN CON VACACIONES ===');
-  console.log(`📊 Especialistas elegibles: ${eligibleSpecialists.length}`);
-  console.log(`🏖️ Especialistas en vacaciones: ${vacationSpecialists.length}`);
-  console.log(`🔄 Generalistas: ${generalists.length}`);
-
-  // ✅ PRIORIDAD 1: Mejor Especialista Elegible (Sin Vacaciones Cercanas)
   if (eligibleSpecialists.length > 0) {
     const sortedEligibleSpecialists = eligibleSpecialists.sort((a, b) => {
       if (a.cargaTotal !== b.cargaTotal) return a.cargaTotal - b.cargaTotal;
@@ -392,7 +362,6 @@ async function selectBestUserWithVacationLogic(
 
     const bestSpecialist = sortedEligibleSpecialists[0];
     
-    // ✅ USAR LÓGICA EXISTENTE: Comparar diferencia de deadlines
     const availableGeneralists = generalists.filter(g => !g.hasVacationConflict);
     if (availableGeneralists.length > 0) {
       const bestGeneralist = availableGeneralists.sort((a, b) => {
@@ -403,16 +372,13 @@ async function selectBestUserWithVacationLogic(
       const deadlineDifferenceDays = bestSpecialist.workingDaysUntilAvailable - bestGeneralist.workingDaysUntilAvailable;
       
       if (deadlineDifferenceDays > TASK_ASSIGNMENT_THRESHOLDS.DEADLINE_DIFFERENCE_TO_FORCE_GENERALIST) {
-        console.log(`✅ Generalista ${bestGeneralist.userName} FORZADO sobre especialista ${bestSpecialist.userName}. Deadline del especialista es más de ${TASK_ASSIGNMENT_THRESHOLDS.DEADLINE_DIFFERENCE_TO_FORCE_GENERALIST} días más lejano. Diferencia: ${deadlineDifferenceDays} días.`);
         return bestGeneralist;
       }
     }
     
-    console.log(`✅ Asignando a especialista elegible: ${bestSpecialist.userName}`);
     return bestSpecialist;
   }
 
-  // ✅ PRIORIDAD 2: Mejor Especialista de Vacaciones
   if (vacationSpecialists.length > 0) {
     const sortedVacationSpecialists = vacationSpecialists.sort((a, b) => {
       if (a.cargaTotal !== b.cargaTotal) return a.cargaTotal - b.cargaTotal;
@@ -422,8 +388,6 @@ async function selectBestUserWithVacationLogic(
     const bestVacationSpecialist = sortedVacationSpecialists[0];
     
     if (bestVacationSpecialist.workingDaysUntilAvailable > 10) {
-      console.log(`🏖️ Especialista ${bestVacationSpecialist.userName} estará disponible en ${bestVacationSpecialist.workingDaysUntilAvailable} días (>10)`);
-      
       const availableGeneralists = generalists.filter(g => !g.hasVacationConflict);
       if (availableGeneralists.length > 0) {
         const bestGeneralist = availableGeneralists.sort((a, b) => {
@@ -434,19 +398,14 @@ async function selectBestUserWithVacationLogic(
         const daysBenefit = bestVacationSpecialist.workingDaysUntilAvailable - bestGeneralist.workingDaysUntilAvailable;
         
         if (daysBenefit >= 5) {
-          console.log(`✅ Generalista ${bestGeneralist.userName} puede empezar ${daysBenefit} días antes (evitando espera larga)`);
           return bestGeneralist;
         }
       }
-    } else {
-      console.log(`⏳ Especialista ${bestVacationSpecialist.userName} estará disponible en ${bestVacationSpecialist.workingDaysUntilAvailable} días (≤10), esperando`);
     }
     
-    console.log(`✅ Asignando a especialista de vacaciones: ${bestVacationSpecialist.userName}`);
     return bestVacationSpecialist;
   }
 
-  // ✅ PRIORIDAD 3: Mejor Generalista
   if (generalists.length > 0) {
     const availableGeneralists = generalists.filter(g => !g.hasVacationConflict);
     
@@ -456,12 +415,10 @@ async function selectBestUserWithVacationLogic(
         return a.workingDaysUntilAvailable - b.workingDaysUntilAvailable;
       })[0];
       
-      console.log(`✅ Asignando a mejor generalista: ${bestGeneralist.userName}`);
       return bestGeneralist;
     }
   }
 
-  console.log('❌ No se encontró usuario adecuado');
   return null;
 }
 
@@ -483,15 +440,9 @@ export function selectBestUser(userSlots: UserSlot[]): UserSlot | null {
   const bestGeneralist: UserSlot | null = sortedGeneralists.length > 0 ? sortedGeneralists[0] : null
 
   if (!bestSpecialist) {
-    if (bestGeneralist) {
-      console.log(`Asignación: No hay especialistas. Elegido el mejor generalista: ${bestGeneralist.userName} (Carga: ${bestGeneralist.cargaTotal}).`);
-    } else {
-      console.log(`Asignación: No hay usuarios disponibles.`);
-    }
     return bestGeneralist;
   }
   if (!bestGeneralist) {
-    console.log(`Asignación: No hay generalistas. Elegido el mejor especialista: ${bestSpecialist.userName} (Carga: ${bestSpecialist.cargaTotal}).`);
     return bestSpecialist;
   }
 
@@ -512,17 +463,12 @@ export function selectBestUser(userSlots: UserSlot[]): UserSlot | null {
   const deadlineDifferenceDays = (effectiveSpecialistDeadline.getTime() - effectiveGeneralistDeadline.getTime()) / (1000 * 60 * 60 * 24);
 
   if (deadlineDifferenceDays > TASK_ASSIGNMENT_THRESHOLDS.DEADLINE_DIFFERENCE_TO_FORCE_GENERALIST) {
-    console.log(`Asignación: Generalista ${bestGeneralist.userName} FORZADO sobre especialista ${bestSpecialist.userName}. Deadline del especialista (${effectiveSpecialistDeadline.toISOString()}) es más de ${TASK_ASSIGNMENT_THRESHOLDS.DEADLINE_DIFFERENCE_TO_FORCE_GENERALIST} días más lejano que el del generalista (${effectiveGeneralistDeadline.toISOString()}). Diferencia: ${deadlineDifferenceDays.toFixed(1)} días.`);
     return bestGeneralist;
   }
 
-  console.log(`Asignación: Especialista ${bestSpecialist.userName} mantenido, ya que su deadline no es excesivamente lejano en comparación con el generalista.`);
   return bestSpecialist;
 }
 
-/**
- * ✅ FUNCIÓN PRINCIPAL CON CACHE: Incluye lógica de vacaciones cuando se proporciona duración
- */
 export async function getBestUserWithCache(
   typeId: number, 
   brandId: string, 
@@ -531,15 +477,12 @@ export async function getBestUserWithCache(
 ): Promise<UserSlot | null> {
   
   if (durationDays) {
-    // ✅ CON DURACIÓN: Usar lógica de vacaciones + cache
     const cacheKey = `${CACHE_KEYS.BEST_USER_SELECTION_PREFIX}${typeId}-${brandId}-${priority}-vacation-${durationDays}`;
     let bestSlot = getFromCache<UserSlot | null>(cacheKey);
 
     if (bestSlot !== undefined) {
-      console.log(`Cache hit for best user selection with vacation logic: ${cacheKey}`);
       return bestSlot;
     }
-    console.log(`Cache miss for best user selection with vacation logic: ${cacheKey}, calculating...`);
 
     const vacationAwareSlots = await getVacationAwareUserSlots(typeId, brandId, durationDays);
     const bestVacationSlot = await selectBestUserWithVacationLogic(vacationAwareSlots);
@@ -563,15 +506,12 @@ export async function getBestUserWithCache(
     return compatibleSlot;
   }
   
-  // ✅ SIN DURACIÓN: Usar lógica original + cache
   const cacheKey = `${CACHE_KEYS.BEST_USER_SELECTION_PREFIX}${typeId}-${brandId}-${priority}`;
   let bestSlot = getFromCache<UserSlot | null>(cacheKey);
 
   if (bestSlot !== undefined) {
-    console.log(`Cache hit for best user selection (legacy): ${cacheKey}`);
     return bestSlot;
   }
-  console.log(`Cache miss for best user selection (legacy): ${cacheKey}, calculating...`);
 
   const compatibleUsers = await findCompatibleUsers(typeId, brandId);
   if (compatibleUsers.length === 0) {
@@ -586,25 +526,76 @@ export async function getBestUserWithCache(
   return bestSlot;
 }
 
-// ✅ FUNCIONES DE CÁLCULO DE POSICIÓN EN COLA
+interface QueueAnalysis {
+  urgentCount: number
+  highCount: number
+  normalCount: number
+  lowCount: number
+  lastUrgentIndex: number
+  lastHighIndex: number
+  firstNormalIndex: number
+  firstLowIndex: number
+}
 
-/**
- * Verifica si una tarea LOW está en su "período de espera"
- */
+function analyzeQueueByPriority(tasks: Task[]): QueueAnalysis {
+  const analysis: QueueAnalysis = {
+    urgentCount: 0,
+    highCount: 0,
+    normalCount: 0,
+    lowCount: 0,
+    lastUrgentIndex: -1,
+    lastHighIndex: -1,
+    firstNormalIndex: -1,
+    firstLowIndex: -1,
+    nonUrgentHighCount: 0,
+    nonUrgentNormalCount: 0
+  }
+
+  tasks.forEach((task, index) => {
+    switch (task.priority) {
+      case 'URGENT':
+        analysis.urgentCount++
+        analysis.lastUrgentIndex = index
+        break
+      case 'HIGH':
+        analysis.highCount++
+        analysis.lastHighIndex = index
+        // Solo contar HIGH después de la zona URGENT
+        if (analysis.lastUrgentIndex === -1 || index > analysis.lastUrgentIndex) {
+          analysis.nonUrgentHighCount++
+        }
+        break
+      case 'NORMAL':
+        analysis.normalCount++
+        if (analysis.firstNormalIndex === -1) {
+          analysis.firstNormalIndex = index
+        }
+        // Solo contar NORMAL después de la zona URGENT
+        if (analysis.lastUrgentIndex === -1 || index > analysis.lastUrgentIndex) {
+          analysis.nonUrgentNormalCount++
+        }
+        break
+      case 'LOW':
+        analysis.lowCount++
+        if (analysis.firstLowIndex === -1) {
+          analysis.firstLowIndex = index
+        }
+        break
+    }
+  })
+
+  return analysis
+}
+
 function isLowTaskInWaitingPeriod(task: Task): boolean {
   const now = new Date();
   const taskCreationTime = new Date(task.createdAt);
   
   const workingHoursElapsed = calculateWorkingHoursBetween(taskCreationTime, now);
   
-  console.log(`🕐 Tarea LOW "${task.name}": creada ${taskCreationTime.toISOString()}, han pasado ${workingHoursElapsed.toFixed(1)} horas laborales`);
-  
   return workingHoursElapsed < 8;
 }
 
-/**
- * Calcula las horas laborales transcurridas entre dos fechas
- */
 function calculateWorkingHoursBetween(startDate: Date, endDate: Date): number {
   let totalHours = 0;
   const current = new Date(startDate);
@@ -661,112 +652,34 @@ function calculateWorkingHoursBetween(startDate: Date, endDate: Date): number {
   return totalHours;
 }
 
-export async function calculateQueuePosition(userSlot: UserSlot, priority: Priority): Promise<QueueCalculationResult> {
-  let insertAt = 0
-  let calculatedStartDate: Date
-  const affectedTasks: Task[] = []
+async function calculateNormalPriorityPosition(userSlot: UserSlot): Promise<number> {
+  // Los NORMAL van al final natural, después de toda la lógica de intercalado
+  // Pero respetando las reglas con LOW
+  
+  let insertAt = userSlot.tasks.length // Por defecto al final
 
-  console.log(`🎯 Calculando posición para usuario ${userSlot.userName}`)
-  console.log(`📅 Usuario disponible desde: ${userSlot.availableDate.toISOString()}`)
-
-  switch (priority) {
-    case 'URGENT':
-      insertAt = 0
-      calculatedStartDate = await getNextAvailableStart(new Date())
-      affectedTasks.push(...userSlot.tasks)
-      break
-
-    case 'HIGH':
-      if (userSlot.tasks.length >= 1) {
-        const firstTask = userSlot.tasks[0]
-        const firstTaskTier = firstTask.category?.tier
-
-        if (firstTaskTier && ['E', 'D'].includes(firstTaskTier)) {
-          insertAt = 1
-          calculatedStartDate = await getNextAvailableStart(new Date(firstTask.deadline))
-          affectedTasks.push(...userSlot.tasks.slice(1))
-        } else if (firstTaskTier && ['C', 'B', 'A', 'S'].includes(firstTaskTier)) {
-          insertAt = 0
-          calculatedStartDate = await getNextAvailableStart(new Date())
-          affectedTasks.push(...userSlot.tasks)
-        } else {
-          console.warn(`⚠️ Tier inesperado para la primera tarea de prioridad HIGH: ${firstTaskTier}. Se asumirá tier alto y se insertará al inicio.`)
-          insertAt = 0
-          calculatedStartDate = await getNextAvailableStart(new Date())
-          affectedTasks.push(...userSlot.tasks)
-        }
-      } else {
-        insertAt = 0
-        calculatedStartDate = await getNextAvailableStart(new Date())
-      }
-      break
-
-    case 'NORMAL':
-      return await calculateNormalPriorityPosition(userSlot)
-
-    case 'LOW':
-      return await calculateLowPriorityPosition(userSlot)
-
-    default:
-      insertAt = userSlot.tasks.length
-      calculatedStartDate = userSlot.availableDate
-  }
-
-  console.log(`✅ Resultado: insertAt=${insertAt}, fecha=${calculatedStartDate.toISOString()}`)
-  console.log(`📋 Tareas afectadas identificadas para ${userSlot.userName}: ${affectedTasks.length} tareas. IDs: ${affectedTasks.map(t => t.id).join(', ')}`);
-
-  return {
-    insertAt,
-    calculatedStartDate,
-    affectedTasks
-  }
-}
-
-async function calculateNormalPriorityPosition(userSlot: UserSlot): Promise<QueueCalculationResult> {
-  let insertAt = userSlot.tasks.length
-  let calculatedStartDate: Date
-  const affectedTasks: Task[] = []
-
-  for (let i = 0; i < userSlot.tasks.length; i++) {
+  // Buscar posición respetando lógica con LOW (mantener lógica existente)
+  for (let i = userSlot.tasks.length - 1; i >= 0; i--) {
     const currentTask = userSlot.tasks[i]
 
     if (currentTask.priority === 'LOW') {
-      if (isLowTaskInWaitingPeriod(currentTask)) {
-        console.log(`🔒 Tarea LOW "${currentTask.name}" en período de espera, NORMAL debe ir antes`)
-        let normalTasksBeforeThisLow = 0
-        for (let j = 0; j < i; j++) {
-          if (userSlot.tasks[j].priority === 'NORMAL') {
-            normalTasksBeforeThisLow++
-          }
+      // Aplicar lógica existente para LOW
+      let normalTasksBeforeThisLow = 0
+      for (let j = 0; j < i; j++) {
+        if (userSlot.tasks[j].priority === 'NORMAL') {
+          normalTasksBeforeThisLow++
         }
-
-        if (normalTasksBeforeThisLow < TASK_ASSIGNMENT_THRESHOLDS.NORMAL_TASKS_BEFORE_LOW_THRESHOLD) {
-          insertAt = i
-          affectedTasks.push(...userSlot.tasks.slice(i))
-          break
-        }
-        insertAt = i + 1
-      } else {
-        console.log(`⏰ Tarea LOW "${currentTask.name}" fuera del período de espera, NORMAL puede ir después`)
-        insertAt = i + 1
       }
-    } else if (currentTask.priority === 'NORMAL') {
+
+      if (normalTasksBeforeThisLow < TASK_ASSIGNMENT_THRESHOLDS.NORMAL_TASKS_BEFORE_LOW_THRESHOLD) {
+        insertAt = i
+        break
+      }
       insertAt = i + 1
     }
   }
 
-  if (insertAt === 0) {
-    calculatedStartDate = userSlot.availableDate
-  } else {
-    const prevTask = userSlot.tasks[insertAt - 1]
-    calculatedStartDate = await getNextAvailableStart(new Date(prevTask.deadline))
-  }
-
-  return {
-    insertAt,
-    calculatedStartDate,
-    affectedTasks
-  }
+  return insertAt
 }
 
 async function calculateLowPriorityPosition(userSlot: UserSlot): Promise<QueueCalculationResult> {
@@ -786,7 +699,6 @@ async function calculateLowPriorityPosition(userSlot: UserSlot): Promise<QueueCa
 
   if (lastLowInWaitingPeriodIndex !== -1) {
     insertAt = lastLowInWaitingPeriodIndex + 1
-    console.log(`🔒 Insertando nueva tarea LOW después de tareas LOW en período de espera (posición ${insertAt})`)
   } else {
     let consecutiveLowCount = 0
     for (let i = userSlot.tasks.length - 1; i >= 0; i--) {
@@ -797,14 +709,10 @@ async function calculateLowPriorityPosition(userSlot: UserSlot): Promise<QueueCa
       }
     }
 
-    console.log(`📊 LOW: ${consecutiveLowCount} tareas LOW consecutivas al final`)
-
     if (consecutiveLowCount < TASK_ASSIGNMENT_THRESHOLDS.CONSECUTIVE_LOW_TASKS_THRESHOLD) {
-      console.log(`✅ LOW: Insertando al final en posición ${userSlot.tasks.length}`)
       insertAt = userSlot.tasks.length
     } else {
       insertAt = userSlot.tasks.length - consecutiveLowCount
-      console.log(`⚠️ LOW: Límite alcanzado, insertando en posición ${insertAt}`)
     }
   }
 
@@ -817,13 +725,129 @@ async function calculateLowPriorityPosition(userSlot: UserSlot): Promise<QueueCa
   }
 }
 
-export async function updateAffectedTasksPositions(
-  userId: string,
-  insertAt: number,
-  affectedTasks: Task[]
-): Promise<void> {
-  await shiftUserTasks(userId, 'NEW_TASK_PLACEHOLDER', new Date(), insertAt);
-  console.log(`✅ Actualizadas ${affectedTasks.length} posiciones de tareas para usuario ${userId} (vía updateAffectedTasksPositions -> shiftUserTasks)`);
+export async function calculateQueuePosition(userSlot: UserSlot, priority: Priority): Promise<QueueCalculationResult> {
+  let insertAt = 0
+  let calculatedStartDate: Date
+  const affectedTasks: Task[] = []
+
+  const queueAnalysis = analyzeQueueByPriority(userSlot.tasks)
+
+  switch (priority) {
+    case 'URGENT':
+      insertAt = queueAnalysis.lastUrgentIndex + 1
+      
+      // ✅ CORRECCIÓN: Calcular fecha basada en la posición de inserción
+      if (insertAt === 0) {
+        // Si es la primera URGENT, empieza ahora
+        calculatedStartDate = await getNextAvailableStart(new Date())
+      } else {
+        // Si va después de otras URGENT, empieza cuando termina la URGENT anterior
+        const previousTask = userSlot.tasks[insertAt - 1]
+        calculatedStartDate = await getNextAvailableStart(new Date(previousTask.deadline))
+      }
+      
+      affectedTasks.push(...userSlot.tasks.slice(insertAt))
+      break
+
+    case 'HIGH':
+      insertAt = calculateHighInterleavedPosition(userSlot.tasks, queueAnalysis)
+      
+      // ✅ La lógica de HIGH ya está correcta
+      if (insertAt === 0) {
+        calculatedStartDate = await getNextAvailableStart(new Date())
+      } else {
+        const previousTask = userSlot.tasks[insertAt - 1]
+        calculatedStartDate = await getNextAvailableStart(new Date(previousTask.deadline))
+      }
+      
+      affectedTasks.push(...userSlot.tasks.slice(insertAt))
+      break
+
+    case 'NORMAL':
+      insertAt = await calculateNormalPriorityPosition(userSlot)
+      calculatedStartDate = userSlot.availableDate
+      break
+
+    case 'LOW':
+      return await calculateLowPriorityPosition(userSlot)
+
+    default:
+      insertAt = userSlot.tasks.length
+      calculatedStartDate = userSlot.availableDate
+  }
+
+  return {
+    insertAt,
+    calculatedStartDate,
+    affectedTasks
+  }
+}
+
+function calculateHighInterleavedPosition(tasks: Task[], queueAnalysis: QueueAnalysis): number {
+  // Si no hay tareas, HIGH va en posición 0
+  if (tasks.length === 0) {
+    return 0
+  }
+
+  // Si solo hay URGENT, HIGH va después de todos los URGENT
+  if (queueAnalysis.urgentCount === tasks.length) {
+    return queueAnalysis.lastUrgentIndex + 1
+  }
+
+  // Buscar la zona no-URGENT para intercalar (después de todos los URGENT)
+  const nonUrgentStartIndex = queueAnalysis.lastUrgentIndex + 1
+  
+  // Si no hay URGENT, empezamos desde el inicio
+  const startIndex = queueAnalysis.urgentCount > 0 ? nonUrgentStartIndex : 0
+  
+  // Contar HIGH existentes después de los URGENT para saber qué posición toca
+  let existingHighCount = 0
+  for (let i = startIndex; i < tasks.length; i++) {
+    if (tasks[i].priority === 'HIGH') {
+      existingHighCount++
+    }
+  }
+
+  // La nueva HIGH debe ir en la posición: (existingHighCount + 1)
+  // Esto significa que si hay 0 HIGH, va en posición 1 (después del primer NORMAL)
+  // Si hay 1 HIGH, va en posición 3 (después del segundo NORMAL), etc.
+  const targetPosition = existingHighCount + 1
+
+  // Contar NORMAL desde el inicio de la zona no-URGENT
+  let normalCount = 0
+  
+  for (let i = startIndex; i < tasks.length; i++) {
+    // Si encontramos un NORMAL, incrementar el contador
+    if (tasks[i].priority === 'NORMAL') {
+      normalCount++
+      
+      // Si hemos visto suficientes NORMAL para nuestra posición objetivo
+      if (normalCount === targetPosition) {
+        // Insertar después de este NORMAL
+        return i + 1
+      }
+    }
+  }
+
+  // Si no hay suficientes NORMAL para el patrón, insertar al final
+  return tasks.length
+}
+
+/**
+ * ✅ FUNCIÓN AUXILIAR MEJORADA: Analiza la cola con más detalle
+ */
+interface QueueAnalysis {
+  urgentCount: number
+  highCount: number
+  normalCount: number
+  lowCount: number
+  lastUrgentIndex: number
+  lastHighIndex: number
+  firstNormalIndex: number
+  firstLowIndex: number
+  // Nuevos campos para patrón cebra
+  nonUrgentHighCount: number  // HIGH después de los URGENT
+  nonUrgentNormalCount: number // NORMAL después de los URGENT
 }
 
 export async function processUserAssignments(
@@ -840,13 +864,10 @@ export async function processUserAssignments(
   let latestDeadline = new Date()
   let primaryInsertAt = 0
 
-  console.log(`🚀 Procesando asignación para ${usersToAssign.length} usuarios`)
-
   for (const userId of usersToAssign) {
     const userSlot = userSlots.find(slot => slot.userId === userId)
 
     if (!userSlot) {
-      console.warn(`⚠️ Usuario ${userId} no encontrado en slots calculados`)
       continue
     }
 
@@ -856,7 +877,6 @@ export async function processUserAssignments(
     const userDeadline = await calculateWorkingDeadline(userStartDate, newTaskHours)
 
     if (queueResult.affectedTasks.length > 0) {
-      console.log(`🔄 Preparando para reacomodar ${queueResult.affectedTasks.length} tareas para el usuario ${userSlot.userName}.`)
       await shiftUserTasks(userSlot.userId, 'temp-new-task-id', userDeadline, queueResult.insertAt);
     }
 
@@ -872,8 +892,6 @@ export async function processUserAssignments(
         latestDeadline = userDeadline
       }
     }
-
-    console.log(`✅ Usuario ${userSlot.userName}: start=${userStartDate.toISOString()}, deadline=${userDeadline.toISOString()}`)
   }
 
   return {
