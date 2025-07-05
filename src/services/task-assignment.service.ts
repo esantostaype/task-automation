@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable prefer-const */
 // src/services/task-assignment.service.ts - VERSIÓN COMPLETA CON NUEVA LÓGICA DE PRIORIDADES
 
@@ -130,23 +129,19 @@ export async function calculateUserSlots(
   brandId: string
 ): Promise<UserSlot[]> {
   const userIdsSorted = users.map(u => u.id).sort().join('-');
-  const cacheKey = `${CACHE_KEYS.USER_SLOTS_PREFIX}${typeId}-${userIdsSorted}`;  // ✅ SIN BRAND EN CACHE
+  const cacheKey = `${CACHE_KEYS.USER_SLOTS_PREFIX}${typeId}-${brandId}-${userIdsSorted}`;
   const cachedUserSlots = getFromCache<UserSlot[]>(cacheKey);
 
   if (cachedUserSlots) {
-    console.log(`📋 User slots obtenidos del cache para tipo ${typeId}`);
     return cachedUserSlots;
   }
 
-  console.log(`🔍 Calculando user slots para tipo ${typeId} (considerando TODAS las tareas)`);
-
   const userIds = users.map(user => user.id);
 
-  // ✅ CRÍTICO: Obtener TODAS las tareas del tipo para estos usuarios (SIN FILTRAR POR BRAND)
   const allRelevantTasks = await prisma.task.findMany({
     where: {
-      typeId: typeId,        // ✅ MISMO TIPO
-      // ❌ NO FILTRAR POR brandId - Esto era el problema principal
+      typeId: typeId,
+      brandId: brandId,
       status: {
         notIn: [Status.COMPLETE]
       },
@@ -165,9 +160,6 @@ export async function calculateUserSlots(
     },
   }) as unknown as Task[];
 
-  console.log(`📋 Encontradas ${allRelevantTasks.length} tareas relevantes para el cálculo de slots`);
-
-  // ✅ Agrupar tareas por usuario (considerando todas las tareas del tipo)
   const tasksByUser: Record<string, Task[]> = {};
   for (const task of allRelevantTasks) {
     for (const assignee of task.assignees) {
@@ -180,7 +172,6 @@ export async function calculateUserSlots(
     }
   }
 
-  // Ordenar tareas por queuePosition para cada usuario
   for (const userId in tasksByUser) {
     tasksByUser[userId].sort((a, b) => a.queuePosition - b.queuePosition);
   }
@@ -188,11 +179,6 @@ export async function calculateUserSlots(
   const resultSlots = await Promise.all(users.map(async (user) => {
     const userTasks = tasksByUser[user.id] || [];
     const cargaTotal = userTasks.length;
-
-    console.log(`👤 Usuario ${user.name}: ${cargaTotal} tareas en cola total`);
-    userTasks.forEach((task, index) => {
-      console.log(`   ${index + 1}. [${task.queuePosition}] "${task.name}" (${task.brand.name}) - ${task.startDate.toISOString()} → ${task.deadline.toISOString()}`);
-    });
 
     let availableDate: Date;
     let lastTaskDeadline: Date | undefined;
@@ -225,17 +211,14 @@ export async function calculateUserSlots(
 
 async function getVacationAwareUserSlots(
   typeId: number, 
-  brandId: string, // Solo para buscar usuarios compatibles
+  brandId: string, 
   taskDurationDays: number
 ): Promise<VacationAwareUserSlot[]> {
-  console.log(`🏖️ Calculando vacation-aware slots para tipo ${typeId} (brand ${brandId} solo para roles)`);
-
   const allUsersWithRoles = await prisma.user.findMany({
     where: { active: true },
     include: {
       roles: {
         where: {
-          typeId: typeId,
           OR: [
             { brandId: brandId },
             { brandId: null }
@@ -253,16 +236,14 @@ async function getVacationAwareUserSlots(
   });
 
   const compatibleUsers = allUsersWithRoles.filter(user =>
-    user.roles.length > 0 // Solo usuarios con roles compatibles
+    user.roles.some(role => role.typeId === typeId)
   );
 
   const userIds = compatibleUsers.map(user => user.id);
-  
-  // ✅ CRÍTICO: Obtener TODAS las tareas del tipo (SIN FILTRAR POR BRAND)
   const allRelevantTasks = await prisma.task.findMany({
     where: {
-      typeId: typeId,        // ✅ MISMO TIPO
-      // ❌ NO FILTRAR POR brandId - brandId solo define dónde se crea en ClickUp
+      typeId: typeId,
+      brandId: brandId,
       status: {
         notIn: [Status.COMPLETE]
       },
@@ -281,8 +262,6 @@ async function getVacationAwareUserSlots(
     },
   }) as unknown as Task[];
 
-  console.log(`📋 Considerando ${allRelevantTasks.length} tareas para vacation-aware slots`);
-
   const tasksByUser: Record<string, Task[]> = {};
   for (const task of allRelevantTasks) {
     for (const assignee of task.assignees) {
@@ -300,8 +279,6 @@ async function getVacationAwareUserSlots(
   for (const user of compatibleUsers) {
     const userTasks = tasksByUser[user.id] || [];
     userTasks.sort((a, b) => a.queuePosition - b.queuePosition);
-
-    console.log(`👤 ${user.name}: ${userTasks.length} tareas total en cola`);
 
     let baseAvailableDate: Date;
     if (userTasks.length > 0) {
@@ -500,7 +477,7 @@ export async function getBestUserWithCache(
 ): Promise<UserSlot | null> {
   
   if (durationDays) {
-    const cacheKey = `${CACHE_KEYS.BEST_USER_SELECTION_PREFIX}${typeId}-${priority}-vacation-${durationDays}`;  // ✅ SIN BRAND
+    const cacheKey = `${CACHE_KEYS.BEST_USER_SELECTION_PREFIX}${typeId}-${brandId}-${priority}-vacation-${durationDays}`;
     let bestSlot = getFromCache<UserSlot | null>(cacheKey);
 
     if (bestSlot !== undefined) {
@@ -529,7 +506,7 @@ export async function getBestUserWithCache(
     return compatibleSlot;
   }
   
-  const cacheKey = `${CACHE_KEYS.BEST_USER_SELECTION_PREFIX}${typeId}-${priority}`;  // ✅ SIN BRAND
+  const cacheKey = `${CACHE_KEYS.BEST_USER_SELECTION_PREFIX}${typeId}-${brandId}-${priority}`;
   let bestSlot = getFromCache<UserSlot | null>(cacheKey);
 
   if (bestSlot !== undefined) {
@@ -753,21 +730,18 @@ export async function calculateQueuePosition(userSlot: UserSlot, priority: Prior
   let calculatedStartDate: Date
   const affectedTasks: Task[] = []
 
-  console.log(`🎯 Calculando posición de cola para prioridad ${priority}`);
-  console.log(`📋 Usuario tiene ${userSlot.tasks.length} tareas en cola:`);
-  userSlot.tasks.forEach((task, index) => {
-    console.log(`   ${index}. [${task.queuePosition}] "${task.name}" (${task.brand.name}) - ${task.priority}`);
-  });
-
-  const queueAnalysis = analyzeQueueByPriority(userSlot.tasks);
+  const queueAnalysis = analyzeQueueByPriority(userSlot.tasks)
 
   switch (priority) {
     case 'URGENT':
       insertAt = queueAnalysis.lastUrgentIndex + 1
       
+      // ✅ CORRECCIÓN: Calcular fecha basada en la posición de inserción
       if (insertAt === 0) {
+        // Si es la primera URGENT, empieza ahora
         calculatedStartDate = await getNextAvailableStart(new Date())
       } else {
+        // Si va después de otras URGENT, empieza cuando termina la URGENT anterior
         const previousTask = userSlot.tasks[insertAt - 1]
         calculatedStartDate = await getNextAvailableStart(new Date(previousTask.deadline))
       }
@@ -778,6 +752,7 @@ export async function calculateQueuePosition(userSlot: UserSlot, priority: Prior
     case 'HIGH':
       insertAt = calculateHighInterleavedPosition(userSlot.tasks, queueAnalysis)
       
+      // ✅ La lógica de HIGH ya está correcta
       if (insertAt === 0) {
         calculatedStartDate = await getNextAvailableStart(new Date())
       } else {
@@ -800,8 +775,6 @@ export async function calculateQueuePosition(userSlot: UserSlot, priority: Prior
       insertAt = userSlot.tasks.length
       calculatedStartDate = userSlot.availableDate
   }
-
-  console.log(`✅ Nueva tarea será insertada en posición ${insertAt}`);
 
   return {
     insertAt,
