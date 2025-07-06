@@ -1,3 +1,4 @@
+/* eslint-disable react/no-unescaped-entities */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React from "react";
 import {
@@ -13,9 +14,17 @@ import { LabelImportantIcon, Layers01Icon } from "@hugeicons/core-free-icons";
 import { TextFieldError } from "@/components";
 import { Tier } from "@prisma/client";
 
+// ✅ Tipo unificado para todas las opciones
+interface CategoryOption {
+  label: string;
+  value: string;
+  isExisting: boolean;
+  category?: TaskCategory & { typeName: string };
+}
+
 interface CategorySelectProps {
   categories: (TaskCategory & { typeName: string })[];
-  value: string | null; // Puede ser ID de categoría existente o nombre de nueva categoría
+  value: string | null;
   onChange: (
     value: string | null,
     isNew?: boolean,
@@ -25,10 +34,11 @@ interface CategorySelectProps {
   touched?: boolean;
   error?: string;
   loading?: boolean;
-  // Nuevos props para crear categoría
   selectedTier: Tier | null;
   onTierChange: (tier: Tier | null) => void;
-  showTierSelection?: boolean; // Se muestra cuando se va a crear una nueva categoría
+  showTierSelection?: boolean;
+  // ✅ Nueva prop para notificar cuando se está escribiendo
+  onTypingNewCategory?: (isTyping: boolean) => void;
 }
 
 export const CategorySelect: React.FC<CategorySelectProps> = ({
@@ -42,28 +52,59 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
   selectedTier,
   onTierChange,
   showTierSelection = false,
+  onTypingNewCategory, // ✅ Nueva prop
 }) => {
+  // ✅ Estado para el texto actual del input
+  const [inputValue, setInputValue] = React.useState('');
+
   // Determinar si la categoría actual es nueva
   const isNewCategory = value
     ? !categories.find((cat) => cat.id.toString() === value)
     : false;
 
-  // Crear opciones del autocomplete que incluyan una opción para crear nueva
-  const autocompleteOptions = React.useMemo(() => {
-    const existingOptions = categories.map((cat) => ({
+  // ✅ Determinar si el input actual es una nueva categoría
+  const isInputNewCategory = React.useMemo(() => {
+    if (!inputValue.trim()) return false;
+    
+    // Verificar si el input coincide exactamente con alguna categoría existente
+    const existingCategory = categories.find(
+      (cat) => cat.name.toLowerCase() === inputValue.toLowerCase()
+    );
+    
+    return !existingCategory;
+  }, [inputValue, categories]);
+
+  // ✅ Efecto para sincronizar inputValue con value
+  React.useEffect(() => {
+    if (value && isNewCategory) {
+      setInputValue(value);
+    } else if (!value) {
+      setInputValue('');
+    }
+  }, [value, isNewCategory]);
+
+  // ✅ Efecto para notificar al padre cuando se está escribiendo nueva categoría
+  React.useEffect(() => {
+    if (onTypingNewCategory) {
+      onTypingNewCategory(isInputNewCategory);
+    }
+  }, [isInputNewCategory, onTypingNewCategory]);
+
+  // ✅ Crear opciones del autocomplete (solo CategoryOption[])
+  const autocompleteOptions = React.useMemo((): CategoryOption[] => {
+    return categories.map((cat) => ({
       label: cat.name,
       value: cat.id.toString(),
       isExisting: true,
       category: cat,
     }));
-
-    return existingOptions;
   }, [categories]);
 
-  // Encontrar la opción seleccionada
-  const selectedOption = React.useMemo(() => {
+  // ✅ Encontrar la opción seleccionada - siempre CategoryOption o null
+  const selectedOption = React.useMemo((): CategoryOption | null => {
     if (!value) return null;
 
+    // Buscar en categorías existentes
     const existingCategory = categories.find(
       (cat) => cat.id.toString() === value
     );
@@ -76,23 +117,23 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
       };
     }
 
-    // Nueva categoría
+    // ✅ Para nuevas categorías, crear un CategoryOption temporal
     return {
       label: value,
       value: value,
       isExisting: false,
-      category: null,
+      // category es undefined para nuevas categorías
     };
   }, [value, categories]);
 
-  const handleAutocompleteChange = (event: any, newValue: any) => {
+  const handleAutocompleteChange = (event: any, newValue: CategoryOption | string | null) => {
     if (!newValue) {
       onChange(null);
       onCategoryChange();
       return;
     }
 
-    // Si es string (texto libre), es nueva categoría
+    // Si es string (texto libre desde freeSolo), es nueva categoría
     if (typeof newValue === "string") {
       const trimmedValue = newValue.trim();
       if (trimmedValue) {
@@ -102,12 +143,13 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
       return;
     }
 
-    // Si es objeto de categoría existente
-    if (newValue.isExisting) {
+    // Si es CategoryOption
+    if (newValue.isExisting && newValue.category) {
+      // Categoría existente
       onChange(newValue.value, false);
       onCategoryChange();
     } else {
-      // Nueva categoría desde autocomplete
+      // Nueva categoría (CategoryOption sin category)
       const trimmedLabel = newValue.label.trim();
       if (trimmedLabel) {
         onChange(trimmedLabel, true, trimmedLabel);
@@ -119,6 +161,17 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
   const getPlaceholder = () => {
     if (loading) return "Loading categories...";
     return "Search existing or type new category name...";
+  };
+
+  // ✅ Función para obtener el label (ahora solo maneja CategoryOption)
+  const getOptionLabel = (option: CategoryOption | string) => {
+    if (typeof option === "string") return option;
+    return option.label;
+  };
+
+  // ✅ Función para comparar opciones
+  const isOptionEqualToValue = (option: CategoryOption, value: CategoryOption) => {
+    return option.value === value.value && option.isExisting === value.isExisting;
   };
 
   return (
@@ -142,17 +195,37 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
         placeholder={getPlaceholder()}
         value={selectedOption}
         onChange={handleAutocompleteChange}
+        onInputChange={(event, newInputValue) => {
+          // ✅ Actualizar el estado del input en tiempo real
+          setInputValue(newInputValue);
+          
+          // ✅ NUEVO: Actualizar el valor del formulario en tiempo real para nuevas categorías
+          if (newInputValue.trim()) {
+            // Verificar si es una categoría existente
+            const existingCategory = categories.find(
+              (cat) => cat.name.toLowerCase() === newInputValue.toLowerCase()
+            );
+            
+            if (!existingCategory) {
+              // Es una nueva categoría, actualizar el valor
+              onChange(newInputValue.trim(), true, newInputValue.trim());
+            }
+          } else {
+            // Si está vacío, limpiar
+            onChange(null);
+          }
+        }}
+        inputValue={inputValue}
         options={autocompleteOptions}
         freeSolo
         clearOnBlur={false}
         selectOnFocus
         handleHomeEndKeys
         disabled={loading}
-        getOptionLabel={(option) => {
-          if (typeof option === "string") return option;
-          return option.label || "";
-        }}
+        getOptionLabel={getOptionLabel}
+        isOptionEqualToValue={isOptionEqualToValue}
         filterOptions={(options, { inputValue }) => {
+          // ✅ Ahora options es siempre CategoryOption[]
           const filtered = options.filter((option) =>
             option.label.toLowerCase().includes(inputValue.toLowerCase())
           );
@@ -161,7 +234,9 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
         renderOption={(props, option, { selected }) => (
           <li
             {...props}
-            className={`px-3 py-2 cursor-pointer transition-colors ${selected ? "bg-[var(--soft-bg-success)]" : ""} hover:bg-[var(--soft-bg-hover)] active:bg-[var(--soft-bg-active)]`}
+            className={`px-3 py-2 cursor-pointer transition-colors ${
+              selected ? "bg-[var(--soft-bg-success)]" : ""
+            } hover:bg-[var(--soft-bg-hover)] active:bg-[var(--soft-bg-active)]`}
           >
             {option.label}
           </li>
@@ -169,12 +244,23 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
         noOptionsText={loading ? "Loading..." : "Type to create a new category"}
       />
 
-      {/* Mostrar selección de Tier cuando se va a crear nueva categoría */}
-      {showTierSelection && (
+      {/* ✅ Mostrar selección de Tier cuando el input es una nueva categoría O cuando showTierSelection es true */}
+      {(isInputNewCategory || showTierSelection) && (
         <Box sx={{ mt: 2 }}>
           <FormLabel sx={{ mt: 2 }}>
             <HugeiconsIcon icon={Layers01Icon} size={20} strokeWidth={1.5} />
             New Category Tier
+            {isInputNewCategory && (
+              <span
+                style={{
+                  color: "var(--joy-palette-success-500)",
+                  marginLeft: "4px",
+                  fontSize: "0.75rem",
+                }}
+              >
+                for "{inputValue}"
+              </span>
+            )}
           </FormLabel>
           <RadioGroup
             orientation="horizontal"

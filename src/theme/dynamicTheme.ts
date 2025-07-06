@@ -206,6 +206,7 @@ export const dynamicTheme = extendTheme({
         root: () => ({
           fontSize: '1rem',
           padding: '0.8rem 1rem',
+          height: '3.125rem',
           backgroundColor: 'var(--soft-bg)',
           border: 'none',
           transition: 'background-color 0.1s ease-in-out',

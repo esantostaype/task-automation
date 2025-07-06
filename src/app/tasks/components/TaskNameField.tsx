@@ -24,6 +24,7 @@ export const TaskNameField: React.FC<TaskNameFieldProps> = ({ touched, error }) 
       as={Input}
       name="name"
       error={touched && !!error}
+      placeholder="Enter a Task Name"
     />
     { touched && error && ( <TextFieldError label={ error } /> )}
   </div>

@@ -1,5 +1,5 @@
 import React from 'react'
-import { Field, useFormikContext } from 'formik'
+import { useFormikContext } from 'formik'
 import { FormLabel, Input } from '@mui/joy'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { DateTimeIcon } from '@hugeicons/core-free-icons'
@@ -15,18 +15,44 @@ interface DurationFieldProps {
   fetchingSuggestion: boolean
   touched?: boolean
   error?: string
+  // ✅ Nueva prop para saber si se está escribiendo una nueva categoría
+  isTypingNewCategory?: boolean
+  // ✅ Nueva prop para notificar cuando se completa la duración
+  onDurationComplete?: (duration: string) => void
 }
 
 export const DurationField: React.FC<DurationFieldProps> = ({
   fetchingSuggestion,
   touched, 
-  error 
+  error,
+  isTypingNewCategory = false, // ✅ Nueva prop
+  onDurationComplete // ✅ Nueva prop
 }) => {
-  const { values } = useFormikContext<ExtendedFormValues>()
+  const { values, setFieldValue } = useFormikContext<ExtendedFormValues>()
+  
+  // ✅ Estado para el valor del input en tiempo real
+  const [inputValue, setInputValue] = React.useState('')
   
   const numberOfAssignees = values.assignedUserIds.length
   const originalDuration = parseFloat(values.durationDays as string) || 0
   const effectiveDuration = numberOfAssignees > 0 ? originalDuration / numberOfAssignees : originalDuration
+
+  // ✅ Determinar si mostrar "(Manual)" - cuando está escribiendo nueva categoría O cuando hay input manual
+  const showManualIndicator = React.useMemo(() => {
+    // Si está escribiendo una nueva categoría, es manual
+    if (isTypingNewCategory) return true
+    
+    // Si es una nueva categoría confirmada, es manual
+    if (values.isNewCategory) return true
+    
+    // Si hay input pero no hay sugerencia activa, es manual
+    return inputValue.trim() !== '' && !fetchingSuggestion
+  }, [isTypingNewCategory, values.isNewCategory, inputValue, fetchingSuggestion])
+
+  // ✅ Sincronizar inputValue con el valor de Formik
+  React.useEffect(() => {
+    setInputValue(values.durationDays as string || '')
+  }, [values.durationDays])
 
   const getPlaceholder = () => {
     if (fetchingSuggestion) {
@@ -38,6 +64,27 @@ export const DurationField: React.FC<DurationFieldProps> = ({
     return "Duration in days"
   }
 
+  // ✅ Manejar cambios en el input
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = event.target.value
+    setInputValue(newValue)
+    setFieldValue('durationDays', newValue)
+  }
+
+  // ✅ Manejar cuando se pierde el foco (blur)
+  const handleBlur = (event: React.FocusEvent<HTMLInputElement>) => {
+    const value = event.target.value.trim()
+    
+    // Si hay callback y valor válido, notificar al padre
+    if (onDurationComplete && value) {
+      const durationValue = parseFloat(value)
+      if (durationValue > 0) {
+        console.log('⏰ Duration completed:', value)
+        onDurationComplete(value)
+      }
+    }
+  }
+
   return (
     <div>
       <FormLabel>
@@ -47,17 +94,20 @@ export const DurationField: React.FC<DurationFieldProps> = ({
           strokeWidth={1.5}
         />
         Duration
-        {values.isNewCategory && (
+        {/* ✅ Mostrar "(Manual)" cuando se detecta que está escribiendo nueva categoría o entrada manual */}
+        {showManualIndicator && (
           <span style={{ color: 'var(--joy-palette-warning-500)', marginLeft: '4px' }}>
             (Manual)
           </span>
         )}
       </FormLabel>
       
-      <Field
-        as={Input}
+      <Input
         name="durationDays"
         type="number"
+        value={inputValue}
+        onChange={handleInputChange}
+        onBlur={handleBlur} // ✅ Agregar handler de blur
         placeholder={getPlaceholder()}
         error={touched && !!error}
         disabled={fetchingSuggestion}
