@@ -1,4 +1,5 @@
 import * as Yup from 'yup'
+import { Tier } from '@prisma/client'
 
 export const validationSchema = Yup.object({
   name: Yup.string().required('Name is required'),
@@ -19,5 +20,17 @@ export const validationSchema = Yup.object({
         return !isNaN(num) && num >= 0.1
       }
     )
-    .required('Duration is required')
+    .required('Duration is required'),
+  // Nuevos campos para crear categoría
+  isNewCategory: Yup.boolean(),
+  newCategoryName: Yup.string().when('isNewCategory', {
+    is: true,
+    then: (schema) => schema.required('Category name is required'),
+    otherwise: (schema) => schema.notRequired()
+  }),
+  newCategoryTier: Yup.mixed<Tier>().when('isNewCategory', {
+    is: true,
+    then: (schema) => schema.oneOf(Object.values(Tier)).required('Tier selection is required'),
+    otherwise: (schema) => schema.notRequired()
+  })
 })

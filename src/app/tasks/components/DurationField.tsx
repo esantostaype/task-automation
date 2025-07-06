@@ -7,6 +7,10 @@ import { FormValues } from '@/interfaces'
 import { formatDaysToReadable } from '@/utils/duration-utils'
 import { TextFieldError, TextFieldHelp } from '@/components'
 
+interface ExtendedFormValues extends FormValues {
+  isNewCategory: boolean
+}
+
 interface DurationFieldProps {
   fetchingSuggestion: boolean
   touched?: boolean
@@ -14,14 +18,25 @@ interface DurationFieldProps {
 }
 
 export const DurationField: React.FC<DurationFieldProps> = ({
+  fetchingSuggestion,
   touched, 
   error 
 }) => {
-  const { values } = useFormikContext<FormValues>()
+  const { values } = useFormikContext<ExtendedFormValues>()
   
   const numberOfAssignees = values.assignedUserIds.length
   const originalDuration = parseFloat(values.durationDays as string) || 0
   const effectiveDuration = numberOfAssignees > 0 ? originalDuration / numberOfAssignees : originalDuration
+
+  const getPlaceholder = () => {
+    if (fetchingSuggestion) {
+      return "Calculating suggested duration..."
+    }
+    if (values.isNewCategory) {
+      return "Enter duration in days"
+    }
+    return "Duration in days"
+  }
 
   return (
     <div>
@@ -32,19 +47,28 @@ export const DurationField: React.FC<DurationFieldProps> = ({
           strokeWidth={1.5}
         />
         Duration
+        {values.isNewCategory && (
+          <span style={{ color: 'var(--joy-palette-warning-500)', marginLeft: '4px' }}>
+            (Manual)
+          </span>
+        )}
       </FormLabel>
+      
       <Field
         as={Input}
         name="durationDays"
         type="number"
-        placeholder="Duration in days"
+        placeholder={getPlaceholder()}
         error={touched && !!error}
+        disabled={fetchingSuggestion}
         slotProps={{
           input: {
             step: 0.1,
           },
         }}
       />
+
+      {/* Mostrar información de duración efectiva */}
       {numberOfAssignees > 1 && originalDuration > 0 && (
         <TextFieldHelp>
           Effective duration per user: {formatDaysToReadable(effectiveDuration)}
@@ -59,7 +83,7 @@ export const DurationField: React.FC<DurationFieldProps> = ({
         </TextFieldHelp>
       )}
       
-      { touched && error && ( <TextFieldError label={ error } /> )}
+      {touched && error && <TextFieldError label={error} />}
     </div>
   )
 }

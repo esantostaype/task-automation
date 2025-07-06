@@ -228,6 +228,13 @@ export interface ClientToServerEvents {
   update_task: (taskId: string, updates: Partial<UpdatedTask>) => void
 }
 
+export interface ExtendedFormValues extends FormValues {
+  newCategoryTier: Tier | null
+  isNewCategory: boolean
+  newCategoryName: string
+}
+
+// También necesitamos actualizar FormValues para que sea más flexible
 export interface FormValues {
   name: string
   description: string
@@ -236,6 +243,25 @@ export interface FormValues {
   brandId: string
   assignedUserIds: string[]
   durationDays: string
+}
+
+// Nueva interfaz para el request de creación de categoría
+export interface CreateCategoryRequest {
+  name: string
+  duration: number
+  tier: Tier
+  typeId: number
+}
+
+// Nueva interfaz para la respuesta de creación de categoría
+export interface CreateCategoryResponse {
+  id: number
+  name: string
+  duration: number
+  tier: Tier
+  typeId: number
+  createdAt: string
+  updatedAt: string
 }
 
 export interface SuggestedAssignment {

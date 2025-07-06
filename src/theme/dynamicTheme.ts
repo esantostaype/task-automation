@@ -153,14 +153,16 @@ export const dynamicTheme = extendTheme({
           width: '1.5rem',
           border: 'none',
           transition: 'background-color 0.1s ease-in-out',
+          display: 'flex',
+          alignItems: 'center',
           backgroundColor: 'var(--soft-bg)',
           '&:hover': {
             backgroundColor: 'var(--soft-bg-hover)',
           },
           ...(ownerState.checked && {
-            backgroundColor: 'var(--accent-500)',
+            backgroundColor: 'var(--color-accent-500)',
             '&:hover': {
-              backgroundColor: 'var(--accent-600)',
+              backgroundColor: 'var(--color-accent-600)',
             },
             color: 'black'
           })
@@ -198,6 +200,37 @@ export const dynamicTheme = extendTheme({
           display: 'flex',
         }),
       },
+    },
+    JoyAutocomplete: {
+      styleOverrides: {
+        root: () => ({
+          fontSize: '1rem',
+          padding: '0.8rem 1rem',
+          backgroundColor: 'var(--soft-bg)',
+          border: 'none',
+          transition: 'background-color 0.1s ease-in-out',
+          '&:hover': {
+            backgroundColor: 'var(--soft-bg-hover)',
+          },
+        }),
+        listbox: {
+          fontSize: '1rem',
+          backgroundColor: 'var(--surface)',
+          boxShadow: 'none',
+          border: 'none',
+        },
+        option: {
+          '&&:hover': {
+            backgroundColor: 'var(--soft-bg-hover)',
+          },
+          '&&:active': {
+            backgroundColor: 'var(--soft-bg-active)',
+          },
+          '&&[aria-selected="true"]': {
+            backgroundColor: 'var(--soft-bg-success)',
+          },
+        }
+      }
     }
   }
 })

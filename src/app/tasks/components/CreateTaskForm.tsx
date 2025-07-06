@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
@@ -6,6 +7,7 @@ import axios from 'axios'
 import { Formik, Form, useFormikContext } from 'formik'
 import { Button, Typography } from '@mui/joy'
 import { toast } from 'react-toastify'
+import { Tier } from '@prisma/client'
 
 import { SpinnerCreatingTask, SpinnerSearching } from '@/components'
 import {
@@ -24,6 +26,12 @@ import { getTypeKind } from '@/utils'
 import { validationSchema } from '@/validation/taskValidation'
 import { FormValues, User } from '@/interfaces'
 
+interface ExtendedFormValues extends FormValues {
+  newCategoryTier: Tier | null
+  isNewCategory: boolean
+  newCategoryName: string
+}
+
 interface FormikSuggestionLogicProps {
   users: User[]
   setSuggestedAssignment: React.Dispatch<
@@ -32,9 +40,9 @@ interface FormikSuggestionLogicProps {
   setFetchingSuggestion: React.Dispatch<React.SetStateAction<boolean>>
   resetCategory: boolean
   setResetCategory: React.Dispatch<React.SetStateAction<boolean>>
-  // ✅ NUEVOS PROPS PARA CONTROL MANUAL
   userHasManuallyChanged: boolean
   setUserHasManuallyChanged: React.Dispatch<React.SetStateAction<boolean>>
+  isNewCategory: boolean
 }
 
 const FormikSuggestionLogic: React.FC<FormikSuggestionLogicProps> = ({
@@ -44,20 +52,26 @@ const FormikSuggestionLogic: React.FC<FormikSuggestionLogicProps> = ({
   setResetCategory,
   userHasManuallyChanged,
   setUserHasManuallyChanged,
+  isNewCategory,
 }) => {
-  const { values, setFieldValue } = useFormikContext<FormValues>()
+  const { values, setFieldValue } = useFormikContext<ExtendedFormValues>()
+
+  // Solo hacer sugerencias si NO es una nueva categoría
+  const shouldFetchSuggestion = !isNewCategory && values.brandId && values.categoryId && values.priority
 
   const { suggestedAssignment, fetchingSuggestion } = useTaskSuggestion(
-    values.brandId,
-    values.categoryId,
-    values.priority
+    shouldFetchSuggestion ? values.brandId : '',
+    shouldFetchSuggestion ? values.categoryId : '',
+    shouldFetchSuggestion ? values.priority : ''
   )
 
   useEffect(() => {
     if (resetCategory) {
       setFieldValue("categoryId", "")
+      setFieldValue("isNewCategory", false)
+      setFieldValue("newCategoryName", "")
+      setFieldValue("newCategoryTier", null)
       setResetCategory(false)
-      // ✅ Al resetear categoría, permitir nuevas sugerencias
       setUserHasManuallyChanged(false)
     }
   }, [resetCategory, setFieldValue, setResetCategory, setUserHasManuallyChanged])
@@ -66,14 +80,9 @@ const FormikSuggestionLogic: React.FC<FormikSuggestionLogicProps> = ({
     setFetchingSuggestion(fetchingSuggestion)
     setSuggestedAssignment(suggestedAssignment)
 
-    if (suggestedAssignment) {
-      // ✅ Actualizar duración siempre (esto no interfiere con selección manual)
-      setFieldValue(
-        "durationDays",
-        suggestedAssignment.durationDays.toString()
-      )
+    if (suggestedAssignment && !isNewCategory) {
+      setFieldValue("durationDays", suggestedAssignment.durationDays.toString())
       
-      // ✅ SOLO actualizar usuarios si el usuario NO ha hecho cambios manuales
       if (!userHasManuallyChanged) {
         if (
           values.assignedUserIds.length === 0 ||
@@ -85,9 +94,9 @@ const FormikSuggestionLogic: React.FC<FormikSuggestionLogicProps> = ({
       } else {
         console.log('👤 Usuario ha hecho cambios manuales, manteniendo selección actual')
       }
-    } else if (!fetchingSuggestion && values.brandId && values.categoryId) {
+    } else if (!fetchingSuggestion && !isNewCategory && values.brandId && values.categoryId) {
+      // Solo limpiar duración si NO es nueva categoría
       setFieldValue("durationDays", "")
-      // ✅ SOLO limpiar usuarios si NO hay cambios manuales
       if (!userHasManuallyChanged && values.assignedUserIds.length === 0) {
         setFieldValue("assignedUserIds", [])
       }
@@ -102,7 +111,8 @@ const FormikSuggestionLogic: React.FC<FormikSuggestionLogicProps> = ({
     setSuggestedAssignment,
     setFetchingSuggestion,
     values.assignedUserIds,
-    userHasManuallyChanged, // ✅ Agregar dependencia
+    userHasManuallyChanged,
+    isNewCategory,
   ])
 
   return null
@@ -111,18 +121,15 @@ const FormikSuggestionLogic: React.FC<FormikSuggestionLogicProps> = ({
 export const CreateTaskForm: React.FC = () => {
   const { types, brands, users, loading: dataLoading } = useTaskData()
   const [loading, setLoading] = useState(false)
-  const [selectedKind, setSelectedKind] = useState<"UX/UI" | "Graphic">(
-    "UX/UI"
-  )
+  const [selectedKind, setSelectedKind] = useState<"UX/UI" | "Graphic">("UX/UI")
   const [resetCategory, setResetCategory] = useState(false)
+  const [categoryInputValue, setCategoryInputValue] = useState('') // Mantener el texto escrito
 
   const [suggestedAssignment, setSuggestedAssignment] = useState<{
     userId: string
     durationDays: number
   } | null>(null)
   const [fetchingSuggestion, setFetchingSuggestion] = useState(false)
-
-  // ✅ NUEVO ESTADO: Rastrear si el usuario ha hecho cambios manuales
   const [userHasManuallyChanged, setUserHasManuallyChanged] = useState(false)
 
   const suggestedUser = suggestedAssignment
@@ -133,8 +140,8 @@ export const CreateTaskForm: React.FC = () => {
 
   useEffect(() => {
     setResetCategory(true)
-    // ✅ Al cambiar el tipo de tarea, resetear el estado manual
     setUserHasManuallyChanged(false)
+    // NO limpiar categoryInputValue aquí para mantener lo escrito
   }, [selectedKind])
 
   const filteredTypes = types.filter((type) => {
@@ -142,7 +149,14 @@ export const CreateTaskForm: React.FC = () => {
     return typeKind === selectedKind
   })
 
-  const initialValues: FormValues = {
+  const allCategories = filteredTypes.flatMap((type) =>
+    type.categories.map((cat) => ({
+      ...cat,
+      typeName: type.name,
+    }))
+  )
+
+  const initialValues: ExtendedFormValues = {
     name: "Task 1",
     description: "",
     categoryId: "",
@@ -150,19 +164,72 @@ export const CreateTaskForm: React.FC = () => {
     brandId: "",
     assignedUserIds: [],
     durationDays: "",
+    newCategoryTier: null,
+    isNewCategory: false,
+    newCategoryName: "",
   }
 
-  const handleSubmit = async (values: FormValues) => {
+  const handleSubmit = async (values: ExtendedFormValues) => {
     try {
-      const selectedType = filteredTypes.find((type) =>
-        type.categories.some((cat) => cat.id === Number(values.categoryId))
-      )
+      let finalCategoryId = values.categoryId
+      let finalTypeId: number
 
-      if (!selectedType) {
-        toast.error(
-          "No se pudo encontrar el tipo de tarea para la categoría seleccionada"
+      // Si es una nueva categoría, crearla primero
+      if (values.isNewCategory) {
+        if (!values.newCategoryName.trim()) {
+          toast.error("Category name is required for new category")
+          return
+        }
+
+        if (!values.newCategoryTier) {
+          toast.error("Tier selection is required for new category")
+          return
+        }
+
+        const finalDurationDays = parseFloat(values.durationDays as string)
+        if (finalDurationDays <= 0) {
+          toast.error("Duration must be greater than zero for new category")
+          return
+        }
+
+        // Encontrar el tipo correspondiente al selectedKind
+        const selectedType = filteredTypes[0]
+        if (!selectedType) {
+          toast.error("No type found for the selected kind")
+          return
+        }
+
+        finalTypeId = selectedType.id
+
+        // Crear la nueva categoría
+        console.log('🆕 Creando nueva categoría:', {
+          name: values.newCategoryName.trim(),
+          duration: finalDurationDays,
+          tier: values.newCategoryTier,
+          typeId: finalTypeId
+        })
+
+        const categoryResponse = await axios.post('/api/categories', {
+          name: values.newCategoryName.trim(),
+          duration: finalDurationDays,
+          tier: values.newCategoryTier,
+          typeId: finalTypeId
+        })
+
+        finalCategoryId = categoryResponse.data.id.toString()
+        console.log('✅ Nueva categoría creada con ID:', finalCategoryId)
+      } else {
+        // Categoría existente
+        const selectedType = filteredTypes.find((type) =>
+          type.categories.some((cat) => cat.id === Number(values.categoryId))
         )
-        return
+
+        if (!selectedType) {
+          toast.error("No se pudo encontrar el tipo de tarea para la categoría seleccionada")
+          return
+        }
+
+        finalTypeId = selectedType.id
       }
 
       const finalDurationDays = parseFloat(values.durationDays as string)
@@ -175,8 +242,8 @@ export const CreateTaskForm: React.FC = () => {
       const payload = {
         name: values.name.trim(),
         description: values.description.trim() || undefined,
-        typeId: selectedType.id,
-        categoryId: Number(values.categoryId),
+        typeId: finalTypeId,
+        categoryId: Number(finalCategoryId),
         priority: values.priority,
         brandId: values.brandId,
         assignedUserIds:
@@ -218,11 +285,11 @@ export const CreateTaskForm: React.FC = () => {
       )
 
       toast.success(
-        <TaskCreatedToastContent assignedUserNames={ assignedUserNames } startDate={ startDate } endDate={ endDate } />
+        <TaskCreatedToastContent assignedUserNames={assignedUserNames} startDate={startDate} endDate={endDate} />
       )
 
-      // ✅ RESETEAR ESTADO MANUAL DESPUÉS DE CREAR TAREA
       setUserHasManuallyChanged(false)
+      setCategoryInputValue('') // Limpiar el texto después de crear la tarea
 
     } catch (error: unknown) {
       setLoading(false)
@@ -236,25 +303,23 @@ export const CreateTaskForm: React.FC = () => {
     }
   }
 
-  // ✅ NUEVA FUNCIÓN: Manejar cambios manuales en la selección de usuarios
   const handleUserSelectionChange = (selectedUserIds: string[]) => {
     console.log('👤 Usuario cambió la selección manualmente:', selectedUserIds)
     setUserHasManuallyChanged(true)
     return selectedUserIds
   }
 
-  // ✅ NUEVA FUNCIÓN: Aplicar sugerencia automáticamente (botón/acción)
   const applySuggestion = () => {
     if (suggestedAssignment) {
       console.log('🤖 Aplicando sugerencia manualmente:', suggestedAssignment.userId)
-      setUserHasManuallyChanged(false) // Permitir futuras sugerencias automáticas
+      setUserHasManuallyChanged(false)
     }
   }
 
   return (
     <>
-      <SpinnerCreatingTask isActive={ loading } />
-      <SpinnerSearching isActive={ fetchingSuggestion } />
+      <SpinnerCreatingTask isActive={loading} />
+      <SpinnerSearching isActive={fetchingSuggestion} />
       <Formik
         initialValues={initialValues}
         validationSchema={validationSchema}
@@ -262,12 +327,21 @@ export const CreateTaskForm: React.FC = () => {
         enableReinitialize={true}
       >
         {({ values, errors, touched, setFieldValue }) => {
-          const allCategories = filteredTypes.flatMap((type) =>
-            type.categories.map((cat) => ({
-              ...cat,
-              typeName: type.name,
-            }))
-          )
+          const handleCategoryChange = (value: string | null, isNew?: boolean, newCategoryName?: string) => {
+            setFieldValue("categoryId", value || "")
+            setFieldValue("isNewCategory", isNew || false)
+            setFieldValue("newCategoryName", newCategoryName || "")
+            
+            if (isNew) {
+              // Si es nueva categoría, limpiar duración para que sea manual
+              setFieldValue("durationDays", "")
+              setFieldValue("assignedUserIds", [])
+              setSuggestedAssignment(null)
+            }
+            
+            setUserHasManuallyChanged(false)
+          }
+
           return (
             <Form className="flex flex-col gap-4">
               <FormikSuggestionLogic
@@ -278,7 +352,9 @@ export const CreateTaskForm: React.FC = () => {
                 setResetCategory={setResetCategory}
                 userHasManuallyChanged={userHasManuallyChanged}
                 setUserHasManuallyChanged={setUserHasManuallyChanged}
+                isNewCategory={values.isNewCategory}
               />
+              
               <TaskKindSwitch
                 selectedKind={selectedKind}
                 onKindChange={(kind) => {
@@ -287,11 +363,15 @@ export const CreateTaskForm: React.FC = () => {
                     setFieldValue("categoryId", "")
                     setFieldValue("durationDays", "")
                     setFieldValue("assignedUserIds", [])
+                    setFieldValue("isNewCategory", false)
+                    setFieldValue("newCategoryName", "")
+                    setFieldValue("newCategoryTier", null)
                     setSuggestedAssignment(null)
-                    setUserHasManuallyChanged(false) // ✅ Resetear estado manual
+                    setUserHasManuallyChanged(false)
                   }, 0)
                 }}
               />
+              
               <TaskNameField touched={touched.name} error={errors.name} />
 
               <BrandSelect
@@ -303,7 +383,7 @@ export const CreateTaskForm: React.FC = () => {
                     setFieldValue("durationDays", "")
                     setFieldValue("assignedUserIds", [])
                     setSuggestedAssignment(null)
-                    setUserHasManuallyChanged(false) // ✅ Resetear estado manual
+                    setUserHasManuallyChanged(false)
                   }, 0)
                 }}
                 touched={touched.brandId}
@@ -313,36 +393,40 @@ export const CreateTaskForm: React.FC = () => {
 
               <CategorySelect
                 categories={allCategories}
-                value={values.categoryId}
-                onChange={(value) => {
-                  setFieldValue("categoryId", value)
-                  setUserHasManuallyChanged(false) // ✅ Nueva categoría = permitir sugerencias
-                }}
+                value={values.categoryId || null}
+                onChange={handleCategoryChange}
                 onCategoryChange={() => {
                   setTimeout(() => {
-                    setFieldValue("durationDays", "")
-                    setFieldValue("assignedUserIds", [])
-                    setSuggestedAssignment(null)
-                    setUserHasManuallyChanged(false) // ✅ Resetear estado manual
+                    if (!values.isNewCategory) {
+                      setFieldValue("durationDays", "")
+                      setFieldValue("assignedUserIds", [])
+                      setSuggestedAssignment(null)
+                    }
+                    setUserHasManuallyChanged(false)
                   }, 0)
                 }}
                 touched={touched.categoryId}
                 error={errors.categoryId}
                 loading={dataLoading}
+                selectedTier={values.newCategoryTier}
+                onTierChange={(tier) => setFieldValue("newCategoryTier", tier)}
+                showTierSelection={values.isNewCategory}
               />
 
               <PrioritySelect
                 value={values.priority}
                 onChange={(value) => {
                   setFieldValue("priority", value)
-                  setUserHasManuallyChanged(false) // ✅ Nueva prioridad = permitir sugerencias
+                  if (!values.isNewCategory) {
+                    setUserHasManuallyChanged(false)
+                  }
                 }}
                 touched={touched.priority}
                 error={errors.priority}
               />
 
               <DurationField
-                fetchingSuggestion={fetchingSuggestion}
+                fetchingSuggestion={fetchingSuggestion && !values.isNewCategory}
                 touched={touched.durationDays}
                 error={errors.durationDays}
               />
@@ -354,8 +438,8 @@ export const CreateTaskForm: React.FC = () => {
                   const newSelection = handleUserSelectionChange(selectedUserIds)
                   setFieldValue("assignedUserIds", newSelection)
                 }}
-                suggestedUser={suggestedUser}
-                fetchingSuggestion={fetchingSuggestion}
+                suggestedUser={!values.isNewCategory ? suggestedUser : null}
+                fetchingSuggestion={fetchingSuggestion && !values.isNewCategory}
                 touched={touched.assignedUserIds}
                 error={
                   Array.isArray(errors.assignedUserIds)
@@ -363,7 +447,6 @@ export const CreateTaskForm: React.FC = () => {
                     : errors.assignedUserIds
                 }
                 loading={dataLoading}
-                // ✅ NUEVAS PROPS
                 userHasManuallyChanged={userHasManuallyChanged}
                 onApplySuggestion={applySuggestion}
               />
@@ -371,7 +454,7 @@ export const CreateTaskForm: React.FC = () => {
               <Button
                 type="submit"
                 fullWidth
-                disabled={loading || (brands.length === 0 && !dataLoading) || fetchingSuggestion}
+                disabled={loading || (brands.length === 0 && !dataLoading) || (fetchingSuggestion && !values.isNewCategory)}
                 size="lg"
               >
                 Create Task
