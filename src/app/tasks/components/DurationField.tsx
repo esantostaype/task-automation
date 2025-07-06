@@ -1,3 +1,4 @@
+// src/app/tasks/components/DurationField.tsx
 import React from 'react'
 import { useFormikContext } from 'formik'
 import { FormLabel, Input } from '@mui/joy'
@@ -73,6 +74,12 @@ export const DurationField: React.FC<DurationFieldProps> = ({
 
   // ✅ Manejar cuando se pierde el foco (blur)
   const handleBlur = (event: React.FocusEvent<HTMLInputElement>) => {
+    // Add defensive checks to ensure event and event.target are defined
+    if (!event || !event.target) {
+      console.error('❌ handleBlur: event or event.target is undefined', { event });
+      return; // Exit early if event is not valid
+    }
+
     const value = event.target.value.trim()
     
     // Si hay callback y valor válido, notificar al padre
