@@ -1,6 +1,7 @@
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { Providers } from './providers'
+import { Header } from '@/components'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -14,7 +15,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={ inter.className }>
       <body>
         <Providers>
-          <main className='flex'>
+          <main className='flex bg-white/2'>
+            <section className='flex-1'>
+              <Header/>
+            </section>
             { children }
           </main>
         </Providers>

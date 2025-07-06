@@ -1,6 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// src/utils/task-calculation-utils.ts - VERSIÓN CONSERVADORA
-
 import { Task } from '@/interfaces';
 import { emitTaskUpdateEvent, updateTaskInClickUp } from '@/services/clickup.service';
 import { prisma } from '@/utils/prisma';
@@ -145,6 +143,7 @@ export async function shiftUserTasks(userId: string, newTaskId: string, newDeadl
       assignees: {
         some: { userId: userId }
       }
+      // REMOVED: brandId: currentBrandId
     },
     orderBy: { queuePosition: 'asc' },
     include: { category: true }

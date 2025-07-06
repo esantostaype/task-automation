@@ -1,10 +1,9 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable prefer-const */
-// src/services/task-assignment.service.ts - VERSIÓN COMPLETA CON NUEVA LÓGICA DE PRIORIDADES
-
 import { prisma } from '@/utils/prisma';
 import { Priority, Status } from '@prisma/client';
 import { UserSlot, UserWithRoles, Task, QueueCalculationResult, TaskTimingResult, UserVacation, VacationAwareUserSlot } from '@/interfaces';
-import { getNextAvailableStart, calculateWorkingDeadline, shiftUserTasks } from '@/utils/task-calculation-utils';
+import { getNextAvailableStart, calculateWorkingDeadline } from '@/utils/task-calculation-utils'; // Removed shiftUserTasks import here
 import { TASK_ASSIGNMENT_THRESHOLDS, CACHE_KEYS, WORK_HOURS } from '@/config';
 import { getFromCache, setInCache } from '@/utils/cache';
 import usHolidays from '@/data/usHolidays.json'
@@ -94,6 +93,7 @@ async function getNextAvailableStartAfterVacations(
 }
 
 export async function findCompatibleUsers(typeId: number, brandId: string): Promise<UserWithRoles[]> {
+  // The cache key still includes brandId because compatibility can depend on brand-specific roles
   const cacheKey = `${CACHE_KEYS.COMPATIBLE_USERS_PREFIX}${typeId}-${brandId}`;
   const compatibleUsers = getFromCache<UserWithRoles[]>(cacheKey);
 
@@ -107,7 +107,7 @@ export async function findCompatibleUsers(typeId: number, brandId: string): Prom
       roles: {
         where: {
           OR: [
-            { brandId: brandId },
+            { brandId: brandId }, // Keep brandId filter for roles as compatibility can be brand-specific
             { brandId: null }
           ]
         }
@@ -126,10 +126,11 @@ export async function findCompatibleUsers(typeId: number, brandId: string): Prom
 export async function calculateUserSlots(
   users: UserWithRoles[],
   typeId: number,
-  brandId: string
+  brandId: string // Keep brandId in signature, but it's not used for task filtering here
 ): Promise<UserSlot[]> {
   const userIdsSorted = users.map(u => u.id).sort().join('-');
-  const cacheKey = `${CACHE_KEYS.USER_SLOTS_PREFIX}${typeId}-${brandId}-${userIdsSorted}`;
+  // The cache key should reflect that tasks are no longer filtered by brand for queue calculation
+  const cacheKey = `${CACHE_KEYS.USER_SLOTS_PREFIX}${typeId}-${userIdsSorted}`; // Removed brandId from cache key
   const cachedUserSlots = getFromCache<UserSlot[]>(cacheKey);
 
   if (cachedUserSlots) {
@@ -140,8 +141,8 @@ export async function calculateUserSlots(
 
   const allRelevantTasks = await prisma.task.findMany({
     where: {
-      typeId: typeId,
-      brandId: brandId,
+      typeId: typeId, // Filter by typeId only
+      // REMOVED: brandId: brandId, // No longer filtering by brand for queue calculation
       status: {
         notIn: [Status.COMPLETE]
       },
@@ -211,7 +212,7 @@ export async function calculateUserSlots(
 
 async function getVacationAwareUserSlots(
   typeId: number, 
-  brandId: string, 
+  brandId: string, // Keep brandId in signature, but it's not used for task filtering here
   taskDurationDays: number
 ): Promise<VacationAwareUserSlot[]> {
   const allUsersWithRoles = await prisma.user.findMany({
@@ -220,7 +221,7 @@ async function getVacationAwareUserSlots(
       roles: {
         where: {
           OR: [
-            { brandId: brandId },
+            { brandId: brandId }, // Keep brandId filter for roles as compatibility can be brand-specific
             { brandId: null }
           ]
         }
@@ -242,8 +243,8 @@ async function getVacationAwareUserSlots(
   const userIds = compatibleUsers.map(user => user.id);
   const allRelevantTasks = await prisma.task.findMany({
     where: {
-      typeId: typeId,
-      brandId: brandId,
+      typeId: typeId, // Filter by typeId only
+      // REMOVED: brandId: brandId, // No longer filtering by brand for queue calculation
       status: {
         notIn: [Status.COMPLETE]
       },
@@ -272,6 +273,10 @@ async function getVacationAwareUserSlots(
         tasksByUser[assignee.userId].push(task);
       }
     }
+  }
+
+  for (const userId in tasksByUser) {
+    tasksByUser[userId].sort((a, b) => a.queuePosition - b.queuePosition);
   }
 
   const vacationAwareSlots: VacationAwareUserSlot[] = [];
@@ -351,75 +356,60 @@ async function selectBestUserWithVacationLogic(
   const specialists = userSlots.filter(slot => slot.isSpecialist);
   const generalists = userSlots.filter(slot => !slot.isSpecialist);
 
-  const eligibleSpecialists = specialists.filter(s => !s.hasVacationConflict);
-  const vacationSpecialists = specialists.filter(s => s.hasVacationConflict);
+  const sortedEligibleSpecialists = specialists.filter(s => !s.hasVacationConflict).sort((a, b) => {
+    if (a.cargaTotal !== b.cargaTotal) return a.cargaTotal - b.cargaTotal;
+    return a.workingDaysUntilAvailable - b.workingDaysUntilAvailable;
+  });
 
-  if (eligibleSpecialists.length > 0) {
-    const sortedEligibleSpecialists = eligibleSpecialists.sort((a, b) => {
-      if (a.cargaTotal !== b.cargaTotal) return a.cargaTotal - b.cargaTotal;
-      return a.workingDaysUntilAvailable - b.workingDaysUntilAvailable;
-    });
+  const sortedVacationSpecialists = specialists.filter(s => s.hasVacationConflict).sort((a, b) => {
+    if (a.cargaTotal !== b.cargaTotal) return a.cargaTotal - b.cargaTotal;
+    return a.workingDaysUntilAvailable - b.workingDaysUntilAvailable;
+  });
 
-    const bestSpecialist = sortedEligibleSpecialists[0];
-    
-    const availableGeneralists = generalists.filter(g => !g.hasVacationConflict);
-    if (availableGeneralists.length > 0) {
-      const bestGeneralist = availableGeneralists.sort((a, b) => {
-        if (a.cargaTotal !== b.cargaTotal) return a.cargaTotal - b.cargaTotal;
-        return a.workingDaysUntilAvailable - b.workingDaysUntilAvailable;
-      })[0];
+  const sortedGeneralists = generalists.filter(g => !g.hasVacationConflict).sort((a, b) => {
+    if (a.cargaTotal !== b.cargaTotal) return a.cargaTotal - b.cargaTotal;
+    return a.workingDaysUntilAvailable - b.workingDaysUntilAvailable;
+  });
 
+  const bestSpecialist = sortedEligibleSpecialists.length > 0 ? sortedEligibleSpecialists[0] : null;
+  const bestVacationSpecialist = sortedVacationSpecialists.length > 0 ? sortedVacationSpecialists[0] : null;
+  const bestGeneralist = sortedGeneralists.length > 0 ? sortedGeneralists[0] : null;
+
+  // Prioridad 1: Especialistas elegibles sin conflicto de vacaciones
+  if (bestSpecialist) {
+    if (bestGeneralist) {
       const deadlineDifferenceDays = bestSpecialist.workingDaysUntilAvailable - bestGeneralist.workingDaysUntilAvailable;
-      
       if (deadlineDifferenceDays > TASK_ASSIGNMENT_THRESHOLDS.DEADLINE_DIFFERENCE_TO_FORCE_GENERALIST) {
         return bestGeneralist;
       }
     }
-    
     return bestSpecialist;
   }
 
-  if (vacationSpecialists.length > 0) {
-    const sortedVacationSpecialists = vacationSpecialists.sort((a, b) => {
-      if (a.cargaTotal !== b.cargaTotal) return a.cargaTotal - b.cargaTotal;
-      return a.workingDaysUntilAvailable - b.workingDaysUntilAvailable;
-    });
-
-    const bestVacationSpecialist = sortedVacationSpecialists[0];
-    
-    if (bestVacationSpecialist.workingDaysUntilAvailable > 10) {
-      const availableGeneralists = generalists.filter(g => !g.hasVacationConflict);
-      if (availableGeneralists.length > 0) {
-        const bestGeneralist = availableGeneralists.sort((a, b) => {
-          if (a.cargaTotal !== b.cargaTotal) return a.cargaTotal - b.cargaTotal;
-          return a.workingDaysUntilAvailable - b.workingDaysUntilAvailable;
-        })[0];
-
-        const daysBenefit = bestVacationSpecialist.workingDaysUntilAvailable - bestGeneralist.workingDaysUntilAvailable;
-        
-        if (daysBenefit >= 5) {
-          return bestGeneralist;
-        }
+  // Prioridad 2: Especialistas con conflicto de vacaciones (si la espera no es excesiva)
+  if (bestVacationSpecialist) {
+    if (bestGeneralist) {
+      const daysBenefit = bestVacationSpecialist.workingDaysUntilAvailable - bestGeneralist.workingDaysUntilAvailable;
+      if (bestVacationSpecialist.workingDaysUntilAvailable > 10 && daysBenefit >= 5) {
+        return bestGeneralist;
       }
     }
-    
     return bestVacationSpecialist;
   }
 
-  if (generalists.length > 0) {
-    const availableGeneralists = generalists.filter(g => !g.hasVacationConflict);
-    
-    if (availableGeneralists.length > 0) {
-      const bestGeneralist = availableGeneralists.sort((a, b) => {
-        if (a.cargaTotal !== b.cargaTotal) return a.cargaTotal - b.cargaTotal;
-        return a.workingDaysUntilAvailable - b.workingDaysUntilAvailable;
-      })[0];
-      
-      return bestGeneralist;
-    }
+  // Prioridad 3: Generalistas elegibles sin conflicto de vacaciones
+  if (bestGeneralist) {
+    return bestGeneralist;
   }
 
-  return null;
+  // Si no hay nadie elegible, retornar el que tenga menos carga o esté disponible antes, incluso con conflicto
+  // Esto es un fallback para asegurar que siempre se intente asignar a alguien si hay usuarios
+  const allUsersSorted = userSlots.sort((a, b) => {
+    if (a.cargaTotal !== b.cargaTotal) return a.cargaTotal - b.cargaTotal;
+    return a.workingDaysUntilAvailable - b.workingDaysUntilAvailable;
+  });
+
+  return allUsersSorted.length > 0 ? allUsersSorted[0] : null;
 }
 
 export function selectBestUser(userSlots: UserSlot[]): UserSlot | null {
@@ -476,54 +466,37 @@ export async function getBestUserWithCache(
   durationDays?: number
 ): Promise<UserSlot | null> {
   
-  if (durationDays) {
-    const cacheKey = `${CACHE_KEYS.BEST_USER_SELECTION_PREFIX}${typeId}-${brandId}-${priority}-vacation-${durationDays}`;
-    let bestSlot = getFromCache<UserSlot | null>(cacheKey);
-
-    if (bestSlot !== undefined) {
-      return bestSlot;
-    }
-
-    const vacationAwareSlots = await getVacationAwareUserSlots(typeId, brandId, durationDays);
-    const bestVacationSlot = await selectBestUserWithVacationLogic(vacationAwareSlots);
-    
-    if (!bestVacationSlot) {
-      setInCache(cacheKey, null);
-      return null;
-    }
-    
-    const compatibleSlot: UserSlot = {
-      userId: bestVacationSlot.userId,
-      userName: bestVacationSlot.userName,
-      availableDate: bestVacationSlot.availableDate,
-      tasks: bestVacationSlot.tasks,
-      cargaTotal: bestVacationSlot.cargaTotal,
-      isSpecialist: bestVacationSlot.isSpecialist,
-      lastTaskDeadline: bestVacationSlot.lastTaskDeadline
-    };
-
-    setInCache(cacheKey, compatibleSlot);
-    return compatibleSlot;
-  }
-  
-  const cacheKey = `${CACHE_KEYS.BEST_USER_SELECTION_PREFIX}${typeId}-${brandId}-${priority}`;
+  // The cache key now reflects that task queue calculations are global, but user compatibility still depends on brand.
+  // The `brandId` is still needed for `findCompatibleUsers` and `getVacationAwareUserSlots` roles filter.
+  const cacheKey = `${CACHE_KEYS.BEST_USER_SELECTION_PREFIX}${typeId}-${brandId}-${priority}-vacation-${durationDays || 'no-duration'}`;
   let bestSlot = getFromCache<UserSlot | null>(cacheKey);
 
   if (bestSlot !== undefined) {
     return bestSlot;
   }
 
-  const compatibleUsers = await findCompatibleUsers(typeId, brandId);
-  if (compatibleUsers.length === 0) {
+  // These functions will now fetch all relevant tasks for a user, regardless of brand,
+  // but still filter compatible users based on brand roles.
+  const vacationAwareSlots = await getVacationAwareUserSlots(typeId, brandId, durationDays || 0);
+  const bestVacationSlot = await selectBestUserWithVacationLogic(vacationAwareSlots);
+  
+  if (!bestVacationSlot) {
     setInCache(cacheKey, null);
     return null;
   }
+  
+  const compatibleSlot: UserSlot = {
+    userId: bestVacationSlot.userId,
+    userName: bestVacationSlot.userName,
+    availableDate: bestVacationSlot.availableDate,
+    tasks: bestVacationSlot.tasks,
+    cargaTotal: bestVacationSlot.cargaTotal,
+    isSpecialist: bestVacationSlot.isSpecialist,
+    lastTaskDeadline: bestVacationSlot.lastTaskDeadline
+  };
 
-  const userSlots = await calculateUserSlots(compatibleUsers, typeId, brandId);
-  bestSlot = selectBestUser(userSlots);
-
-  setInCache(cacheKey, bestSlot);
-  return bestSlot;
+  setInCache(cacheKey, compatibleSlot);
+  return compatibleSlot;
 }
 
 interface QueueAnalysis {
@@ -854,7 +827,8 @@ export async function processUserAssignments(
   usersToAssign: string[],
   userSlots: UserSlot[],
   priority: Priority,
-  durationDays: number
+  durationDays: number,
+  brandId: string // Keep brandId in signature, it's used for compatibility checks
 ): Promise<TaskTimingResult> {
   const numberOfAssignees = usersToAssign.length
   const effectiveDuration = durationDays / numberOfAssignees
@@ -876,9 +850,10 @@ export async function processUserAssignments(
     const userStartDate = queueResult.calculatedStartDate
     const userDeadline = await calculateWorkingDeadline(userStartDate, newTaskHours)
 
-    if (queueResult.affectedTasks.length > 0) {
-      await shiftUserTasks(userSlot.userId, 'temp-new-task-id', userDeadline, queueResult.insertAt);
-    }
+    // REMOVED: This block performs the premature shifting.
+    // if (queueResult.affectedTasks.length > 0) {
+    //   await shiftUserTasks(userSlot.userId, 'temp-new-task-id', userDeadline, queueResult.insertAt);
+    // }
 
     if (userId === usersToAssign[0]) {
       earliestStartDate = userStartDate

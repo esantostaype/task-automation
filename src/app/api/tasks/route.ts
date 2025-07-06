@@ -1,5 +1,3 @@
-// src/app/api/tasks/route.ts - VERSIÓN FINAL CON LÓGICA DE VACACIONES
-
 import { NextResponse } from 'next/server'
 import { prisma } from '@/utils/prisma'
 import axios from 'axios'
@@ -299,7 +297,7 @@ export async function POST(req: Request) {
     })
 
     // ===== PROCESAR ASIGNACIONES Y CALCULAR FECHAS =====
-    const taskTiming = await processUserAssignments(usersToAssign, userSlotsForProcessing, priority, durationDays)
+    const taskTiming = await processUserAssignments(usersToAssign, userSlotsForProcessing, priority, durationDays, brandId)
 
     console.log('✅ Fechas calculadas para nueva tarea:')
     console.log(`   - Start Date: ${taskTiming.startDate.toISOString()}`)
@@ -389,6 +387,7 @@ export async function POST(req: Request) {
     console.log('🔄 Iniciando recálculo de fechas de tareas existentes...')
     for (const userId of usersToAssign) {
       try {
+        // Removed brandId from shiftUserTasks call
         await shiftUserTasks(userId, task.id, taskTiming.deadline, taskTiming.insertAt)
         console.log(`✅ Fechas recalculadas para usuario ${userId}`)
       } catch (shiftError) {
