@@ -104,6 +104,7 @@ export interface UserSlot {
   cargaTotal: number
   isSpecialist: boolean
   lastTaskDeadline?: Date
+  totalAssignedDurationDays: number 
 }
 
 export interface QueueCalculationResult {

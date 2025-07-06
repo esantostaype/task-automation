@@ -180,6 +180,7 @@ export async function calculateUserSlots(
   const resultSlots = await Promise.all(users.map(async (user) => {
     const userTasks = tasksByUser[user.id] || [];
     const cargaTotal = userTasks.length;
+    let totalAssignedDurationDays = 0; // <--- NEW: Initialize duration sum
 
     let availableDate: Date;
     let lastTaskDeadline: Date | undefined;
@@ -188,6 +189,10 @@ export async function calculateUserSlots(
       const lastTask = userTasks[userTasks.length - 1];
       availableDate = await getNextAvailableStart(new Date(lastTask.deadline));
       lastTaskDeadline = new Date(lastTask.deadline);
+      // <--- NEW: Calculate total assigned duration
+      totalAssignedDurationDays = userTasks.reduce((sum, task) => {
+        return sum + (task.customDuration !== null ? task.customDuration : task.category.duration);
+      }, 0);
     } else {
       availableDate = await getNextAvailableStart(new Date());
     }
@@ -203,6 +208,7 @@ export async function calculateUserSlots(
       cargaTotal,
       isSpecialist,
       lastTaskDeadline,
+      totalAssignedDurationDays, // <--- NEW: Add to returned object
     };
   }));
 
@@ -286,9 +292,14 @@ async function getVacationAwareUserSlots(
     userTasks.sort((a, b) => a.queuePosition - b.queuePosition);
 
     let baseAvailableDate: Date;
+    let totalAssignedDurationDays = 0; // <--- NEW: Initialize duration sum for vacation-aware slots
     if (userTasks.length > 0) {
       const lastTask = userTasks[userTasks.length - 1];
       baseAvailableDate = await getNextAvailableStart(new Date(lastTask.deadline));
+      // <--- NEW: Calculate total assigned duration for vacation-aware slots
+      totalAssignedDurationDays = userTasks.reduce((sum, task) => {
+        return sum + (task.customDuration !== null ? task.customDuration : task.category.duration);
+      }, 0);
     } else {
       baseAvailableDate = await getNextAvailableStart(new Date());
     }
@@ -339,7 +350,8 @@ async function getVacationAwareUserSlots(
       vacationConflictDetails: vacationConflict.hasConflict ? {
         conflictingVacation: vacationConflict.conflictingVacation!,
         daysSavedByWaiting: 0
-      } : undefined
+      } : undefined,
+      totalAssignedDurationDays, // <--- NEW: Add to returned object
     };
 
     vacationAwareSlots.push(vacationAwareSlot);
@@ -356,19 +368,20 @@ async function selectBestUserWithVacationLogic(
   const specialists = userSlots.filter(slot => slot.isSpecialist);
   const generalists = userSlots.filter(slot => !slot.isSpecialist);
 
+  // <--- NEW: Sort by totalAssignedDurationDays first, then by workingDaysUntilAvailable
   const sortedEligibleSpecialists = specialists.filter(s => !s.hasVacationConflict).sort((a, b) => {
-    if (a.cargaTotal !== b.cargaTotal) return a.cargaTotal - b.cargaTotal;
-    return a.workingDaysUntilAvailable - b.workingDaysUntilAvailable;
+    if (a.totalAssignedDurationDays !== b.totalAssignedDurationDays) return a.totalAssignedDurationDays - b.totalAssignedDurationDays; // Primary sort
+    return a.workingDaysUntilAvailable - b.workingDaysUntilAvailable; // Secondary sort
   });
 
   const sortedVacationSpecialists = specialists.filter(s => s.hasVacationConflict).sort((a, b) => {
-    if (a.cargaTotal !== b.cargaTotal) return a.cargaTotal - b.cargaTotal;
-    return a.workingDaysUntilAvailable - b.workingDaysUntilAvailable;
+    if (a.totalAssignedDurationDays !== b.totalAssignedDurationDays) return a.totalAssignedDurationDays - b.totalAssignedDurationDays; // Primary sort
+    return a.workingDaysUntilAvailable - b.workingDaysUntilAvailable; // Secondary sort
   });
 
   const sortedGeneralists = generalists.filter(g => !g.hasVacationConflict).sort((a, b) => {
-    if (a.cargaTotal !== b.cargaTotal) return a.cargaTotal - b.cargaTotal;
-    return a.workingDaysUntilAvailable - b.workingDaysUntilAvailable;
+    if (a.totalAssignedDurationDays !== b.totalAssignedDurationDays) return a.totalAssignedDurationDays - b.totalAssignedDurationDays; // Primary sort
+    return a.workingDaysUntilAvailable - b.workingDaysUntilAvailable; // Secondary sort
   });
 
   const bestSpecialist = sortedEligibleSpecialists.length > 0 ? sortedEligibleSpecialists[0] : null;
@@ -378,8 +391,9 @@ async function selectBestUserWithVacationLogic(
   // Prioridad 1: Especialistas elegibles sin conflicto de vacaciones
   if (bestSpecialist) {
     if (bestGeneralist) {
-      const deadlineDifferenceDays = bestSpecialist.workingDaysUntilAvailable - bestGeneralist.workingDaysUntilAvailable;
-      if (deadlineDifferenceDays > TASK_ASSIGNMENT_THRESHOLDS.DEADLINE_DIFFERENCE_TO_FORCE_GENERALIST) {
+      // <--- MODIFIED: Consider totalAssignedDurationDays for forcing generalist
+      const durationDifference = bestSpecialist.totalAssignedDurationDays - bestGeneralist.totalAssignedDurationDays;
+      if (durationDifference > TASK_ASSIGNMENT_THRESHOLDS.DEADLINE_DIFFERENCE_TO_FORCE_GENERALIST) { // Using this threshold for duration difference now
         return bestGeneralist;
       }
     }
@@ -389,8 +403,9 @@ async function selectBestUserWithVacationLogic(
   // Prioridad 2: Especialistas con conflicto de vacaciones (si la espera no es excesiva)
   if (bestVacationSpecialist) {
     if (bestGeneralist) {
-      const daysBenefit = bestVacationSpecialist.workingDaysUntilAvailable - bestGeneralist.workingDaysUntilAvailable;
-      if (bestVacationSpecialist.workingDaysUntilAvailable > 10 && daysBenefit >= 5) {
+      // <--- MODIFIED: Consider totalAssignedDurationDays for forcing generalist
+      const durationDifference = bestVacationSpecialist.totalAssignedDurationDays - bestGeneralist.totalAssignedDurationDays;
+      if (bestVacationSpecialist.workingDaysUntilAvailable > 10 && durationDifference >= 5) { // Also consider duration benefit
         return bestGeneralist;
       }
     }
@@ -402,11 +417,13 @@ async function selectBestUserWithVacationLogic(
     return bestGeneralist;
   }
 
-  // Si no hay nadie elegible, retornar el que tenga menos carga o esté disponible antes, incluso con conflicto
-  // Esto es un fallback para asegurar que siempre se intente asignar a alguien si hay usuarios
+  // Si no hay nadie elegible, retornar el que tenga menos carga total o esté disponible antes, incluso con conflicto
+  // This is a fallback to ensure someone is always attempted to be assigned if users exist
+  // <--- NEW: Sort fallback by totalAssignedDurationDays first
   const allUsersSorted = userSlots.sort((a, b) => {
-    if (a.cargaTotal !== b.cargaTotal) return a.cargaTotal - b.cargaTotal;
-    return a.workingDaysUntilAvailable - b.workingDaysUntilAvailable;
+    if (a.totalAssignedDurationDays !== b.totalAssignedDurationDays) return a.totalAssignedDurationDays - b.totalAssignedDurationDays; // Primary sort
+    if (a.cargaTotal !== b.cargaTotal) return a.cargaTotal - b.cargaTotal; // Secondary sort (legacy from old logic)
+    return a.availableDate.getTime() - b.availableDate.getTime(); // Tertiary sort (also from old logic)
   });
 
   return allUsersSorted.length > 0 ? allUsersSorted[0] : null;
@@ -417,9 +434,10 @@ export function selectBestUser(userSlots: UserSlot[]): UserSlot | null {
   const generalists = userSlots.filter(slot => !slot.isSpecialist)
 
   const sortUsers = (users: UserSlot[]) => {
+    // <--- MODIFIED: Sort by totalAssignedDurationDays first, then by availableDate
     return users.sort((a, b) => {
-      if (a.cargaTotal !== b.cargaTotal) return a.cargaTotal - b.cargaTotal
-      return a.availableDate.getTime() - b.availableDate.getTime()
+      if (a.totalAssignedDurationDays !== b.totalAssignedDurationDays) return a.totalAssignedDurationDays - b.totalAssignedDurationDays; // Primary sort
+      return a.availableDate.getTime() - b.availableDate.getTime(); // Secondary sort
     })
   }
 
@@ -436,6 +454,8 @@ export function selectBestUser(userSlots: UserSlot[]): UserSlot | null {
     return bestSpecialist;
   }
 
+  // The deadline difference logic here is still about when they become free,
+  // which might still be relevant even with duration-based balancing.
   let effectiveSpecialistDeadline: Date;
   if (bestSpecialist.tasks.length > 0 && bestSpecialist.lastTaskDeadline) {
     effectiveSpecialistDeadline = bestSpecialist.lastTaskDeadline;
@@ -492,7 +512,8 @@ export async function getBestUserWithCache(
     tasks: bestVacationSlot.tasks,
     cargaTotal: bestVacationSlot.cargaTotal,
     isSpecialist: bestVacationSlot.isSpecialist,
-    lastTaskDeadline: bestVacationSlot.lastTaskDeadline
+    lastTaskDeadline: bestVacationSlot.lastTaskDeadline,
+    totalAssignedDurationDays: bestVacationSlot.totalAssignedDurationDays // <--- NEW: Pass this value to cache
   };
 
   setInCache(cacheKey, compatibleSlot);
@@ -508,6 +529,8 @@ interface QueueAnalysis {
   lastHighIndex: number
   firstNormalIndex: number
   firstLowIndex: number
+  nonUrgentHighCount: number
+  nonUrgentNormalCount: number
 }
 
 function analyzeQueueByPriority(tasks: Task[]): QueueAnalysis {
@@ -893,5 +916,5 @@ export async function getTaskHours(taskId: string): Promise<number> {
   if (!task) throw new Error('Tarea no encontrada');
   if (!task.assignees.length) throw new Error('Tarea sin asignaciones');
 
-  return task.category.duration * 8;
+  return task.customDuration !== null ? task.customDuration * 8 : task.category.duration * 8;
 }
