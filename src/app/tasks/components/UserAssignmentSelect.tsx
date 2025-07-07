@@ -21,7 +21,6 @@ interface UserAssignmentSelectProps {
   touched: boolean | undefined;
   error: string | undefined;
   loading?: boolean;
-  // ✅ NUEVAS PROPS PARA CONTROL MANUAL
   userHasManuallyChanged?: boolean;
   onApplySuggestion?: () => void;
 }
@@ -41,7 +40,7 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
   const getPlaceholder = () => {
     if (fetchingSuggestion) return "Searching for suggestion..";
     if (loading) return "Loading designers...";
-    return "Assign User(s)";
+    return "Assign Designer(s)";
   };
 
   // ✅ NUEVA FUNCIÓN: Determinar si mostrar información de sugerencia
@@ -104,7 +103,18 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
         onChange={(_, val) => onChange(val as string[])}
         placeholder={getPlaceholder()}
         disabled={fetchingSuggestion || loading}
+        // ✅ NUEVO: Mostrar error visual en el select
+        color={touched && error ? "danger" : "neutral"}
         renderValue={(selected) => {
+          // ✅ NUEVO: Mostrar placeholder cuando no hay selección
+          if (selected.length === 0) {
+            return (
+              <span style={{ color: 'var(--joy-palette-text-tertiary)' }}>
+                {getPlaceholder()}
+              </span>
+            );
+          }
+
           const orderedSelected = [...selected].sort((a, b) => {
             if (a.value === suggestedUser?.id) return -1;
             if (b.value === suggestedUser?.id) return 1;
@@ -162,6 +172,14 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
         )}
       </Select>
 
+      {/* ✅ NUEVO: Mostrar texto de ayuda cuando no hay usuarios seleccionados */}
+      {values.length === 0 && !error && !fetchingSuggestion && (
+        <div className="text-sm text-gray-500 mt-[0.375rem]">
+          Select at least one user to assign this task
+        </div>
+      )}
+
+      {/* ✅ CORRECCIÓN: Asegurar que el error se muestre */}
       {touched && error && <TextFieldError label={error} />}
     </div>
   );

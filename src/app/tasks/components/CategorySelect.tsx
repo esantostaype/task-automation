@@ -39,6 +39,9 @@ interface CategorySelectProps {
   showTierSelection?: boolean;
   // ✅ Nueva prop para notificar cuando se está escribiendo
   onTypingNewCategory?: (isTyping: boolean) => void;
+  // ✅ NUEVO: Props para validación de tier
+  tierTouched?: boolean;
+  tierError?: string;
 }
 
 export const CategorySelect: React.FC<CategorySelectProps> = ({
@@ -53,6 +56,8 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
   onTierChange,
   showTierSelection = false,
   onTypingNewCategory, // ✅ Nueva prop
+  tierTouched, // ✅ NUEVO
+  tierError, // ✅ NUEVO
 }) => {
   // ✅ Estado para el texto actual del input
   const [inputValue, setInputValue] = React.useState('');
@@ -160,7 +165,7 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
 
   const getPlaceholder = () => {
     if (loading) return "Loading categories...";
-    return "Search existing or type new category name...";
+    return "Search or type new category";
   };
 
   // ✅ Función para obtener el label (ahora solo maneja CategoryOption)
@@ -244,6 +249,9 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
         noOptionsText={loading ? "Loading..." : "Type to create a new category"}
       />
 
+      {/* ✅ ERROR DE CATEGORÍA */}
+      {touched && error && <TextFieldError label={error} />}
+
       {/* ✅ Mostrar selección de Tier cuando el input es una nueva categoría O cuando showTierSelection es true */}
       {(isInputNewCategory || showTierSelection) && (
         <Box sx={{ mt: 2 }}>
@@ -278,10 +286,11 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
               />
             ))}
           </RadioGroup>
+          
+          {/* ✅ NUEVO: ERROR DE TIER */}
+          {tierTouched && tierError && <TextFieldError label={tierError} />}
         </Box>
       )}
-
-      {touched && error && <TextFieldError label={error} />}
     </div>
   );
 };

@@ -1,16 +1,16 @@
 // src/app/tasks/components/CreateTaskForm.tsx
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-'use client'
+"use client";
 
-import React, { useState, useEffect } from 'react'
-import axios from 'axios'
-import { Formik, Form, useFormikContext } from 'formik'
-import { Button, Typography } from '@mui/joy'
-import { toast } from 'react-toastify'
-import { Tier } from '@prisma/client'
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import { Formik, Form, useFormikContext } from "formik";
+import { Button, Typography } from "@mui/joy";
+import { toast } from "react-toastify";
+import { Tier } from "@prisma/client";
 
-import { SpinnerCreatingTask, SpinnerSearching } from '@/components'
+import { SpinnerCreatingTask, SpinnerSearching } from "@/components";
 import {
   TaskKindSwitch,
   TaskNameField,
@@ -19,36 +19,36 @@ import {
   PrioritySelect,
   DurationField,
   UserAssignmentSelect,
-  TaskCreatedToastContent
-} from './'
+  TaskCreatedToastContent,
+} from "./";
 
-import { useSocket, useTaskData, useTaskSuggestion } from '@/hooks'
-import { getTypeKind } from '@/utils'
-import { validationSchema } from '@/validation/taskValidation'
-import { FormValues, User } from '@/interfaces'
+import { useSocket, useTaskData, useTaskSuggestion } from "@/hooks";
+import { getTypeKind } from "@/utils";
+import { validationSchema } from "@/validation/taskValidation";
+import { FormValues, User, TaskType } from "@/interfaces";
 
 interface ExtendedFormValues extends FormValues {
-  newCategoryTier: Tier | null
-  isNewCategory: boolean
-  newCategoryName: string
+  newCategoryTier: Tier | null;
+  isNewCategory: boolean;
+  newCategoryName: string;
 }
 
 interface FormikSuggestionLogicProps {
-  users: User[]
+  users: User[];
   setSuggestedAssignment: React.Dispatch<
     React.SetStateAction<{ userId: string; durationDays: number } | null>
-  >
-  setFetchingSuggestion: React.Dispatch<React.SetStateAction<boolean>>
-  resetCategory: boolean
-  setResetCategory: React.SetStateAction<boolean>
-  userHasManuallyChanged: boolean
-  setUserHasManuallyChanged: React.SetStateAction<boolean>
-  isNewCategory: boolean
-  types: any[]
-  selectedKind: "UX/UI" | "Graphic"
-  triggerSuggestion: number
-  // ✅ NUEVO: Para prevenir sugerencias durante envío
-  isSubmitting: boolean
+  >;
+  setFetchingSuggestion: React.Dispatch<React.SetStateAction<boolean>>;
+  resetCategory: boolean;
+  setResetCategory: React.Dispatch<React.SetStateAction<boolean>>;
+  userHasManuallyChanged: boolean;
+  setUserHasManuallyChanged: React.Dispatch<React.SetStateAction<boolean>>;
+  isNewCategory: boolean;
+  types: TaskType[];
+  selectedKind: "UX/UI" | "Graphic";
+  triggerSuggestion: number;
+  isSubmitting: boolean;
+  allCategories: any[];
 }
 
 const FormikSuggestionLogic: React.FC<FormikSuggestionLogicProps> = ({
@@ -62,7 +62,7 @@ const FormikSuggestionLogic: React.FC<FormikSuggestionLogicProps> = ({
   types,
   selectedKind,
   triggerSuggestion,
-  isSubmitting, // ✅ NUEVO
+  isSubmitting,
 }) => {
   const { values, setFieldValue } = useFormikContext<ExtendedFormValues>()
 
@@ -82,15 +82,54 @@ const FormikSuggestionLogic: React.FC<FormikSuggestionLogicProps> = ({
     return typeId
   }, [isNewCategory, selectedKind, types])
 
-  // ✅ Usar el hook actualizado con soporte para nuevas categorías
+  // ✅ MEJORADO: Determinar duración manual para ambos tipos de categoría
+  const effectiveManualDuration = React.useMemo(() => {
+    const durationValue = values.durationDays as string;
+    
+    if (!durationValue || durationValue.trim() === '') return undefined;
+    
+    const parsedDuration = parseFloat(durationValue);
+    if (isNaN(parsedDuration) || parsedDuration <= 0) return undefined;
+    
+    // ✅ NUEVO: Para categorías existentes, verificar si la duración difiere de la original
+    if (!isNewCategory && values.categoryId) {
+      // Buscar la categoría para comparar duraciones
+      const allCategories = types.flatMap(type => type.categories);
+      const selectedCategory = allCategories.find(cat => cat.id.toString() === values.categoryId);
+      
+      if (selectedCategory) {
+        const categoryDuration = selectedCategory.duration;
+        console.log(`🔍 Comparing durations - Category: ${categoryDuration}, Manual: ${parsedDuration}`);
+        
+        // Solo considerar como manual si es diferente a la duración de categoría
+        if (Math.abs(categoryDuration - parsedDuration) > 0.1) {
+          console.log(`✅ Duration is manual for existing category (${parsedDuration} vs ${categoryDuration})`);
+          return durationValue;
+        } else {
+          console.log(`📋 Duration matches category default (${parsedDuration})`);
+          return undefined; // No es manual, es la duración de categoría
+        }
+      }
+    }
+    
+    // Para nuevas categorías, siempre considerar como manual si hay valor
+    if (isNewCategory) {
+      console.log(`🆕 Manual duration for new category: ${parsedDuration}`);
+      return durationValue;
+    }
+    
+    return undefined;
+  }, [values.durationDays, values.categoryId, isNewCategory, types]);
+
+  // ✅ Usar el hook actualizado con soporte para duración manual en categorías existentes
   const { suggestedAssignment, fetchingSuggestion } = useTaskSuggestion(
-    isSubmitting ? '' : values.brandId, // ✅ No buscar sugerencias si está enviando
+    isSubmitting ? '' : values.brandId,
     isSubmitting ? '' : values.categoryId,
     isSubmitting ? '' : values.priority,
     isSubmitting ? false : isNewCategory,
-    isSubmitting ? '' : (values.durationDays as string),
+    isSubmitting ? undefined : effectiveManualDuration, // ✅ NUEVO: Pasar duración manual efectiva
     isSubmitting ? undefined : currentTypeId,
-    isSubmitting ? 0 : triggerSuggestion // ✅ No triggear si está enviando
+    isSubmitting ? 0 : triggerSuggestion
   )
 
   useEffect(() => {
@@ -104,32 +143,17 @@ const FormikSuggestionLogic: React.FC<FormikSuggestionLogicProps> = ({
     }
   }, [resetCategory, setFieldValue, setResetCategory, setUserHasManuallyChanged])
 
-  // ✅ Efecto para detectar cuando todos los campos están listos para nueva categoría
+  // ✅ MEJORADO: Log para debugging del balanceamiento por duración
   useEffect(() => {
-    console.log(`🔍 Checking if ready for new category suggestion: (isNewCategory: ${values.isNewCategory}, brandId: ${values.brandId}, priority: ${values.priority}, durationDays: ${values.durationDays}, newCategoryTier: ${values.newCategoryTier}, currentTypeId: ${currentTypeId})`)
-
-    // Si es nueva categoría y tenemos todos los datos necesarios
-    if (
-      values.isNewCategory && 
-      values.brandId && 
-      values.priority && 
-      values.durationDays && 
-      parseFloat(values.durationDays as string) > 0 &&
-      values.newCategoryTier &&
-      currentTypeId
-    ) {
-      console.log('✅ All conditions met for new category suggestion, triggering...')
-      // Aquí no podemos usar setTriggerSuggestion porque está en el padre
-      // En su lugar, el useTaskSuggestion ya debería reaccionar a los cambios
+    if (suggestedAssignment) {
+      console.log(`🔍 === BALANCE POR DURACIÓN DETECTADO ===`);
+      console.log(`   - Usuario sugerido: ${suggestedAssignment.userId}`);
+      console.log(`   - Duración de nueva tarea: ${suggestedAssignment.durationDays} días`);
+      console.log(`   - Tipo de categoría: ${isNewCategory ? 'Nueva' : 'Existente'}`);
+      console.log(`   - Duración manual activa: ${effectiveManualDuration || 'No'}`);
+      console.log(`   - Fuente de duración: ${effectiveManualDuration ? 'Manual' : 'Categoría'}`);
     }
-  }, [
-    values.isNewCategory,
-    values.brandId, 
-    values.priority, 
-    values.durationDays,
-    values.newCategoryTier,
-    currentTypeId
-  ])
+  }, [suggestedAssignment, isNewCategory, effectiveManualDuration]);
 
   useEffect(() => {
     // ✅ NO actualizar estado si está enviando
@@ -141,15 +165,20 @@ const FormikSuggestionLogic: React.FC<FormikSuggestionLogicProps> = ({
     setSuggestedAssignment(suggestedAssignment)
 
     if (suggestedAssignment) {
-      console.log(`🤖 Applying suggestion: (userId: ${suggestedAssignment.userId}, durationDays: ${suggestedAssignment.durationDays}, isNewCategory: ${isNewCategory}, currentDurationValue: ${values.durationDays})`)
+      console.log(`🤖 Applying suggestion with duration balance: (userId: ${suggestedAssignment.userId}, durationDays: ${suggestedAssignment.durationDays}, isNewCategory: ${isNewCategory}, effectiveManualDuration: ${effectiveManualDuration})`)
 
-      // Lógica de aplicación de duración:
-      // Si NO es una categoría nueva (es decir, es una existente), SIEMPRE aplica la sugerencia.
-      // Si es una categoría nueva (isNewCategory) Y el campo de duración está vacío, aplica la sugerencia.
-      if (!isNewCategory) { // <-- MODIFICACIÓN CLAVE: Si NO es nueva categoría, siempre aplica la duración sugerida.
+      // ✅ MEJORADO: Lógica de aplicación de duración más inteligente
+      if (!isNewCategory && !effectiveManualDuration) {
+        // Categoría existente sin duración manual - aplicar duración de categoría
         setFieldValue("durationDays", suggestedAssignment.durationDays.toString())
-      } else if (isNewCategory && values.durationDays === "") { // <-- Para nueva categoría, solo si está vacío.
+        console.log(`📋 Applied category duration: ${suggestedAssignment.durationDays}`)
+      } else if (isNewCategory && values.durationDays === "") {
+        // Nueva categoría sin duración manual - aplicar sugerencia
         setFieldValue("durationDays", suggestedAssignment.durationDays.toString())
+        console.log(`🆕 Applied suggested duration for new category: ${suggestedAssignment.durationDays}`)
+      } else if (effectiveManualDuration) {
+        // Duración manual activa - NO sobrescribir, mantener la manual
+        console.log(`🔧 Keeping manual duration: ${effectiveManualDuration}`)
       }
       
       // Asignar usuario si no ha habido cambios manuales
@@ -158,16 +187,15 @@ const FormikSuggestionLogic: React.FC<FormikSuggestionLogicProps> = ({
           values.assignedUserIds.length === 0 ||
           values.assignedUserIds[0] !== suggestedAssignment.userId
         ) {
-          console.log(`🤖 Aplicando sugerencia de usuario: ${suggestedAssignment.userId}`)
+          console.log(`🤖 Aplicando sugerencia de usuario balanceada: ${suggestedAssignment.userId}`)
           setFieldValue("assignedUserIds", [suggestedAssignment.userId])
         }
       } else {
         console.log('👤 Usuario ha hecho cambios manuales, manteniendo selección actual')
       }
-    } else if (!fetchingSuggestion && !isNewCategory && values.brandId && values.categoryId) {
-      // Si no hay sugerencia para una categoría existente, vaciamos el campo.
-      // Esto es un fallback si la API de sugerencia no devuelve nada.
-      setFieldValue("durationDays", ""); // <-- Siempre vaciar si no hay sugerencia para existente.
+    } else if (!fetchingSuggestion && !isNewCategory && values.brandId && values.categoryId && !effectiveManualDuration) {
+      // Si no hay sugerencia para una categoría existente sin duración manual, vaciamos el campo
+      setFieldValue("durationDays", "")
       if (!userHasManuallyChanged && values.assignedUserIds.length === 0) {
         setFieldValue("assignedUserIds", [])
       }
@@ -185,53 +213,63 @@ const FormikSuggestionLogic: React.FC<FormikSuggestionLogicProps> = ({
     userHasManuallyChanged,
     isNewCategory,
     isSubmitting,
-    // values.durationDays, // Se ha eliminado de las dependencias de este useEffect para evitar re-renderizados conflictivos.
+    effectiveManualDuration // ✅ NUEVO: Dependencia clave para recalcular
   ])
 
   return null
 }
 
 export const CreateTaskForm: React.FC = () => {
-  const { types, brands, users, loading: dataLoading } = useTaskData()
-  const [loading, setLoading] = useState(false)
-  const [selectedKind, setSelectedKind] = useState<"UX/UI" | "Graphic">("UX/UI")
-  const [resetCategory, setResetCategory] = useState(false)
-  
+  // ✅ CAMBIO: Extraer refreshTypes del hook para solo actualizar categorías
+  const {
+    types,
+    brands,
+    users,
+    loading: dataLoading,
+    refreshTypes,
+  } = useTaskData();
+  const [loading, setLoading] = useState(false);
+  const [selectedKind, setSelectedKind] = useState<"UX/UI" | "Graphic">(
+    "UX/UI"
+  );
+  const [resetCategory, setResetCategory] = useState(false);
+
   // ✅ Nuevo estado para trackear si se está escribiendo una nueva categoría
-  const [isTypingNewCategory, setIsTypingNewCategory] = useState(false)
+  const [isTypingNewCategory, setIsTypingNewCategory] = useState(false);
   // ✅ Nuevo estado para forzar actualización de sugerencias
-  const [triggerSuggestion, setTriggerSuggestion] = useState(0)
+  const [triggerSuggestion, setTriggerSuggestion] = useState(0);
 
   const [suggestedAssignment, setSuggestedAssignment] = useState<{
-    userId: string
-    durationDays: number
-  } | null>(null)
-  const [fetchingSuggestion, setFetchingSuggestion] = useState(false)
-  const [userHasManuallyChanged, setUserHasManuallyChanged] = useState<boolean>(false)
+    userId: string;
+    durationDays: number;
+  } | null>(null);
+  const [fetchingSuggestion, setFetchingSuggestion] = useState(false);
+  const [userHasManuallyChanged, setUserHasManuallyChanged] =
+    useState<boolean>(false);
 
   const suggestedUser = suggestedAssignment
     ? users.find((u) => u.id === suggestedAssignment.userId)
-    : null
+    : null;
 
-  useSocket()
+  useSocket();
 
   useEffect(() => {
-    setResetCategory(true)
-    setUserHasManuallyChanged(false)
-    setIsTypingNewCategory(false)
-  }, [selectedKind])
+    setResetCategory(true);
+    setUserHasManuallyChanged(false);
+    setIsTypingNewCategory(false);
+  }, [selectedKind]);
 
   const filteredTypes = types.filter((type) => {
-    const typeKind = getTypeKind(type.name)
-    return typeKind === selectedKind
-  })
+    const typeKind = getTypeKind(type.name);
+    return typeKind === selectedKind;
+  });
 
   const allCategories = filteredTypes.flatMap((type) =>
     type.categories.map((cat) => ({
       ...cat,
       typeName: type.name,
     }))
-  )
+  );
 
   const initialValues: ExtendedFormValues = {
     name: "Task 1",
@@ -244,67 +282,78 @@ export const CreateTaskForm: React.FC = () => {
     newCategoryTier: null,
     isNewCategory: false,
     newCategoryName: "",
-  }
+  };
 
-  const handleSubmit = async (values: ExtendedFormValues, { resetForm }: any) => { // Añadido resetForm aquí
+  const handleSubmit = async (
+    values: ExtendedFormValues,
+    { resetForm }: any
+  ) => {
     try {
-      let finalCategoryId = values.categoryId
-      let finalTypeId: number
+      let finalCategoryId = values.categoryId;
+      let finalTypeId: number;
+      let newCategoryCreated = false; // ✅ NUEVO: Flag para saber si creamos nueva categoría
 
       // Si es una nueva categoría, crearla primero
       if (values.isNewCategory) {
         if (!values.newCategoryName.trim()) {
-          toast.error("Category name is required for new category")
-          return
+          toast.error("Category name is required for new category");
+          return;
         }
 
         if (!values.newCategoryTier) {
-          toast.error("Tier selection is required for new category")
-          return
+          toast.error("Tier selection is required for new category");
+          return;
         }
 
-        const finalDurationDays = parseFloat(values.durationDays as string)
+        const finalDurationDays = parseFloat(values.durationDays as string);
         if (finalDurationDays <= 0) {
-          toast.error("Duration must be greater than zero for new category")
-          return
+          toast.error("Duration must be greater than zero for new category");
+          return;
         }
 
         // Encontrar el tipo correspondiente al selectedKind
-        const selectedType = filteredTypes[0]
+        const selectedType = filteredTypes[0];
         if (!selectedType) {
-          toast.error("No type found for the selected kind")
-          return
+          toast.error("No type found for the selected kind");
+          return;
         }
 
-        finalTypeId = selectedType.id
+        finalTypeId = selectedType.id;
 
         // Crear la nueva categoría
-        console.log(`🆕 Creando nueva categoría: (name: ${values.newCategoryName.trim()}, duration: ${finalDurationDays}, tier: ${values.newCategoryTier}, typeId: ${finalTypeId})`)
+        console.log(
+          `🆕 Creando nueva categoría: (name: ${values.newCategoryName.trim()}, duration: ${finalDurationDays}, tier: ${
+            values.newCategoryTier
+          }, typeId: ${finalTypeId})`
+        );
 
-        const categoryResponse = await axios.post('/api/categories', {
+        const categoryResponse = await axios.post("/api/categories", {
           name: values.newCategoryName.trim(),
           duration: finalDurationDays,
           tier: values.newCategoryTier,
-          typeId: finalTypeId
-        })
+          typeId: finalTypeId,
+        });
 
-        finalCategoryId = categoryResponse.data.id.toString()
-        console.log(`✅ Nueva categoría creada con ID: ${finalCategoryId}`)
+        finalCategoryId = categoryResponse.data.id.toString();
+        newCategoryCreated = true; // ✅ NUEVO: Marcar que se creó nueva categoría
+        console.log(`✅ Nueva categoría creada con ID: ${finalCategoryId}`);
       } else {
         // Categoría existente
-        const selectedCategory = allCategories.find(cat => cat.id.toString() === values.categoryId);
+        const selectedCategory = allCategories.find(
+          (cat) => cat.id.toString() === values.categoryId
+        );
         if (!selectedCategory) {
-            toast.error("Categoría seleccionada no encontrada");
-            return;
+          toast.error("Categoría seleccionada no encontrada");
+          return;
         }
-        finalTypeId = selectedCategory.typeId; // Usa el typeId de la categoría existente
+        finalTypeId = selectedCategory.typeId;
       }
 
-      const finalDurationDays = parseFloat(values.durationDays as string)
+      const finalDurationDays = parseFloat(values.durationDays as string);
 
       if (finalDurationDays <= 0) {
-        toast.error("La duración de la tarea debe ser mayor a cero.")
-        return
+        toast.error("La duración de la tarea debe ser mayor a cero.");
+        return;
       }
 
       const payload = {
@@ -319,17 +368,32 @@ export const CreateTaskForm: React.FC = () => {
             ? values.assignedUserIds
             : undefined,
         durationDays: finalDurationDays,
+      };
+
+      setLoading(true);
+
+      const taskResponse = await axios.post("/api/tasks", payload);
+      const createdTask = taskResponse.data;
+
+      setLoading(false);
+
+      // ✅ NUEVO: Refrescar solo tipos/categorías si se creó nueva categoría
+      if (newCategoryCreated) {
+        console.log(
+          "🔄 Refrescando categorías porque se creó nueva categoría..."
+        );
+        try {
+          await refreshTypes();
+          console.log("✅ Categorías refrescadas exitosamente");
+        } catch (refreshError) {
+          console.error("❌ Error al refrescar categorías:", refreshError);
+          // No bloqueamos el flujo, solo logueamos el error
+        }
       }
 
-      setLoading(true)
-
-      const taskResponse = await axios.post("/api/tasks", payload)
-      const createdTask = taskResponse.data
-
-      setLoading(false)
-
       const assignedUserNames =
-        createdTask.assignees?.map((a: any) => a.user.name).join(", ") ?? "somebody"
+        createdTask.assignees?.map((a: any) => a.user.name).join(", ") ??
+        "somebody";
 
       const startDate = new Date(createdTask.startDate).toLocaleDateString(
         "es-PE",
@@ -340,7 +404,7 @@ export const CreateTaskForm: React.FC = () => {
           hour: "2-digit",
           minute: "2-digit",
         }
-      )
+      );
       const endDate = new Date(createdTask.deadline).toLocaleDateString(
         "es-PE",
         {
@@ -350,44 +414,67 @@ export const CreateTaskForm: React.FC = () => {
           hour: "2-digit",
           minute: "2-digit",
         }
-      )
+      );
 
       toast.success(
-        <TaskCreatedToastContent assignedUserNames={assignedUserNames} startDate={startDate} endDate={endDate} />
-      )
+        <TaskCreatedToastContent
+          assignedUserNames={assignedUserNames}
+          startDate={startDate}
+          endDate={endDate}
+        />
+      );
 
-      setUserHasManuallyChanged(false)
-      setIsTypingNewCategory(false)
-      resetForm() // ✅ Limpiar todos los campos del formulario.
-
+      setUserHasManuallyChanged(false);
+      setIsTypingNewCategory(false);
+      resetForm();
     } catch (error: unknown) {
-      setLoading(false)
+      setLoading(false);
       if (axios.isAxiosError(error) && error.response?.data?.error) {
-        toast.error(error.response.data.error)
+        toast.error(error.response.data.error);
       } else if (axios.isAxiosError(error) && error.response?.data?.details) {
-        toast.error(`Error: ${error.response.data.details}`)
+        toast.error(`Error: ${error.response.data.details}`);
       } else {
-        toast.error("Error inesperado al crear la tarea")
+        toast.error("Error inesperado al crear la tarea");
       }
     }
-  }
+  };
 
   const handleUserSelectionChange = (selectedUserIds: string[]) => {
-    console.log('👤 Usuario cambió la selección manualmente:', selectedUserIds)
-    setUserHasManuallyChanged(true)
-    return selectedUserIds
-  }
+    console.log("👤 Usuario cambió la selección manualmente:", selectedUserIds);
+    setUserHasManuallyChanged(true);
+    return selectedUserIds;
+  };
 
   const applySuggestion = () => {
     if (suggestedAssignment) {
-      console.log(`🤖 Aplicando sugerencia manualmente: ${suggestedAssignment.userId}`)
-      setUserHasManuallyChanged(false)
+      console.log(
+        `🤖 Aplicando sugerencia manualmente: ${suggestedAssignment.userId}`
+      );
+      setUserHasManuallyChanged(false);
     }
-  }
+  };
 
   // ✅ Función para manejar cuando se completa la duración
-  const handleDurationComplete = (duration: string) => {
-    console.log(`⏰ Duration completed, triggering suggestion: ${duration}`)
+  const handleDurationComplete = (duration: string, currentCategoryId: string, currentIsNewCategory: boolean) => {
+    console.log(`⏰ Duration completed with balance check: ${duration}`)
+    
+    // ✅ NUEVO: Log de información de balanceamiento
+    const allCategories = types.flatMap(type => type.categories);
+    const selectedCategory = allCategories.find(cat => cat.id.toString() === currentCategoryId);
+    
+    if (selectedCategory && !currentIsNewCategory) {
+      const parsedDuration = parseFloat(duration);
+      const categoryDuration = selectedCategory.duration;
+      
+      console.log(`🎯 Balance check - Category duration: ${categoryDuration}, Manual: ${parsedDuration}`);
+      
+      if (Math.abs(categoryDuration - parsedDuration) > 0.1) {
+        console.log(`🔄 Duration change detected - triggering balance recalculation`);
+      } else {
+        console.log(`📋 Duration matches category - using normal suggestion`);
+      }
+    }
+    
     setTriggerSuggestion(prev => prev + 1)
   }
 
@@ -402,34 +489,43 @@ export const CreateTaskForm: React.FC = () => {
         enableReinitialize={true}
       >
         {({ values, errors, touched, setFieldValue, isSubmitting }) => {
-          const handleCategoryChange = (value: string | null, isNew?: boolean, newCategoryName?: string) => {
-            console.log(`📋 Category change: (value: ${value}, isNew: ${isNew}, newCategoryName: ${newCategoryName})`)
-            
-            setFieldValue("categoryId", value || "")
-            setFieldValue("isNewCategory", isNew || false)
-            setFieldValue("newCategoryName", newCategoryName || "")
-            
+          const handleCategoryChange = (
+            value: string | null,
+            isNew?: boolean,
+            newCategoryName?: string
+          ) => {
+            console.log(
+              `📋 Category change: (value: ${value}, isNew: ${isNew}, newCategoryName: ${newCategoryName})`
+            );
+
+            setFieldValue("categoryId", value || "");
+            setFieldValue("isNewCategory", isNew || false);
+            setFieldValue("newCategoryName", newCategoryName || "");
+
             if (isNew) {
               // Si es nueva categoría, limpiar duración para que sea manual
-              setFieldValue("durationDays", "")
-              setFieldValue("assignedUserIds", [])
-              setFieldValue("newCategoryTier", null)
-              setSuggestedAssignment(null)
-              
-              // ✅ NUEVO: Trigger sugerencia inmediatamente si ya hay duración
-              if (values.durationDays && parseFloat(values.durationDays as string) > 0) {
-                console.log('🔄 Triggering suggestion for new category with existing duration')
-                setTriggerSuggestion(prev => prev + 1)
+              setFieldValue("durationDays", "");
+              setFieldValue("assignedUserIds", []);
+              setFieldValue("newCategoryTier", null); // Limpiar tier
+              setSuggestedAssignment(null);
+
+              if (
+                values.durationDays &&
+                parseFloat(values.durationDays as string) > 0
+              ) {
+                console.log(
+                  "🔄 Triggering suggestion for new category with existing duration"
+                );
+                setTriggerSuggestion((prev) => prev + 1);
               }
             } else {
-              // Si es categoría existente, LIMPIAR SIEMPRE la duración.
-              // Esto forzará que la lógica de sugerencia la rellene con la duración de la categoría existente.
-              setFieldValue("durationDays", "") // Esta línea es crucial para que la sugerencia se aplique.
-              setFieldValue("assignedUserIds", []) 
-              setSuggestedAssignment(null)
+              // Para categoría existente, NO limpiar automáticamente
+              setFieldValue("assignedUserIds", []);
+              setSuggestedAssignment(null);
+              setFieldValue("newCategoryTier", null); // Limpiar tier cuando no es nueva categoría
             }
-            setUserHasManuallyChanged(false) // Se reinicia el flag de cambio manual de asignado
-          }
+            setUserHasManuallyChanged(false);
+          };
 
           return (
             <Form className="flex flex-col gap-4">
@@ -446,38 +542,39 @@ export const CreateTaskForm: React.FC = () => {
                 selectedKind={selectedKind}
                 triggerSuggestion={triggerSuggestion}
                 isSubmitting={isSubmitting}
+                allCategories={allCategories}
               />
-              
+
               <TaskKindSwitch
                 selectedKind={selectedKind}
                 onKindChange={(kind) => {
-                  setSelectedKind(kind)
+                  setSelectedKind(kind);
                   setTimeout(() => {
-                    setFieldValue("categoryId", "")
-                    setFieldValue("durationDays", "")
-                    setFieldValue("assignedUserIds", [])
-                    setFieldValue("isNewCategory", false)
-                    setFieldValue("newCategoryName", "")
-                    setFieldValue("newCategoryTier", null)
-                    setSuggestedAssignment(null)
-                    setUserHasManuallyChanged(false)
-                    setIsTypingNewCategory(false)
-                  }, 0)
+                    setFieldValue("categoryId", "");
+                    setFieldValue("durationDays", "");
+                    setFieldValue("assignedUserIds", []);
+                    setFieldValue("isNewCategory", false);
+                    setFieldValue("newCategoryName", "");
+                    setFieldValue("newCategoryTier", null);
+                    setSuggestedAssignment(null);
+                    setUserHasManuallyChanged(false);
+                    setIsTypingNewCategory(false);
+                  }, 0);
                 }}
               />
-              
+
               <TaskNameField touched={touched.name} error={errors.name} />
 
               <BrandSelect
                 brands={brands}
                 value={values.brandId}
                 onChange={(value) => {
-                  setFieldValue("brandId", value)
+                  setFieldValue("brandId", value);
                   setTimeout(() => {
-                    setFieldValue("assignedUserIds", [])
-                    setSuggestedAssignment(null)
-                    setUserHasManuallyChanged(false)
-                  }, 0)
+                    setFieldValue("assignedUserIds", []);
+                    setSuggestedAssignment(null);
+                    setUserHasManuallyChanged(false);
+                  }, 0);
                 }}
                 touched={touched.brandId}
                 error={errors.brandId}
@@ -504,17 +601,20 @@ export const CreateTaskForm: React.FC = () => {
                 onTierChange={(tier) => setFieldValue("newCategoryTier", tier)}
                 showTierSelection={values.isNewCategory}
                 onTypingNewCategory={setIsTypingNewCategory}
+                tierTouched={touched.newCategoryTier}
+                tierError={errors.newCategoryTier}
               />
 
               <PrioritySelect
                 value={values.priority}
                 onChange={(value) => {
-                  setFieldValue("priority", value)
-                  if (!values.isNewCategory) { 
-                    setFieldValue("durationDays", "") // Al cambiar prioridad en categoría existente, limpiar duración para que la sugerencia se actualice.
+                  setFieldValue("priority", value);
+                  if (!values.isNewCategory) {
+                    // Al cambiar prioridad en categoría existente, no limpiar duración automáticamente
+                    // La lógica de sugerencias se encargará de esto
                   }
                   if (!values.isNewCategory) {
-                    setUserHasManuallyChanged(false)
+                    setUserHasManuallyChanged(false);
                   }
                 }}
                 touched={touched.priority}
@@ -522,21 +622,22 @@ export const CreateTaskForm: React.FC = () => {
               />
 
               <DurationField
-                // El campo de duración siempre está habilitado para edición manual,
-                // excepto cuando se está buscando activamente una sugerencia para una categoría existente.
                 fetchingSuggestion={fetchingSuggestion && !values.isNewCategory}
                 touched={touched.durationDays}
                 error={errors.durationDays}
                 isTypingNewCategory={isTypingNewCategory}
-                onDurationComplete={handleDurationComplete}
+                // Pass categoryId and isNewCategory to handleDurationComplete
+                onDurationComplete={(duration) => handleDurationComplete(duration, values.categoryId, values.isNewCategory)}
+                allCategories={allCategories}
               />
 
               <UserAssignmentSelect
                 users={users}
                 values={values.assignedUserIds}
                 onChange={(selectedUserIds) => {
-                  const newSelection = handleUserSelectionChange(selectedUserIds)
-                  setFieldValue("assignedUserIds", newSelection)
+                  const newSelection =
+                    handleUserSelectionChange(selectedUserIds);
+                  setFieldValue("assignedUserIds", newSelection);
                 }}
                 suggestedUser={suggestedUser}
                 fetchingSuggestion={fetchingSuggestion}
@@ -555,14 +656,13 @@ export const CreateTaskForm: React.FC = () => {
                 type="submit"
                 fullWidth
                 disabled={
-                  loading || 
-                  isSubmitting || 
-                  (brands.length === 0 && !dataLoading) || 
-                  (fetchingSuggestion && !values.isNewCategory)
+                  loading ||
+                  isSubmitting ||
+                  (brands.length === 0 && !dataLoading)
                 }
                 size="lg"
               >
-                {isSubmitting ? 'Creating...' : 'Create Task'}
+                {isSubmitting ? "Creating..." : "Create Task"}
               </Button>
 
               {brands.length === 0 && !dataLoading && (
@@ -571,9 +671,9 @@ export const CreateTaskForm: React.FC = () => {
                 </Typography>
               )}
             </Form>
-          )
+          );
         }}
       </Formik>
     </>
-  )
-}
+  );
+};

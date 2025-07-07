@@ -32,16 +32,88 @@ export const useTaskSuggestion = (
       if (!brandId || !priority) {
         console.log('❌ Missing brandId or priority - skipping suggestion')
         setSuggestedAssignment(null)
-        setFetchingSuggestion(false) // ✅ Asegurar que se detenga el loading
+        setFetchingSuggestion(false)
         return
       }
 
-      // ✅ Para categorías existentes
-      if (!isNewCategory && categoryId) {
-        console.log('🔄 Fetching suggestion for existing category')
+      // ✅ NUEVA LÓGICA: Si hay duración manual para cualquier tipo de categoría
+      if (manualDuration && parseFloat(manualDuration) > 0) {
+        const durationDays = parseFloat(manualDuration)
+        
+        console.log('🔄 Fetching suggestion with MANUAL DURATION:', {
+          durationDays,
+          isNewCategory,
+          categoryId,
+          typeId,
+          brandId,
+          priority
+        });
+        
+        setFetchingSuggestion(true)
+        
+        try {
+          let response;
+          
+          if (isNewCategory && typeId) {
+            // Para nuevas categorías, usar endpoint manual con typeId
+            console.log('🆕 Using manual endpoint for NEW category')
+            response = await axios.get(`/api/tasks/suggestion/manual`, {
+              params: { 
+                brandId, 
+                typeId, 
+                priority, 
+                durationDays 
+              },
+            })
+          } else if (!isNewCategory && categoryId) {
+            // ✅ NUEVO: Para categorías existentes con duración manual, usar endpoint híbrido
+            console.log('🔧 Using hybrid endpoint for EXISTING category with manual duration')
+            response = await axios.get(`/api/tasks/suggestion/hybrid`, {
+              params: { 
+                brandId, 
+                categoryId, 
+                priority,
+                manualDuration: durationDays // ✅ NUEVO: Pasar duración manual
+              },
+            })
+          } else {
+            console.log('❌ Invalid combination for manual duration suggestion')
+            setSuggestedAssignment(null)
+            setFetchingSuggestion(false)
+            return
+          }
+          
+          const { suggestedUserId } = response.data
+          
+          setSuggestedAssignment({
+            userId: suggestedUserId,
+            durationDays: durationDays, // ✅ Usar duración manual
+          })
+
+          console.log('✅ Sugerencia obtenida con duración manual:', {
+            userId: suggestedUserId,
+            durationDays: durationDays
+          })
+          
+        } catch (error) {
+          console.error('Error al obtener sugerencia con duración manual:', error)
+          setSuggestedAssignment(null)
+          if (axios.isAxiosError(error) && error.response?.status !== 400) {
+            toast.error('Error al obtener sugerencia de asignación.')
+          }
+        } finally {
+          setFetchingSuggestion(false)
+        }
+        
+        return
+      }
+
+      // ✅ Para categorías existentes SIN duración manual (usa duración de categoría)
+      if (!isNewCategory && categoryId && !manualDuration) {
+        console.log('🔄 Fetching suggestion for existing category WITHOUT manual duration')
         setFetchingSuggestion(true)
         try {
-          const response = await axios.get(`/api/tasks/suggestion`, {
+          const response = await axios.get(`/api/tasks/suggestion/hybrid`, {
             params: { brandId, categoryId, priority },
           })
           
@@ -55,71 +127,11 @@ export const useTaskSuggestion = (
         } catch (error) {
           console.error('Error al obtener sugerencia para categoría existente:', error)
           setSuggestedAssignment(null)
-          toast.error('Error al obtener sugerencia de asignación.')
+          if (axios.isAxiosError(error) && error.response?.status !== 400) {
+            toast.error('Error al obtener sugerencia de asignación.')
+          }
         } finally {
           setFetchingSuggestion(false)
-        }
-      }
-      // ✅ Para nuevas categorías con duración manual
-      else if (isNewCategory && manualDuration && typeId) {
-        const durationDays = parseFloat(manualDuration)
-        
-        console.log('🔄 Fetching suggestion for NEW category:', {
-          durationDays,
-          typeId,
-          brandId,
-          priority
-        });
-        
-        if (durationDays > 0) {
-          setFetchingSuggestion(true)
-          try {
-            // ✅ Hacer llamada al endpoint de sugerencia pero usando typeId y duración manual
-            console.log('🤖 Obteniendo sugerencia para nueva categoría:', {
-              typeId,
-              brandId,
-              priority,
-              durationDays
-            })
-
-            // Como no tenemos categoryId, vamos a hacer la llamada con datos mínimos
-            // y luego procesar la respuesta localmente
-            const response = await axios.get(`/api/tasks/suggestion/manual`, {
-              params: { 
-                brandId, 
-                typeId, 
-                priority, 
-                durationDays 
-              },
-            })
-            
-            const { suggestedUserId } = response.data
-
-            setSuggestedAssignment({
-              userId: suggestedUserId,
-              durationDays: durationDays,
-            })
-
-            console.log('✅ Sugerencia obtenida para nueva categoría:', suggestedUserId)
-          } catch (error) {
-            console.error('Error al obtener sugerencia para nueva categoría:', error)
-            
-            // ✅ Fallback: Si no hay endpoint específico, intentar con el existente usando el primer type
-            try {
-              console.log('🔄 Intentando fallback con sugerencia general...')
-              
-              // Aquí podrías hacer una llamada alternativa o usar lógica local
-              // Por ahora, simplemente limpiamos la sugerencia
-              setSuggestedAssignment(null)
-            } catch (fallbackError) {
-              console.error('Error en fallback:', fallbackError)
-              setSuggestedAssignment(null)
-            }
-          } finally {
-            setFetchingSuggestion(false)
-          }
-        } else {
-          setSuggestedAssignment(null)
         }
       }
       // ✅ Limpiar sugerencia si no hay datos suficientes
@@ -129,7 +141,7 @@ export const useTaskSuggestion = (
     }
 
     getSuggestion()
-  }, [brandId, categoryId, priority, isNewCategory, manualDuration, typeId, triggerSuggestion]) // ✅ Agregar triggerSuggestion
+  }, [brandId, categoryId, priority, isNewCategory, manualDuration, typeId, triggerSuggestion])
 
   return { suggestedAssignment, fetchingSuggestion }
 }
