@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// src/app/tasks/components/DurationField.tsx
+
 import React from 'react'
 import { useFormikContext } from 'formik'
 import { FormLabel, Input } from '@mui/joy'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { DateTimeIcon } from '@hugeicons/core-free-icons'
+import { DateTimeIcon, RefreshIcon } from '@hugeicons/core-free-icons'
 import { FormValues } from '@/interfaces'
 import { formatDaysToReadable } from '@/utils/duration-utils'
 import { TextFieldError, TextFieldHelp } from '@/components'
@@ -19,7 +19,11 @@ interface DurationFieldProps {
   error?: string
   isTypingNewCategory?: boolean
   onDurationComplete?: (duration: string) => void
-  allCategories?: any[] // ✅ NUEVO: Para determinar fuente de duración
+  allCategories?: any[]
+  // ✅ NUEVO: Props para mejor integración con sugerencias
+  onDurationChange?: (duration: string) => void
+  suggestionChanged?: boolean
+  suggestedUser?: { name: string } | null
 }
 
 export const DurationField: React.FC<DurationFieldProps> = ({
@@ -28,44 +32,55 @@ export const DurationField: React.FC<DurationFieldProps> = ({
   error,
   isTypingNewCategory = false,
   onDurationComplete,
-  allCategories = []
+  allCategories = [],
+  onDurationChange, // ✅ NUEVO
+  suggestionChanged = false, // ✅ NUEVO
+  suggestedUser = null // ✅ NUEVO
 }) => {
   const { values, setFieldValue } = useFormikContext<ExtendedFormValues>()
   
-  // ✅ CORRECCIÓN: Estado local para el input que siempre permite edición
   const [localInputValue, setLocalInputValue] = React.useState('')
-  // ✅ Estado para trackear si el usuario ha editado manualmente
   const [hasManualEdit, setHasManualEdit] = React.useState(false)
+  // ✅ NUEVO: Estado para mostrar indicador de cambio de sugerencia
+  const [showSuggestionChangeIndicator, setShowSuggestionChangeIndicator] = React.useState(false)
   
   const numberOfAssignees = values.assignedUserIds.length
   const originalDuration = parseFloat(localInputValue) || 0
   const effectiveDuration = numberOfAssignees > 0 ? originalDuration / numberOfAssignees : originalDuration
 
-  // ✅ CORRECCIÓN: Sincronizar con Formik solo cuando no hay edición manual activa
+  // Sincronizar con Formik solo cuando no hay edición manual activa
   React.useEffect(() => {
     if (!hasManualEdit && values.durationDays !== localInputValue) {
       setLocalInputValue(values.durationDays as string || '')
     }
   }, [values.durationDays, hasManualEdit])
 
-  // ✅ NUEVO: Determinar la fuente de la duración
+  // ✅ NUEVO: Efecto para mostrar indicador de cambio de sugerencia
+  React.useEffect(() => {
+    if (suggestionChanged && suggestedUser) {
+      setShowSuggestionChangeIndicator(true)
+      const timer = setTimeout(() => {
+        setShowSuggestionChangeIndicator(false)
+      }, 3000) // Mostrar por 3 segundos
+      
+      return () => clearTimeout(timer)
+    }
+  }, [suggestionChanged, suggestedUser])
+
+  // Determinar la fuente de la duración
   const getDurationSource = () => {
-    // Si está escribiendo una nueva categoría, siempre es manual
     if (isTypingNewCategory || values.isNewCategory) {
       return 'manual'
     }
     
-    // Si hay edición manual, es manual
     if (hasManualEdit) {
       return 'manual'
     }
     
-    // Si se está buscando sugerencia, es calculando
     if (fetchingSuggestion) {
       return 'calculating'
     }
     
-    // Si hay valor y es categoría existente, verificar si viene de la categoría
     if (localInputValue && !values.isNewCategory && values.categoryId) {
       const selectedCategory = allCategories.find(cat => cat.id.toString() === values.categoryId)
       if (selectedCategory && selectedCategory.duration.toString() === localInputValue) {
@@ -73,7 +88,6 @@ export const DurationField: React.FC<DurationFieldProps> = ({
       }
     }
     
-    // Si hay valor y no es manual, es sugerido
     if (localInputValue && !fetchingSuggestion) {
       return 'suggested'
     }
@@ -81,7 +95,7 @@ export const DurationField: React.FC<DurationFieldProps> = ({
     return null
   }
 
-  // ✅ Determinar si mostrar indicador y su texto/color
+  // Determinar si mostrar indicador y su texto/color
   const getStatusIndicator = () => {
     const source = getDurationSource()
     
@@ -111,19 +125,27 @@ export const DurationField: React.FC<DurationFieldProps> = ({
     return "Duration in days"
   }
 
-  // ✅ CORRECCIÓN: Manejar cambios del usuario
+  // ✅ MEJORADO: Manejar cambios del usuario con notificación inmediata
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = event.target.value
     setLocalInputValue(newValue)
     setFieldValue('durationDays', newValue)
     
-    // ✅ Marcar que el usuario ha editado manualmente
+    // Marcar que el usuario ha editado manualmente
     if (newValue !== values.durationDays) {
       setHasManualEdit(true)
     }
+
+    // ✅ NUEVO: Notificar cambio inmediatamente para recálculo de sugerencias
+    if (onDurationChange && newValue.trim()) {
+      const duration = parseFloat(newValue)
+      if (duration > 0) {
+        console.log('⏰ Duration changed in real-time:', newValue)
+        onDurationChange(newValue)
+      }
+    }
   }
 
-  // ✅ CORRECCIÓN: Manejar cuando se pierde el foco
   const handleBlur = (event: React.FocusEvent<HTMLInputElement>) => {
     if (!event || !event.target) {
       console.error('❌ handleBlur: event or event.target is undefined', { event });
@@ -132,7 +154,6 @@ export const DurationField: React.FC<DurationFieldProps> = ({
 
     const value = event.target.value.trim()
     
-    // Si hay callback y valor válido, notificar al padre
     if (onDurationComplete && value) {
       const durationValue = parseFloat(value)
       if (durationValue > 0) {
@@ -142,9 +163,10 @@ export const DurationField: React.FC<DurationFieldProps> = ({
     }
   }
 
-  // ✅ CORRECCIÓN: Resetear estado manual cuando cambia la categoría
+  // Resetear estado manual cuando cambia la categoría
   React.useEffect(() => {
     setHasManualEdit(false)
+    setShowSuggestionChangeIndicator(false)
   }, [values.categoryId, values.isNewCategory])
 
   return (
@@ -156,10 +178,23 @@ export const DurationField: React.FC<DurationFieldProps> = ({
           strokeWidth={1.5}
         />
         Duration
-        {/* ✅ Mostrar indicador de estado dinámico */}
+        {/* Mostrar indicador de estado dinámico */}
         {statusIndicator && (
           <span style={{ color: statusIndicator.color, marginLeft: '4px' }}>
             {statusIndicator.text}
+          </span>
+        )}
+        {/* ✅ NUEVO: Indicador de cambio de sugerencia */}
+        {showSuggestionChangeIndicator && suggestedUser && (
+          <span style={{ 
+            color: 'var(--joy-palette-success-500)', 
+            marginLeft: '4px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '2px'
+          }}>
+            <HugeiconsIcon icon={RefreshIcon} size={12} strokeWidth={2} />
+            Suggestion updated!
           </span>
         )}
       </FormLabel>
@@ -172,7 +207,6 @@ export const DurationField: React.FC<DurationFieldProps> = ({
         onBlur={handleBlur}
         placeholder={getPlaceholder()}
         error={touched && !!error}
-        // ✅ CORRECCIÓN: Solo deshabilitar durante carga, no cuando hay valor sugerido
         disabled={fetchingSuggestion && !hasManualEdit}
         slotProps={{
           input: {
@@ -180,6 +214,21 @@ export const DurationField: React.FC<DurationFieldProps> = ({
           },
         }}
       />
+
+      {/* ✅ NUEVO: Información sobre cambio de sugerencia */}
+      {showSuggestionChangeIndicator && suggestedUser && (
+        <div style={{
+          fontSize: '0.75rem',
+          color: 'var(--joy-palette-success-500)',
+          marginTop: '0.25rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px'
+        }}>
+          <HugeiconsIcon icon={RefreshIcon} size={14} strokeWidth={1.5} />
+          Suggestion changed to: <strong>{suggestedUser.name}</strong>
+        </div>
+      )}
 
       {/* Mostrar información de duración efectiva */}
       {numberOfAssignees > 1 && originalDuration > 0 && (

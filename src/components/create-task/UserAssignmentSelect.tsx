@@ -172,13 +172,6 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
         )}
       </Select>
 
-      {/* ✅ NUEVO: Mostrar texto de ayuda cuando no hay usuarios seleccionados */}
-      {values.length === 0 && !error && !fetchingSuggestion && (
-        <div className="text-sm text-gray-500 mt-[0.375rem]">
-          Select at least one user to assign this task
-        </div>
-      )}
-
       {/* ✅ CORRECCIÓN: Asegurar que el error se muestre */}
       {touched && error && <TextFieldError label={error} />}
     </div>

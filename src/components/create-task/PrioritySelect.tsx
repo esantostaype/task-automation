@@ -29,6 +29,7 @@ export const PrioritySelect: React.FC<PrioritySelectProps> = ({
     <Select
       value={value}
       onChange={(_, val) => onChange(val as string)}
+      placeholder="Normal"
     >
       <Option value="LOW">Low</Option>
       <Option value="NORMAL">Normal</Option>

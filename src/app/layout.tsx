@@ -15,10 +15,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={ inter.className }>
       <body>
         <Providers>
-          <main className='flex bg-white/2'>
+          <main className='flex'>
             <section className='flex-1'>
               <Header/>
-              <section className='p-10'>
+              <section className='p-6'>
                 { children }
               </section>
             </section>
