@@ -480,7 +480,7 @@ export const ClickUpUsersSync: React.FC = () => {
                     {/* Avatar */}
                     <Avatar
                       src={user.profilePicture}
-                      sx={{ 
+                      sx={{  
                         width: 40, 
                         height: 40,
                         bgcolor: user.color || 'primary.500'

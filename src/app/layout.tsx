@@ -6,8 +6,8 @@ import { CreateTaskForm, Header } from '@/components'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata = {
-  title: "Inszone Task Automation",
-  description: "Inszone Task Automation is a smart task automation platform that optimizes creative workflows, assigns tasks by priority and skill, and calculates deadlines based on real working hours."
+  title: "Assignify by Inszone",
+  description: "Assignify by Inszone is a smart task automation platform that optimizes creative workflows, assigns tasks by priority and skill, and calculates deadlines based on real working hours."
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -18,9 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <main className='flex'>
             <section className='flex-1'>
               <Header/>
-              <section className='p-6'>
-                { children }
-              </section>
+              { children }
             </section>
             <CreateTaskForm/>
           </main>

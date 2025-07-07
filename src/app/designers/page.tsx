@@ -1,11 +1,11 @@
 import { ClickUpUsersSync } from '@/components'
-import { MainTitle } from '@/components/MainTitle'
 import { UserGroup03Icon } from '@hugeicons/core-free-icons'
+import { MainTitle } from '@/components/MainTitle'
 
-export default function PageTaskQueue() {
+export default function PageDesigners() {
   return (
     <>
-      <MainTitle label="Designers" icon={ UserGroup03Icon } />
+      <MainTitle title="Designers" icon={ UserGroup03Icon } />
       <ClickUpUsersSync/>
     </>
   )
