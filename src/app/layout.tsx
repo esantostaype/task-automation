@@ -18,7 +18,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <main className='flex bg-white/2'>
             <section className='flex-1'>
               <Header/>
-              { children }
+              <section className='p-10'>
+                { children }
+              </section>
             </section>
             <CreateTaskForm/>
           </main>
