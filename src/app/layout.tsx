@@ -1,7 +1,7 @@
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { Providers } from './providers'
-import { Header } from '@/components'
+import { CreateTaskForm, Header } from '@/components'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -18,8 +18,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <main className='flex bg-white/2'>
             <section className='flex-1'>
               <Header/>
+              { children }
             </section>
-            { children }
+            <CreateTaskForm/>
           </main>
         </Providers>
       </body>

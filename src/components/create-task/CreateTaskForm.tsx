@@ -48,7 +48,7 @@ interface FormikSuggestionLogicProps {
   selectedKind: "UX/UI" | "Graphic";
   triggerSuggestion: number;
   isSubmitting: boolean;
-  allCategories: any[];
+  allCategories: any[]; // ✅ NUEVO: Agregar allCategories
 }
 
 const FormikSuggestionLogic: React.FC<FormikSuggestionLogicProps> = ({
@@ -63,161 +63,151 @@ const FormikSuggestionLogic: React.FC<FormikSuggestionLogicProps> = ({
   selectedKind,
   triggerSuggestion,
   isSubmitting,
+  allCategories,
 }) => {
-  const { values, setFieldValue } = useFormikContext<ExtendedFormValues>()
+  const { values, setFieldValue } = useFormikContext<ExtendedFormValues>();
 
-  // ✅ Obtener el typeId para nuevas categorías
+  // ✅ Estado para trackear si la duración ha sido editada manualmente
+  const [durationManuallyEdited, setDurationManuallyEdited] =
+    React.useState(false);
+
+  // ✅ Obtener el typeId para cualquier caso (nueva categoría o existente)
   const currentTypeId = React.useMemo(() => {
-    if (!isNewCategory) return undefined
-    
-    const filteredTypes = types.filter((type) => {
-      const typeKind = getTypeKind(type.name)
-      return typeKind === selectedKind
-    })
-    
-    const typeId = filteredTypes.length > 0 ? filteredTypes[0].id : undefined
-    
-    console.log(`🔍 Current type ID for new category: ${typeId} (isNewCategory: ${isNewCategory}, selectedKind: ${selectedKind})`)
-    
-    return typeId
-  }, [isNewCategory, selectedKind, types])
+    if (isNewCategory) {
+      // Para nueva categoría, usar el tipo del selectedKind
+      const filteredTypes = types.filter((type) => {
+        const typeKind = getTypeKind(type.name);
+        return typeKind === selectedKind;
+      });
+      return filteredTypes.length > 0 ? filteredTypes[0].id : undefined;
+    } else if (values.categoryId) {
+      // Para categoría existente, obtener el typeId de la categoría seleccionada
+      const selectedCategory = allCategories.find(
+        (cat) => cat.id.toString() === values.categoryId
+      );
+      return selectedCategory?.typeId;
+    }
+    return undefined;
+  }, [isNewCategory, selectedKind, types, values.categoryId, allCategories]);
 
-  // ✅ MEJORADO: Determinar duración manual para ambos tipos de categoría
-  const effectiveManualDuration = React.useMemo(() => {
-    const durationValue = values.durationDays as string;
-    
-    if (!durationValue || durationValue.trim() === '') return undefined;
-    
-    const parsedDuration = parseFloat(durationValue);
-    if (isNaN(parsedDuration) || parsedDuration <= 0) return undefined;
-    
-    // ✅ NUEVO: Para categorías existentes, verificar si la duración difiere de la original
-    if (!isNewCategory && values.categoryId) {
-      // Buscar la categoría para comparar duraciones
-      const allCategories = types.flatMap(type => type.categories);
-      const selectedCategory = allCategories.find(cat => cat.id.toString() === values.categoryId);
-      
-      if (selectedCategory) {
-        const categoryDuration = selectedCategory.duration;
-        console.log(`🔍 Comparing durations - Category: ${categoryDuration}, Manual: ${parsedDuration}`);
-        
-        // Solo considerar como manual si es diferente a la duración de categoría
-        if (Math.abs(categoryDuration - parsedDuration) > 0.1) {
-          console.log(`✅ Duration is manual for existing category (${parsedDuration} vs ${categoryDuration})`);
-          return durationValue;
-        } else {
-          console.log(`📋 Duration matches category default (${parsedDuration})`);
-          return undefined; // No es manual, es la duración de categoría
-        }
+  // ✅ Efecto para aplicar duración inmediatamente cuando se selecciona categoría existente
+  React.useEffect(() => {
+    if (!isNewCategory && values.categoryId && !durationManuallyEdited) {
+      console.log(
+        "🔍 Detectado cambio a categoría existente, aplicando duración automáticamente..."
+      );
+
+      const selectedCategory = allCategories.find(
+        (cat) => cat.id.toString() === values.categoryId
+      );
+
+      if (selectedCategory && selectedCategory.duration) {
+        console.log(
+          `✅ Aplicando duración de categoría existente: ${selectedCategory.duration} días`
+        );
+        setFieldValue("durationDays", selectedCategory.duration.toString());
       }
     }
-    
-    // Para nuevas categorías, siempre considerar como manual si hay valor
-    if (isNewCategory) {
-      console.log(`🆕 Manual duration for new category: ${parsedDuration}`);
-      return durationValue;
-    }
-    
-    return undefined;
-  }, [values.durationDays, values.categoryId, isNewCategory, types]);
+  }, [
+    values.categoryId,
+    isNewCategory,
+    allCategories,
+    setFieldValue,
+    durationManuallyEdited,
+  ]);
 
-  // ✅ Usar el hook actualizado con soporte para duración manual en categorías existentes
+  // ✅ Detectar cambios manuales en duración
+  React.useEffect(() => {
+    const currentDuration = values.durationDays as string;
+    if (currentDuration && !fetchingSuggestion) {
+      const timeout = setTimeout(() => {
+        setDurationManuallyEdited(true);
+      }, 500);
+
+      return () => clearTimeout(timeout);
+    }
+  }, [values.durationDays]);
+
+  // ✅ Resetear cuando cambia categoría o tipo
+  React.useEffect(() => {
+    setDurationManuallyEdited(false);
+  }, [values.categoryId, values.isNewCategory, selectedKind]);
+
+  // ✅ HOOK SIN DEPENDENCIA OBLIGATORIA DE BRAND
   const { suggestedAssignment, fetchingSuggestion } = useTaskSuggestion(
-    isSubmitting ? '' : values.brandId,
-    isSubmitting ? '' : values.categoryId,
-    isSubmitting ? '' : values.priority,
-    isSubmitting ? false : isNewCategory,
-    isSubmitting ? undefined : effectiveManualDuration, // ✅ NUEVO: Pasar duración manual efectiva
     isSubmitting ? undefined : currentTypeId,
+    isSubmitting ? "" : (values.durationDays as string),
+    isSubmitting ? undefined : values.brandId || undefined, // ✅ Opcional
     isSubmitting ? 0 : triggerSuggestion
-  )
+  );
 
   useEffect(() => {
     if (resetCategory) {
-      setFieldValue("categoryId", "")
-      setFieldValue("isNewCategory", false)
-      setFieldValue("newCategoryName", "")
-      setFieldValue("newCategoryTier", null)
-      setResetCategory(false)
-      setUserHasManuallyChanged(false)
+      setFieldValue("categoryId", "");
+      setFieldValue("isNewCategory", false);
+      setFieldValue("newCategoryName", "");
+      setFieldValue("newCategoryTier", null);
+      setResetCategory(false);
+      setUserHasManuallyChanged(false);
+      setDurationManuallyEdited(false);
     }
-  }, [resetCategory, setFieldValue, setResetCategory, setUserHasManuallyChanged])
-
-  // ✅ MEJORADO: Log para debugging del balanceamiento por duración
-  useEffect(() => {
-    if (suggestedAssignment) {
-      console.log(`🔍 === BALANCE POR DURACIÓN DETECTADO ===`);
-      console.log(`   - Usuario sugerido: ${suggestedAssignment.userId}`);
-      console.log(`   - Duración de nueva tarea: ${suggestedAssignment.durationDays} días`);
-      console.log(`   - Tipo de categoría: ${isNewCategory ? 'Nueva' : 'Existente'}`);
-      console.log(`   - Duración manual activa: ${effectiveManualDuration || 'No'}`);
-      console.log(`   - Fuente de duración: ${effectiveManualDuration ? 'Manual' : 'Categoría'}`);
-    }
-  }, [suggestedAssignment, isNewCategory, effectiveManualDuration]);
+  }, [
+    resetCategory,
+    setFieldValue,
+    setResetCategory,
+    setUserHasManuallyChanged,
+  ]);
 
   useEffect(() => {
     // ✅ NO actualizar estado si está enviando
     if (isSubmitting) {
-      return
+      return;
     }
 
-    setFetchingSuggestion(fetchingSuggestion)
-    setSuggestedAssignment(suggestedAssignment)
+    setFetchingSuggestion(fetchingSuggestion);
+    setSuggestedAssignment(suggestedAssignment);
 
     if (suggestedAssignment) {
-      console.log(`🤖 Applying suggestion with duration balance: (userId: ${suggestedAssignment.userId}, durationDays: ${suggestedAssignment.durationDays}, isNewCategory: ${isNewCategory}, effectiveManualDuration: ${effectiveManualDuration})`)
+      console.log(`🤖 Applying user suggestion: ${suggestedAssignment.userId}`);
 
-      // ✅ MEJORADO: Lógica de aplicación de duración más inteligente
-      if (!isNewCategory && !effectiveManualDuration) {
-        // Categoría existente sin duración manual - aplicar duración de categoría
-        setFieldValue("durationDays", suggestedAssignment.durationDays.toString())
-        console.log(`📋 Applied category duration: ${suggestedAssignment.durationDays}`)
-      } else if (isNewCategory && values.durationDays === "") {
-        // Nueva categoría sin duración manual - aplicar sugerencia
-        setFieldValue("durationDays", suggestedAssignment.durationDays.toString())
-        console.log(`🆕 Applied suggested duration for new category: ${suggestedAssignment.durationDays}`)
-      } else if (effectiveManualDuration) {
-        // Duración manual activa - NO sobrescribir, mantener la manual
-        console.log(`🔧 Keeping manual duration: ${effectiveManualDuration}`)
-      }
-      
-      // Asignar usuario si no ha habido cambios manuales
+      // ✅ SOLO asignar usuario, NO tocar duración
       if (!userHasManuallyChanged) {
         if (
           values.assignedUserIds.length === 0 ||
           values.assignedUserIds[0] !== suggestedAssignment.userId
         ) {
-          console.log(`🤖 Aplicando sugerencia de usuario balanceada: ${suggestedAssignment.userId}`)
-          setFieldValue("assignedUserIds", [suggestedAssignment.userId])
+          console.log(
+            `🤖 Aplicando sugerencia de usuario: ${suggestedAssignment.userId}`
+          );
+          setFieldValue("assignedUserIds", [suggestedAssignment.userId]);
         }
       } else {
-        console.log('👤 Usuario ha hecho cambios manuales, manteniendo selección actual')
+        console.log(
+          "👤 Usuario ha hecho cambios manuales, manteniendo selección actual"
+        );
       }
-    } else if (!fetchingSuggestion && !isNewCategory && values.brandId && values.categoryId && !effectiveManualDuration) {
-      // Si no hay sugerencia para una categoría existente sin duración manual, vaciamos el campo
-      setFieldValue("durationDays", "")
-      if (!userHasManuallyChanged && values.assignedUserIds.length === 0) {
-        setFieldValue("assignedUserIds", [])
-      }
+    } else if (
+      !fetchingSuggestion &&
+      !userHasManuallyChanged &&
+      values.assignedUserIds.length > 0
+    ) {
+      // ✅ LIMPIAR SOLO SI NO HAY SUGERENCIA Y NO HAY CAMBIOS MANUALES
+      console.log("🗑️ Limpiando asignación porque no hay sugerencia");
+      setFieldValue("assignedUserIds", []);
     }
   }, [
     suggestedAssignment,
     fetchingSuggestion,
-    values.brandId,
-    values.categoryId,
     setFieldValue,
-    values.assignedUserIds.length,
     setSuggestedAssignment,
     setFetchingSuggestion,
     values.assignedUserIds,
     userHasManuallyChanged,
-    isNewCategory,
     isSubmitting,
-    effectiveManualDuration // ✅ NUEVO: Dependencia clave para recalcular
-  ])
+  ]);
 
-  return null
-}
+  return null;
+};
 
 export const CreateTaskForm: React.FC = () => {
   // ✅ CAMBIO: Extraer refreshTypes del hook para solo actualizar categorías
@@ -455,31 +445,13 @@ export const CreateTaskForm: React.FC = () => {
   };
 
   // ✅ Función para manejar cuando se completa la duración
-  const handleDurationComplete = (duration: string, currentCategoryId: string, currentIsNewCategory: boolean) => {
-    console.log(`⏰ Duration completed with balance check: ${duration}`)
-    
-    // ✅ NUEVO: Log de información de balanceamiento
-    const allCategories = types.flatMap(type => type.categories);
-    const selectedCategory = allCategories.find(cat => cat.id.toString() === currentCategoryId);
-    
-    if (selectedCategory && !currentIsNewCategory) {
-      const parsedDuration = parseFloat(duration);
-      const categoryDuration = selectedCategory.duration;
-      
-      console.log(`🎯 Balance check - Category duration: ${categoryDuration}, Manual: ${parsedDuration}`);
-      
-      if (Math.abs(categoryDuration - parsedDuration) > 0.1) {
-        console.log(`🔄 Duration change detected - triggering balance recalculation`);
-      } else {
-        console.log(`📋 Duration matches category - using normal suggestion`);
-      }
-    }
-    
-    setTriggerSuggestion(prev => prev + 1)
-  }
+  const handleDurationComplete = (duration: string) => {
+    console.log(`⏰ Duration completed, triggering suggestion: ${duration}`);
+    setTriggerSuggestion((prev) => prev + 1);
+  };
 
   return (
-    <>
+    <aside className='bg-background w-[28rem] p-10 h-dvh overflow-y-auto relative border-l border-l-white/10'>
       <SpinnerCreatingTask isActive={loading} />
       <SpinnerSearching isActive={fetchingSuggestion} />
       <Formik
@@ -542,7 +514,7 @@ export const CreateTaskForm: React.FC = () => {
                 selectedKind={selectedKind}
                 triggerSuggestion={triggerSuggestion}
                 isSubmitting={isSubmitting}
-                allCategories={allCategories}
+                allCategories={allCategories} // ✅ NUEVO: Pasar allCategories
               />
 
               <TaskKindSwitch
@@ -626,8 +598,7 @@ export const CreateTaskForm: React.FC = () => {
                 touched={touched.durationDays}
                 error={errors.durationDays}
                 isTypingNewCategory={isTypingNewCategory}
-                // Pass categoryId and isNewCategory to handleDurationComplete
-                onDurationComplete={(duration) => handleDurationComplete(duration, values.categoryId, values.isNewCategory)}
+                onDurationComplete={handleDurationComplete}
                 allCategories={allCategories}
               />
 
@@ -674,6 +645,6 @@ export const CreateTaskForm: React.FC = () => {
           );
         }}
       </Formik>
-    </>
+    </aside>
   );
 };

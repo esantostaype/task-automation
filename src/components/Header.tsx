@@ -1,6 +1,6 @@
 'use client'
 import { HugeiconsIcon, IconSvgElement } from '@hugeicons/react'
-import { Queue01Icon, UserGroup03Icon } from '@hugeicons/core-free-icons'
+import { LabelImportantIcon, Queue01Icon, Settings01Icon, SwatchIcon, UserGroup03Icon } from '@hugeicons/core-free-icons'
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -8,6 +8,8 @@ import { usePathname } from 'next/navigation'
 const navItems = [
   { href: '/', label: 'Queue', icon: Queue01Icon },
   { href: '/designers', label: 'Designers', icon: UserGroup03Icon },
+  { href: '/types', label: 'Types', icon: SwatchIcon },
+  { href: '/categories', label: 'Categories', icon: LabelImportantIcon }
 ]
 
 
@@ -20,7 +22,7 @@ const NavItem = ({ href, label, icon }: { href: string, label: string, icon: Ico
       <Link
         href={href}
         className={`
-          flex gap-1 items-center rounded py-2 px-3 group-active:bg-white/12 group-hover:bg-white/8
+          flex gap-1 items-center rounded-md py-2 px-3 group-active:bg-white/12 group-hover:bg-white/8
           ${isActive ? 'text-white' : 'text-gray-500 group-hover:text-white'}
         `}
       >
@@ -33,15 +35,18 @@ const NavItem = ({ href, label, icon }: { href: string, label: string, icon: Ico
 
 export const Header = () => {
   return (
-    <header className="flex items-center gap-4 px-4 border-b border-b-white/10">
-      <div>
+    <header className="flex items-center justify-between px-4 border-b border-b-white/10">
+      <div className='flex items-center gap-4'>
         <Image src="/images/logo.svg" alt="Assignify" width={132} height={38} />
+        <ul className="flex items-center gap-3 text-sm mb-[-1px]">
+          {navItems.map((item) => (
+            <NavItem key={item.href} {...item} />
+          ))}
+        </ul>
       </div>
-      <ul className="flex items-center gap-3 text-sm mb-[-1px]">
-        {navItems.map((item) => (
-          <NavItem key={item.href} {...item} />
-        ))}
-      </ul>
+      <button className='size-[2.25rem] rounded-md flex items-center justify-center bg-white/8 hover:bg-accent/32 active:bg-accent/48 cursor-pointer'>
+        <HugeiconsIcon icon={Settings01Icon} size={20} strokeWidth={1.5} />
+      </button>
     </header>
   )
 }
