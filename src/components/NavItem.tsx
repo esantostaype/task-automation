@@ -13,7 +13,7 @@ export const NavItem = ({ href, label, icon }: { href: string, label: string, ic
       <Link
         href={href}
         className={`
-          flex gap-1 items-center rounded-md py-2 px-3 group-active:bg-white/12 group-hover:bg-white/8
+          flex gap-1 items-center rounded-md py-2 px-3 group-active:bg-accent/24 group-hover:bg-accent/12 transition-all
           ${isActive ? 'text-white' : 'text-gray-500 group-hover:text-white'}
         `}
       >

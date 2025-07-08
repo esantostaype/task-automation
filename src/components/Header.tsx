@@ -3,6 +3,7 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { LabelImportantIcon, Queue01Icon, Settings01Icon, SwatchIcon, UserGroup03Icon } from '@hugeicons/core-free-icons'
 import Image from 'next/image'
 import { NavItem } from '@/components'
+import { IconButton } from '@mui/joy'
 
 const navItems = [
   { href: '/', label: 'Tasks', icon: Queue01Icon },
@@ -22,9 +23,9 @@ export const Header = () => {
           ))}
         </ul>
       </div>
-      <button className='size-[2.25rem] rounded-md flex items-center justify-center bg-white/8 hover:bg-accent/32 active:bg-accent/48 cursor-pointer'>
+      <IconButton size='sm' variant='soft'>
         <HugeiconsIcon icon={Settings01Icon} size={20} strokeWidth={1.5} />
-      </button>
+      </IconButton>
     </header>
   )
 }

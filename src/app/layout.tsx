@@ -16,7 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <Providers>
           <main className='flex'>
-            <section className='flex-1'>
+            <section className='flex-1 h-dvh overflow-y-auto flex flex-col'>
               <Header/>
               { children }
             </section>

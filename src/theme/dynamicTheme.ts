@@ -62,15 +62,73 @@ export const dynamicTheme = extendTheme({
   components: {
     JoyInput: {
       styleOverrides: {
-        root: () => ({
-          fontSize: '1rem',
-          padding: '0.8rem 1rem',
+        root: ({ ownerState }) => ({
           backgroundColor: 'var(--soft-bg)',
-          border: 'none',
+          border: '1px solid transparent',
+          borderRadius: '0.5rem',
+          fontFamily: 'inherit',
+          fontWeight: '400',
+          transition: 'all 0.2s ease-in-out',
           '&:hover': {
-            backgroundColor: 'var(--soft-bg-hover)'
+            backgroundColor: 'var(--soft-bg-hover)',
           },
-          transition: 'background-color 0.1s ease-in-out'
+
+          '&:focus-within': {
+            backgroundColor: 'var(--soft-bg-active)',
+            outline: '1px solid var(--color-accent-500)',
+          },
+
+          '&:disabled': {
+            opacity: 0.5,
+            cursor: 'not-allowed',
+            backgroundColor: 'var(--soft-bg)',
+          },
+          ...(ownerState.size === 'sm' && {
+            fontSize: '0.875rem',
+            padding: '0.5rem 0.75rem',
+            minHeight: '2rem',
+            borderRadius: '0.375rem',
+            '&::placeholder': {
+              fontSize: '0.875rem',
+              color: 'var(--color-gray-400)'
+            },
+            '&:focus-within': {
+              backgroundColor: 'var(--soft-bg-active)',
+              outline: 'none'
+            }
+          }),
+          ...(ownerState.size === 'md' && {
+            fontSize: '1rem',
+            padding: '0.8rem 1rem',
+            minHeight: '2.5rem',
+            borderRadius: '0.5rem',
+
+            '&::placeholder': {
+              fontSize: '1rem',
+              color: 'var(--color-gray-400)'
+            },
+
+            '&:focus-within': {
+              backgroundColor: 'var(--soft-bg-active)',
+              outline: 'none'
+            }
+          }),
+          ...(ownerState.size === 'lg' && {
+            fontSize: '1.125rem',
+            padding: '1rem 1.25rem',
+            minHeight: '3rem',
+            borderRadius: '0.625rem',
+
+            '&::placeholder': {
+              fontSize: '1.125rem',
+              color: 'var(--color-gray-400)',
+            },
+
+            '&:focus-within': {
+              backgroundColor: 'var(--soft-bg-active)',
+              outline: 'none',
+            }
+          })
         }),
       },
     },
@@ -172,10 +230,174 @@ export const dynamicTheme = extendTheme({
     JoyButton: {
       styleOverrides: {
         root: ({ ownerState }) => ({
-          ...(ownerState.size === 'md' && {
-            padding: '0.8rem 1rem',
+          ...(ownerState.size === 'sm' && {
+            padding: '0.5rem 0.75rem',
+            fontSize: '0.875rem',
+            minHeight: '2rem',
           }),
-        })
+
+          ...(ownerState.size === 'md' && {
+            padding: '0.75rem 1rem',
+            fontSize: '1rem',
+            minHeight: '2.5rem',
+          }),
+
+          ...(ownerState.size === 'lg' && {
+            padding: '1rem 1.25rem',
+            fontSize: '1.125rem',
+            minHeight: '3rem',
+          }),
+
+          ...(ownerState.variant === 'solid' && {
+            fontWeight: '400',
+            borderWidth: '1px',
+            borderStyle: 'solid',
+            borderColor: 'transparent',
+            boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
+            transition: 'all 0.2s ease-in-out',
+            '&:hover': {
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+            },
+            '&:active': {
+              transform: 'translateY(0)',
+            },
+            '&:disabled': {
+              backgroundColor: 'var(--soft-bg)',
+              color: 'rgba(255,255,255,0.3)'
+            },
+          }),
+
+          ...(ownerState.variant === 'outlined' && {
+            fontWeight: '400',
+            borderWidth: '1px',
+            borderStyle: 'solid',
+            backgroundColor: 'transparent',
+            transition: 'all 0.2s ease-in-out',
+            '&:hover': {
+              backgroundColor: 'var(--soft-bg-success-hover)',
+            },
+            '&:active': {
+              backgroundColor: 'var(--soft-bg-success-active)',
+            },
+          }),
+
+          ...(ownerState.variant === 'soft' && {
+            fontWeight: '400',
+            borderWidth: '1px',
+            borderStyle: 'solid',
+            borderColor: 'transparent',
+            backgroundColor: 'var(--soft-bg-success)',
+            transition: 'all 0.2s ease-in-out',
+            '&:hover': {
+              backgroundColor: 'var(--soft-bg-success-hover)',
+            },
+            '&:active': {
+              backgroundColor: 'var(--soft-bg-success-active)',
+            },
+          }),
+
+          ...(ownerState.variant === 'plain' && {
+            fontWeight: '400',
+            backgroundColor: 'transparent',
+            transition: 'all 0.2s ease-in-out',
+            '&:hover': {
+              backgroundColor: 'var(--soft-bg)',
+            },
+            '&:active': {
+              backgroundColor: 'var(--soft-bg-hover)',
+            },
+          })
+        }),
+      },
+    },
+    JoyIconButton: {
+      styleOverrides: {
+        root: ({ ownerState }) => ({
+          ...(ownerState.size === 'sm' && {
+            padding: '0.5rem',
+            fontSize: '0.875rem',
+            minHeight: '2rem',
+          }),
+
+          ...(ownerState.size === 'md' && {
+            padding: '0.75rem',
+            fontSize: '1rem',
+            minHeight: '2.5rem',
+          }),
+
+          ...(ownerState.size === 'lg' && {
+            padding: '1rem',
+            fontSize: '1.125rem',
+            minHeight: '3rem',
+          }),
+
+          ...(ownerState.variant === 'solid' && {
+            fontWeight: '600',
+            boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
+            transition: 'all 0.2s ease-in-out',
+            '&:hover': {
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+            },
+            '&:active': {
+              transform: 'translateY(0)',
+            },
+          }),
+
+          ...(ownerState.variant === 'outlined' && {
+            fontWeight: '400',
+            borderWidth: '1px',
+            borderStyle: 'solid',
+            backgroundColor: 'transparent',
+            transition: 'all 0.2s ease-in-out',
+            '&:hover': {
+              backgroundColor: 'var(--soft-bg-hover)',
+            },
+            '&:active': {
+              backgroundColor: 'var(--soft-bg-active)',
+            },
+          }),
+
+          ...(ownerState.variant === 'soft' && {
+            fontWeight: '400',
+            backgroundColor: 'var(--soft-bg-success)',
+            transition: 'all 0.2s ease-in-out',
+            '&:hover': {
+              backgroundColor: 'var(--soft-bg-success-hover)',
+            },
+            '&:active': {
+              backgroundColor: 'var(--soft-bg-success-active)',
+            },
+          }),
+
+          ...(ownerState.variant === 'plain' && {
+            fontWeight: '400',
+            backgroundColor: 'transparent',
+            transition: 'all 0.2s ease-in-out',
+            '&:hover': {
+              backgroundColor: 'var(--soft-bg-hover)',
+            },
+            '&:active': {
+              backgroundColor: 'var(--soft-bg-active)',
+            },
+          }),
+          ...(ownerState.size === 'sm' && ownerState.variant === 'solid' && {
+            boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+          }),
+
+          ...(ownerState.size === 'lg' && ownerState.variant === 'outlined' && {
+            borderWidth: '2px',
+          }),
+
+          ...(ownerState.size === 'md' && ownerState.variant === 'soft' && {
+          }),
+
+          '@media (max-width: 768px)': {
+            ...(ownerState.size === 'lg' && {
+              padding: '0.8rem 1.2rem',
+              fontSize: '1rem',
+            }),
+          },
+        }),
       },
     },
     JoyChip: {
@@ -189,7 +411,7 @@ export const dynamicTheme = extendTheme({
     JoyFormLabel: {
       styleOverrides: {
         root: () => ({
-          fontWeight: '500',
+          fontWeight: '400',
           fontSize: '0.75rem',
           color: 'var(--color-gray-400)',
           marginBottom: '0.4rem',
