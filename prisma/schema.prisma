@@ -145,3 +145,30 @@ model SyncLog {
   clickupResponse Json?  
   createdAt DateTime @default(now())
 }
+
+model SystemSettings {
+  id String   @id @default(cuid())
+  category String
+  key String
+  value Json
+  dataType String
+  
+  // Metadatos para la UI
+  label String 
+  description String?
+  group String
+  order Int @default(0)
+  
+  // Validación
+  minValue Float?
+  maxValue Float?
+  options Json?
+  required Boolean  @default(true)
+  
+  // Control de cambios
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([category, key])
+  @@index([group, order])
+}
