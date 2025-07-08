@@ -38,7 +38,7 @@ export const ActionBar: React.FC<ActionBarProps> = ({
       <SearchBar
         value={searchValue}
         onChange={onSearchChange}
-        className="flex-1 w-full md:w-auto md:max-w-xs"
+        className="flex-1 w-full md:w-sm"
       />
       
       <div className="flex gap-2">

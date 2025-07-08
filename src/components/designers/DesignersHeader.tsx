@@ -19,7 +19,7 @@ interface DesignersHeaderProps {
 export const DesignersHeader: React.FC<DesignersHeaderProps> = (props) => {
   return (
     <div className="sticky top-16 p-4 bg-background/70 backdrop-blur-lg z-50 border-b border-b-white/10">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between">
         <h1 className="flex items-center gap-2 text-2xl font-medium">
           <HugeiconsIcon
             icon={UserGroup03Icon}
@@ -28,9 +28,8 @@ export const DesignersHeader: React.FC<DesignersHeaderProps> = (props) => {
           />
           Designers
         </h1>
-      </div>
-      
-      <ActionBar {...props} />
+        <ActionBar {...props} />
+      </div>     
     </div>
   )
 }

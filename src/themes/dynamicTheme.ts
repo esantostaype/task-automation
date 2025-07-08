@@ -134,15 +134,73 @@ export const dynamicTheme = extendTheme({
     },
     JoySelect: {
       styleOverrides: {
-        root: () => ({
-          fontSize: '1rem',
-          padding: '0.8rem 1rem',
+        root: ({ ownerState }) => ({
           backgroundColor: 'var(--soft-bg)',
-          border: 'none',
+          border: '1px solid transparent',
+          borderRadius: '0.5rem',
+          fontFamily: 'inherit',
+          fontWeight: '400',
+          transition: 'all 0.2s ease-in-out',
           '&:hover': {
-            backgroundColor: 'var(--soft-bg-hover)'
+            backgroundColor: 'var(--soft-bg-hover)',
           },
-          transition: 'background-color 0.1s ease-in-out',
+
+          '&:focus-within': {
+            backgroundColor: 'var(--soft-bg-active)',
+            outline: '1px solid var(--color-accent-500)',
+          },
+
+          '&:disabled': {
+            opacity: 0.5,
+            cursor: 'not-allowed',
+            backgroundColor: 'var(--soft-bg)',
+          },
+          ...(ownerState.size === 'sm' && {
+            fontSize: '0.875rem',
+            padding: '0.5rem 0.75rem',
+            minHeight: '2rem',
+            borderRadius: '0.375rem',
+            '&::placeholder': {
+              fontSize: '0.875rem',
+              color: 'var(--color-gray-400)'
+            },
+            '&:focus-within': {
+              backgroundColor: 'var(--soft-bg-active)',
+              outline: 'none'
+            }
+          }),
+          ...(ownerState.size === 'md' && {
+            fontSize: '1rem',
+            padding: '0.8rem 1rem',
+            minHeight: '2.5rem',
+            borderRadius: '0.5rem',
+
+            '&::placeholder': {
+              fontSize: '1rem',
+              color: 'var(--color-gray-400)'
+            },
+
+            '&:focus-within': {
+              backgroundColor: 'var(--soft-bg-active)',
+              outline: 'none'
+            }
+          }),
+          ...(ownerState.size === 'lg' && {
+            fontSize: '1.125rem',
+            padding: '1rem 1.25rem',
+            minHeight: '3rem',
+            borderRadius: '0.625rem',
+
+            '&::placeholder': {
+              fontSize: '1.125rem',
+              color: 'var(--color-gray-400)',
+            },
+
+            '&:focus-within': {
+              backgroundColor: 'var(--soft-bg-active)',
+              outline: 'none',
+            }
+          })
         }),
         listbox: {
           fontSize: '1rem',

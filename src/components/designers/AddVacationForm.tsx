@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Button, Input, FormControl, FormLabel } from '@mui/joy';
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -31,6 +32,7 @@ export const AddVacationForm: React.FC<AddVacationFormProps> = ({
           type="date"
           value={startDate}
           onChange={(event) => setStartDate(event.target.value)}
+          size='sm'
         />
       </FormControl>
       
@@ -40,17 +42,19 @@ export const AddVacationForm: React.FC<AddVacationFormProps> = ({
           type="date"
           value={endDate}
           onChange={(event) => setEndDate(event.target.value)}
+          size='sm'
         />
       </FormControl>
       
       <Button
-        variant="soft"
-        color="success"
+        variant="solid"
+        color="primary"
         startDecorator={<HugeiconsIcon icon={PlusSignIcon} size={16} />}
         onClick={handleAdd}
         disabled={!startDate || !endDate}
         loading={loading}
         sx={{ mt: 'auto' }}
+        size="sm"
       >
         Add Vacation
       </Button>

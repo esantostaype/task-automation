@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { IconButton } from '@mui/joy';
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -11,27 +12,33 @@ interface UserRoleRowProps {
   };
   onDelete: (roleId: number) => void;
   deleting?: boolean;
+  loading?: boolean; // Added loading prop
 }
 
 export const UserRoleRow: React.FC<UserRoleRowProps> = ({
   role,
   onDelete,
-  deleting = false
+  deleting = false,
+  loading = false // Default to false
 }) => {
   return (
-    <tr className="border-b border-white/10">
-      <td className="px-3 py-2">{role.type.name}</td>
-      <td className="px-3 py-2">{role.brand?.name || 'Global'}</td>
+    <tr className="border-b border-white/10 text-sm">
+      <td className="px-3 py-2">{loading ? 'Loading...' : role.type.name}</td>
+      <td className="px-3 py-2">{loading ? 'Loading...' : (role.brand?.name || 'Global')}</td>
       <td className="px-3 py-2">
-        <IconButton
-          size="sm"
-          color="danger"
-          variant="soft"
-          onClick={() => onDelete(role.id)}
-          loading={deleting}
-        >
-          <HugeiconsIcon icon={Delete02Icon} size={16} />
-        </IconButton>
+        {loading ? (
+          'Loading...'
+        ) : (
+          <IconButton
+            size="sm"
+            color="danger"
+            variant="soft"
+            onClick={() => onDelete(role.id)}
+            loading={deleting}
+          >
+            <HugeiconsIcon icon={Delete02Icon} size={16} />
+          </IconButton>
+        )}
       </td>
     </tr>
   );

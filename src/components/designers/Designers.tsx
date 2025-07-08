@@ -195,7 +195,6 @@ export const ClickUpUsersSync: React.FC = () => {
           }}
         />
       ),
-      size: 'lg',
       onClose: () => setEditingUserId(null),
     })
   }

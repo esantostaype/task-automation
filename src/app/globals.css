@@ -29,9 +29,9 @@
     --foreground: #F3F4F6;
     --background: #0A0A20;
     --surface: #141429;
-    --soft-bg: rgba(255,255,255,0.08);
-    --soft-bg-hover: rgba(255,255,255,0.12);
-    --soft-bg-active: rgba(255,255,255,0.16);
+    --soft-bg: rgba(255,255,255,0.04);
+    --soft-bg-hover: rgba(255,255,255,0.08);
+    --soft-bg-active: rgba(255,255,255,0.12);
     --soft-bg-success: rgba(111, 140, 192,0.12);
     --soft-bg-success-hover: rgba(111, 140, 192,0.24);
     --soft-bg-success-active: rgba(111, 140, 192,0.32);
@@ -61,6 +61,10 @@ input::-webkit-inner-spin-button {
 
 input[type=number] {
   -moz-appearance: textfield;
+}
+
+input {
+  color-scheme: dark;
 }
 
 body {

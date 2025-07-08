@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Button, Select, Option, FormControl, FormLabel } from '@mui/joy';
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -8,13 +9,17 @@ interface AddRoleFormProps {
   brands: Array<{ id: string; name: string }>;
   onAdd: (typeId: number, brandId?: string) => void;
   loading?: boolean;
+  loadingTypes?: boolean;
+  loadingBrands?: boolean;
 }
 
 export const AddRoleForm: React.FC<AddRoleFormProps> = ({
   taskTypes,
   brands,
   onAdd,
-  loading = false
+  loading = false,
+  loadingTypes = false,
+  loadingBrands = false
 }) => {
   const [typeId, setTypeId] = useState<string>('');
   const [brandId, setBrandId] = useState<string>('');
@@ -35,12 +40,18 @@ export const AddRoleForm: React.FC<AddRoleFormProps> = ({
           value={typeId}
           onChange={(_, value) => setTypeId(value as string)}
           placeholder="Select role type"
+          disabled={loadingTypes}
+          size='sm'
         >
-          {taskTypes.map((type) => (
-            <Option key={type.id} value={type.id.toString()}>
-              {type.name}
-            </Option>
-          ))}
+          {loadingTypes && taskTypes.length === 0 ? (
+            <Option value="" disabled>Loading types...</Option>
+          ) : (
+            taskTypes.map((type) => (
+              <Option key={type.id} value={type.id.toString()}>
+                {type.name}
+              </Option>
+            ))
+          )}
         </Select>
       </FormControl>
       
@@ -50,24 +61,33 @@ export const AddRoleForm: React.FC<AddRoleFormProps> = ({
           value={brandId}
           onChange={(_, value) => setBrandId(value as string)}
           placeholder="Select brand (optional)"
+          disabled={loadingBrands}
+          size='sm'
         >
-          <Option value="">Global (All brands)</Option>
-          {brands.map((brand) => (
-            <Option key={brand.id} value={brand.id}>
-              {brand.name}
-            </Option>
-          ))}
+          {loadingBrands && brands.length === 0 ? (
+            <Option value="" disabled>Loading brands...</Option>
+          ) : (
+            <>
+              <Option value="">Global (All brands)</Option>
+              {brands.map((brand) => (
+                <Option key={brand.id} value={brand.id}>
+                  {brand.name}
+                </Option>
+              ))}
+            </>
+          )}
         </Select>
       </FormControl>
       
       <Button
-        variant="soft"
+        variant="solid"
         color="primary"
         startDecorator={<HugeiconsIcon icon={PlusSignIcon} size={16} />}
         onClick={handleAdd}
-        disabled={!typeId}
+        disabled={!typeId || loadingTypes || loadingBrands}
         loading={loading}
         sx={{ mt: 'auto' }}
+        size='sm'
       >
         Add Role
       </Button>
