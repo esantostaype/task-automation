@@ -42,7 +42,7 @@ const backdropVariants: Variants = {
 const modalVariants: Variants = {
   hidden: { 
     opacity: 0,
-    y: 100
+    y: 200
   },
   visible: { 
     opacity: 1,
@@ -56,9 +56,9 @@ const modalVariants: Variants = {
   },
   exit: { 
     opacity: 0,
-    y: 100,
+    y: 200,
     transition: {
-      duration: 0.3,
+      duration: 0.4,
       ease: customEase
     }
   }

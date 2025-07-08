@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-// src/components/designers/Designers.tsx - FIXED VERSION WITH WORKING MUTATIONS
+// src/components/organisms/ClickUpUsersSync.tsx
 'use client'
 
 import React, { useState, useMemo } from 'react'
@@ -12,8 +12,6 @@ import { useModalStore } from '@/stores/modalStore'
 import {
   useClickUpUsers,
   useSyncUsers,
-  useTaskTypes,
-  useBrands,
   useAddUserRole,
   useDeleteUserRole,
   useAddUserVacation,
@@ -21,36 +19,22 @@ import {
 } from '@/hooks/queries/useUsers'
 
 export const ClickUpUsersSync: React.FC = () => {
+  // State
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set())
   const [searchFilter, setSearchFilter] = useState('')
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
-  
-  // ✅ NUEVO: Estados para loading de operaciones específicas
-  const [loadingStates, setLoadingStates] = useState<{
-    addingRole?: boolean
-    deletingRole?: number
-    addingVacation?: boolean
-    deletingVacation?: number
-  }>({})
 
+  // Modal store
   const { openModal, closeModal } = useModalStore()
 
+  // Queries
   const { 
     data: usersData, 
     isLoading, 
     refetch: refreshUsers 
   } = useClickUpUsers()
 
-  const { 
-    data: taskTypes = [], 
-    isLoading: loadingTypes 
-  } = useTaskTypes()
-  
-  const { 
-    data: brands = [], 
-    isLoading: loadingBrands 
-  } = useBrands()
-
+  // Mutations
   const { mutate: syncUsers, isPending: syncing } = useSyncUsers({
     onSuccess: (data) => {
       const { statistics, notFoundUsers, errors } = data
@@ -85,52 +69,43 @@ export const ClickUpUsersSync: React.FC = () => {
     },
   })
 
-  // ✅ NUEVO: Hooks para mutaciones de roles
-  const { mutate: addUserRole } = useAddUserRole({
+  const { mutate: addRole, isPending: addingRole } = useAddUserRole({
     onSuccess: () => {
       toast.success('Role added successfully')
-      setLoadingStates(prev => ({ ...prev, addingRole: false }))
     },
     onError: () => {
-      toast.error('Failed to add role')
-      setLoadingStates(prev => ({ ...prev, addingRole: false }))
-    }
+      toast.error('Error adding role')
+    },
   })
 
-  const { mutate: deleteUserRole } = useDeleteUserRole(editingUserId || '', {
+  const { mutate: deleteRole, isPending: deletingRole } = useDeleteUserRole({
     onSuccess: () => {
-      toast.success('Role deleted successfully')
-      setLoadingStates(prev => ({ ...prev, deletingRole: undefined }))
+      toast.success('Role removed successfully')
     },
     onError: () => {
-      toast.error('Failed to delete role')
-      setLoadingStates(prev => ({ ...prev, deletingRole: undefined }))
-    }
+      toast.error('Error removing role')
+    },
   })
 
-  // ✅ NUEVO: Hooks para mutaciones de vacaciones
-  const { mutate: addUserVacation } = useAddUserVacation({
+  const { mutate: addVacation, isPending: addingVacation } = useAddUserVacation({
     onSuccess: () => {
       toast.success('Vacation added successfully')
-      setLoadingStates(prev => ({ ...prev, addingVacation: false }))
     },
     onError: () => {
-      toast.error('Failed to add vacation')
-      setLoadingStates(prev => ({ ...prev, addingVacation: false }))
-    }
+      toast.error('Error adding vacation')
+    },
   })
 
-  const { mutate: deleteUserVacation } = useDeleteUserVacation(editingUserId || '', {
+  const { mutate: deleteVacation, isPending: deletingVacation } = useDeleteUserVacation({
     onSuccess: () => {
-      toast.success('Vacation deleted successfully')
-      setLoadingStates(prev => ({ ...prev, deletingVacation: undefined }))
+      toast.success('Vacation removed successfully')
     },
     onError: () => {
-      toast.error('Failed to delete vacation')
-      setLoadingStates(prev => ({ ...prev, deletingVacation: undefined }))
-    }
+      toast.error('Error removing vacation')
+    },
   })
 
+  // Computed values
   const clickupUsers = usersData?.clickupUsers || []
   
   const filteredUsers = useMemo(() => {
@@ -151,6 +126,7 @@ export const ClickUpUsersSync: React.FC = () => {
       availableUsers.every((user) => selectedUsers.has(user.clickupId))
   }, [availableUsers, selectedUsers])
 
+  // Event handlers
   const handleUserSelection = (userId: string, checked: boolean) => {
     const newSelection = new Set(selectedUsers)
 
@@ -189,65 +165,7 @@ export const ClickUpUsersSync: React.FC = () => {
     refreshUsers()
   }
 
-  // ✅ IMPLEMENTACIÓN CORRECTA: Funciones para operaciones de roles y vacaciones
-  const handleAddRole = (typeId: number, brandId?: string) => {
-    if (!editingUserId) {
-      toast.error('No user selected for role assignment')
-      return
-    }
-
-    console.log(`🔄 Adding role to user ${editingUserId}: typeId=${typeId}, brandId=${brandId || 'null'}`)
-    setLoadingStates(prev => ({ ...prev, addingRole: true }))
-    
-    addUserRole({ 
-      userId: editingUserId, 
-      typeId, 
-      brandId: brandId || null 
-    })
-  }
-
-  const handleDeleteRole = (roleId: number) => {
-    if (!editingUserId) {
-      toast.error('No user selected for role deletion')
-      return
-    }
-
-    console.log(`🗑️ Deleting role ${roleId} from user ${editingUserId}`)
-    setLoadingStates(prev => ({ ...prev, deletingRole: roleId }))
-    
-    deleteUserRole(roleId)
-  }
-
-  const handleAddVacation = (startDate: string, endDate: string) => {
-    if (!editingUserId) {
-      toast.error('No user selected for vacation assignment')
-      return
-    }
-
-    console.log(`🔄 Adding vacation to user ${editingUserId}: ${startDate} to ${endDate}`)
-    setLoadingStates(prev => ({ ...prev, addingVacation: true }))
-    
-    addUserVacation({ 
-      userId: editingUserId, 
-      startDate, 
-      endDate 
-    })
-  }
-
-  const handleDeleteVacation = (vacationId: number) => {
-    if (!editingUserId) {
-      toast.error('No user selected for vacation deletion')
-      return
-    }
-
-    console.log(`🗑️ Deleting vacation ${vacationId} from user ${editingUserId}`)
-    setLoadingStates(prev => ({ ...prev, deletingVacation: vacationId }))
-    
-    deleteUserVacation(vacationId)
-  }
-
   const handleEditUser = (userId: string) => {
-    console.log(`✏️ Opening edit modal for user: ${userId}`)
     setEditingUserId(userId)
     
     openModal({
@@ -255,18 +173,29 @@ export const ClickUpUsersSync: React.FC = () => {
       content: (
         <UserEditModal
           userId={userId}
-          onAddRole={handleAddRole}
-          onDeleteRole={handleDeleteRole}
-          onAddVacation={handleAddVacation}
-          onDeleteVacation={handleDeleteVacation}
-          loadingStates={loadingStates}
+          onAddRole={(typeId, brandId) => {
+            addRole({ 
+              userId, 
+              typeId, 
+              brandId: brandId || null 
+            })
+          }}
+          onDeleteRole={(roleId) => {
+            deleteRole(roleId)
+          }}
+          onAddVacation={(startDate, endDate) => {
+            addVacation({ userId, startDate, endDate })
+          }}
+          onDeleteVacation={(vacationId) => {
+            deleteVacation(vacationId)
+          }}
+          loadingStates={{
+            addingRole,
+            addingVacation,
+          }}
         />
       ),
-      onClose: () => {
-        console.log(`🔒 Closing edit modal for user: ${userId}`)
-        setEditingUserId(null)
-        setLoadingStates({}) // Reset loading states when closing modal
-      },
+      onClose: () => setEditingUserId(null),
     })
   }
 

@@ -659,6 +659,7 @@ export const CreateTaskForm: FC = () => {
                   (brands.length === 0 && !dataLoading)
                 }
                 size="lg"
+                sx={{ marginTop: '1rem' }}
               >
                 {isSubmitting ? "Creating..." : "Create Task"}
               </Button>
