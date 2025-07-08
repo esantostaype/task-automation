@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import React, { useState, useEffect, useMemo, FC, Dispatch, SetStateAction } from "react";
+import React, { useState, useEffect, FC, Dispatch, SetStateAction } from "react";
 import axios from "axios";
 import { Formik, Form, useFormikContext } from "formik";
 import { Button, Typography } from "@mui/joy";
@@ -47,7 +47,6 @@ interface FormikSuggestionLogicProps {
   triggerSuggestion: number;
   isSubmitting: boolean;
   allCategories: any[];
-  // ✅ NUEVO: Props para detectar cambios de sugerencia
   setSuggestionChanged: Dispatch<SetStateAction<boolean>>;
   forceSuggestionUpdate?: () => void;
 }
@@ -65,7 +64,7 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
   triggerSuggestion,
   isSubmitting,
   allCategories,
-  setSuggestionChanged, // ✅ NUEVO
+  setSuggestionChanged,
   forceSuggestionUpdate,
 }) => {
   const { values, setFieldValue } = useFormikContext<ExtendedFormValues>();
@@ -73,7 +72,7 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
   const [durationManuallyEdited, setDurationManuallyEdited] = useState(false);
 
   // Obtener el typeId para cualquier caso (nueva categoría o existente)
-  const currentTypeId = useMemo(() => {
+  const getCurrentTypeId = () => {
     if (isNewCategory) {
       const filteredTypes = types.filter((type) => {
         const typeKind = getTypeKind(type.name);
@@ -87,7 +86,9 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
       return selectedCategory?.typeId;
     }
     return undefined;
-  }, [isNewCategory, selectedKind, types, values.categoryId, allCategories]);
+  };
+
+  const currentTypeId = getCurrentTypeId();
 
   // Efecto para aplicar duración inmediatamente cuando se selecciona categoría existente
   useEffect(() => {
@@ -132,7 +133,7 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
     setDurationManuallyEdited(false);
   }, [values.categoryId, values.isNewCategory, selectedKind]);
 
-  // ✅ MEJORADO: Hook de sugerencias con función de forzar update
+  // Hook de sugerencias con función de forzar update
   const { 
     suggestedAssignment, 
     fetchingSuggestion, 
@@ -144,10 +145,9 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
     isSubmitting ? 0 : triggerSuggestion
   );
 
-  // ✅ NUEVO: Exponer función de forzar update al componente padre
+  // Exponer función de forzar update al componente padre
   useEffect(() => {
     if (forceSuggestionUpdate && hookForceSuggestionUpdate()) {
-      // No asignar directamente para evitar loops
       console.log('🔗 Linking force suggestion update function');
     }
   }, [forceSuggestionUpdate, hookForceSuggestionUpdate]);
@@ -176,7 +176,7 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
 
     setFetchingSuggestion(fetchingSuggestion);
 
-    // ✅ NUEVO: Detectar cambios en la sugerencia
+    // Detectar cambios en la sugerencia
     const suggestionChanged = suggestedAssignment && 
       values.assignedUserIds.length > 0 && 
       values.assignedUserIds[0] !== suggestedAssignment.userId;
@@ -256,7 +256,7 @@ export const CreateTaskForm: FC = () => {
   const [fetchingSuggestion, setFetchingSuggestion] = useState(false);
   const [userHasManuallyChanged, setUserHasManuallyChanged] = useState<boolean>(false);
 
-  // ✅ NUEVO: Estados para detectar cambios de sugerencia
+  // Estados para detectar cambios de sugerencia
   const [suggestionChanged, setSuggestionChanged] = useState(false);
 
   const suggestedUser = suggestedAssignment
@@ -271,17 +271,25 @@ export const CreateTaskForm: FC = () => {
     setIsTypingNewCategory(false);
   }, [selectedKind]);
 
-  const filteredTypes = types.filter((type) => {
-    const typeKind = getTypeKind(type.name);
-    return typeKind === selectedKind;
-  });
+  const getFilteredTypes = () => {
+    return types.filter((type) => {
+      const typeKind = getTypeKind(type.name);
+      return typeKind === selectedKind;
+    });
+  };
 
-  const allCategories = filteredTypes.flatMap((type) =>
-    type.categories.map((cat) => ({
-      ...cat,
-      typeName: type.name,
-    }))
-  );
+  const filteredTypes = getFilteredTypes();
+
+  const getAllCategories = () => {
+    return filteredTypes.flatMap((type) =>
+      type.categories.map((cat) => ({
+        ...cat,
+        typeName: type.name,
+      }))
+    );
+  };
+
+  const allCategories = getAllCategories();
 
   const initialValues: ExtendedFormValues = {
     name: "Task 1",
@@ -449,7 +457,7 @@ export const CreateTaskForm: FC = () => {
   const handleUserSelectionChange = (selectedUserIds: string[]) => {
     console.log("👤 Usuario cambió la selección manualmente:", selectedUserIds);
     setUserHasManuallyChanged(true);
-    setSuggestionChanged(false); // Reset suggestion change indicator
+    setSuggestionChanged(false);
     return selectedUserIds;
   };
 
@@ -468,11 +476,8 @@ export const CreateTaskForm: FC = () => {
     setTriggerSuggestion((prev) => prev + 1);
   };
 
-  // ✅ NUEVO: Función para manejar cambios de duración en tiempo real
   const handleDurationChange = (duration: string) => {
     console.log(`⚡ Duration changed in real-time: ${duration}`);
-    // El hook ya está configurado para actualizar automáticamente
-    // Solo necesitamos loguear el cambio
   };
 
   return (
@@ -523,6 +528,25 @@ export const CreateTaskForm: FC = () => {
             setSuggestionChanged(false);
           };
 
+          // ✅ Calculate current typeId for UserAssignmentSelect
+          const getCurrentTypeId = () => {
+            if (values.isNewCategory) {
+              const filteredTypes = types.filter((type) => {
+                const typeKind = getTypeKind(type.name);
+                return typeKind === selectedKind;
+              });
+              return filteredTypes.length > 0 ? filteredTypes[0].id : undefined;
+            } else if (values.categoryId) {
+              const selectedCategory = allCategories.find(
+                (cat) => cat.id.toString() === values.categoryId
+              );
+              return selectedCategory?.typeId;
+            }
+            return undefined;
+          };
+
+          const currentTypeId = getCurrentTypeId();
+
           return (
             <Form className="flex flex-col gap-4">
               <FormikSuggestionLogic
@@ -539,7 +563,7 @@ export const CreateTaskForm: FC = () => {
                 triggerSuggestion={triggerSuggestion}
                 isSubmitting={isSubmitting}
                 allCategories={allCategories}
-                setSuggestionChanged={setSuggestionChanged} // ✅ NUEVO
+                setSuggestionChanged={setSuggestionChanged}
               />
 
               <TaskKindSwitch
@@ -623,10 +647,10 @@ export const CreateTaskForm: FC = () => {
                 error={errors.durationDays}
                 isTypingNewCategory={isTypingNewCategory}
                 onDurationComplete={handleDurationComplete}
-                onDurationChange={handleDurationChange} // ✅ NUEVO
+                onDurationChange={handleDurationChange}
                 allCategories={allCategories}
-                suggestionChanged={suggestionChanged} // ✅ NUEVO
-                suggestedUser={suggestedUser} // ✅ NUEVO
+                suggestionChanged={suggestionChanged}
+                suggestedUser={suggestedUser}
               />
 
               <UserAssignmentSelect
@@ -648,6 +672,10 @@ export const CreateTaskForm: FC = () => {
                 loading={dataLoading}
                 userHasManuallyChanged={userHasManuallyChanged}
                 onApplySuggestion={applySuggestion}
+                // ✅ NEW: Pass parameters for vacation-aware filtering
+                typeId={currentTypeId}
+                brandId={values.brandId || undefined}
+                durationDays={values.durationDays ? parseFloat(values.durationDays as string) : undefined}
               />
 
               <Button
