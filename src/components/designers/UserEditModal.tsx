@@ -1,5 +1,4 @@
-
-// src/components/designers/UserEditModal.tsx
+// src/components/designers/UserEditModal.tsx - FIXED VERSION
 import React from 'react'
 import { UserRoleRow } from './UserRoleRow'
 import { UserVacationRow } from './UserVacationRow'
@@ -62,8 +61,6 @@ export const UserEditModal: React.FC<UserEditModalProps> = ({
     })
   }, [userId, user, taskTypes, brands, loadingUser, loadingTypes, loadingBrands, userError, typesError, brandsError])
 
-  // Removed the LinearProgress block
-
   // ✅ Manejo mejorado de errores
   if (userError || typesError || brandsError) {
     return (
@@ -82,7 +79,7 @@ export const UserEditModal: React.FC<UserEditModalProps> = ({
     )
   }
 
-  if (!user && !loadingUser) { // Only show 'User not found' if not loading and user is null
+  if (!user && !loadingUser) {
     return (
       <div className="p-8 text-center text-gray-400">
         User not found
@@ -128,7 +125,7 @@ export const UserEditModal: React.FC<UserEditModalProps> = ({
                   role={role}
                   onDelete={onDeleteRole}
                   deleting={loadingStates.deletingRole === role.id}
-                  loading={loadingUser} // Pass loadingUser to row
+                  loading={loadingUser}
                 />
               ))}
               {(showRoleSkeleton || (user && user.roles.length === 0)) && (
@@ -181,7 +178,7 @@ export const UserEditModal: React.FC<UserEditModalProps> = ({
                   vacation={vacation}
                   onDelete={onDeleteVacation}
                   deleting={loadingStates.deletingVacation === vacation.id}
-                  loading={loadingUser} // Pass loadingUser to row
+                  loading={loadingUser}
                 />
               ))}
               {(showVacationSkeleton || (user && user.vacations.length === 0)) && (
@@ -195,10 +192,12 @@ export const UserEditModal: React.FC<UserEditModalProps> = ({
           </table>
         </div>
 
-        {/* Add New Vacation Form */}
+        {/* ✅ NEW: Enhanced Add Vacation Form with conflict detection */}
         <AddVacationForm
           onAdd={onAddVacation}
           loading={loadingStates.addingVacation}
+          existingVacations={user?.vacations || []}
+          userId={userId}
         />
       </div>
     </div>

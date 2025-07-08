@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// src/hooks/queries/useUsers.ts
+// src/hooks/queries/useUsers.ts - FIXED VERSION
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 
@@ -152,30 +152,49 @@ export const useAddUserRole = (options?: {
       return data
     },
     onSuccess: (_, variables) => {
-      // Invalidate user details to refetch roles
+      // ✅ FIX: Invalidate user details to refetch roles
       queryClient.invalidateQueries({ queryKey: userKeys.details(variables.userId) })
+      
+      // ✅ NEW: Comprehensive cache invalidation for task assignment
+      queryClient.invalidateQueries({ queryKey: ['task-suggestion'] })
+      queryClient.invalidateQueries({ queryKey: ['compatible-users'] })
+      queryClient.invalidateQueries({ queryKey: ['user-slots'] })
+      queryClient.invalidateQueries({ queryKey: ['best-user-selection'] })
+      
+      // ✅ NEW: Also invalidate task data queries (for user compatibility)
+      queryClient.invalidateQueries({ queryKey: ['task-data'] })
+      
+      console.log('🔄 Cache invalidated after role addition - task suggestions will be recalculated')
       options?.onSuccess?.()
     },
     onError: options?.onError,
   })
 }
 
-export const useDeleteUserRole = (options?: {
+// ✅ FIXED: Proper deletion with userId context
+export const useDeleteUserRole = (userId: string, options?: {
   onSuccess?: () => void
   onError?: () => void
 }) => {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: async (roleId: number, context?: { context: { userId: string } }) => {
+    mutationFn: async (roleId: number) => {
       await axios.delete(`/api/users/roles/${roleId}`)
-      return { roleId, userId: context?.context?.userId }
+      return { roleId, userId }
     },
     onSuccess: (data) => {
-      // Invalidate user details if we have userId
-      if (data.userId) {
-        queryClient.invalidateQueries({ queryKey: userKeys.details(data.userId) })
-      }
+      // ✅ FIX: Now we always have userId to invalidate
+      queryClient.invalidateQueries({ queryKey: userKeys.details(data.userId) })
+      
+      // ✅ NEW: Comprehensive cache invalidation for task assignment
+      queryClient.invalidateQueries({ queryKey: ['task-suggestion'] })
+      queryClient.invalidateQueries({ queryKey: ['compatible-users'] })
+      queryClient.invalidateQueries({ queryKey: ['user-slots'] })
+      queryClient.invalidateQueries({ queryKey: ['best-user-selection'] })
+      queryClient.invalidateQueries({ queryKey: ['task-data'] })
+      
+      console.log('🔄 Cache invalidated after role deletion - task suggestions will be recalculated')
       options?.onSuccess?.()
     },
     onError: options?.onError,
@@ -194,28 +213,45 @@ export const useAddUserVacation = (options?: {
       return data
     },
     onSuccess: (_, variables) => {
+      // ✅ FIX: Invalidate user details to refetch vacations
       queryClient.invalidateQueries({ queryKey: userKeys.details(variables.userId) })
+      
+      // ✅ NEW: Vacation-specific cache invalidation (affects task assignment logic)
+      queryClient.invalidateQueries({ queryKey: ['task-suggestion'] })
+      queryClient.invalidateQueries({ queryKey: ['user-slots'] })
+      queryClient.invalidateQueries({ queryKey: ['best-user-selection'] })
+      queryClient.invalidateQueries({ queryKey: ['vacation-aware'] })
+      
+      console.log('🏖️ Cache invalidated after vacation addition - vacation-aware logic will recalculate')
       options?.onSuccess?.()
     },
     onError: options?.onError,
   })
 }
 
-export const useDeleteUserVacation = (options?: {
+// ✅ FIXED: Proper deletion with userId context
+export const useDeleteUserVacation = (userId: string, options?: {
   onSuccess?: () => void
   onError?: () => void
 }) => {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: async (vacationId: number, context?: { context: { userId: string } }) => {
+    mutationFn: async (vacationId: number) => {
       await axios.delete(`/api/users/vacations/${vacationId}`)
-      return { vacationId, userId: context?.context?.userId }
+      return { vacationId, userId }
     },
     onSuccess: (data) => {
-      if (data.userId) {
-        queryClient.invalidateQueries({ queryKey: userKeys.details(data.userId) })
-      }
+      // ✅ FIX: Now we always have userId to invalidate
+      queryClient.invalidateQueries({ queryKey: userKeys.details(data.userId) })
+      
+      // ✅ NEW: Vacation-specific cache invalidation
+      queryClient.invalidateQueries({ queryKey: ['task-suggestion'] })
+      queryClient.invalidateQueries({ queryKey: ['user-slots'] })
+      queryClient.invalidateQueries({ queryKey: ['best-user-selection'] })
+      queryClient.invalidateQueries({ queryKey: ['vacation-aware'] })
+      
+      console.log('🏖️ Cache invalidated after vacation deletion - vacation-aware logic will recalculate')
       options?.onSuccess?.()
     },
     onError: options?.onError,

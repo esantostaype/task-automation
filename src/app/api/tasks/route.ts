@@ -207,11 +207,9 @@ export async function POST(req: Request) {
     let userSlotsForProcessing: UserSlot[] = []
 
     if (assignedUserIds && assignedUserIds.length > 0) {
-      // ===== ASIGNACIÓN MANUAL =====
       usersToAssign = assignedUserIds
       console.log('👤 Asignación manual de usuarios:', usersToAssign)
 
-      // Validar usuarios especificados
       const specificUsersPromises = usersToAssign.map(userId =>
         prisma.user.findUnique({
           where: { id: userId },
@@ -251,18 +249,19 @@ export async function POST(req: Request) {
         console.warn(`⚠️ Usuarios no válidos ignorados: ${invalidUsers.join(', ')}`)
       }
 
-      // Actualizar lista con usuarios válidos
       usersToAssign = validUsers.map(user => user.id)
       console.log(`✅ Usuarios válidos para asignación manual: ${usersToAssign.length}`)
 
-      // Calcular slots para usuarios manuales (sin lógica de vacaciones específica)
+      // ❌ FIND this line:
       userSlotsForProcessing = await calculateUserSlots(validUsers, typeId, brandId)
 
+      // ✅ REPLACE with (ADD durationDays parameter):
+      userSlotsForProcessing = await calculateUserSlots(validUsers, typeId, brandId, durationDays)
+
     } else {
-      // ===== ASIGNACIÓN AUTOMÁTICA CON LÓGICA DE VACACIONES =====
+      // ✅ The automatic assignment section should already be correct, but verify it looks like this:
       console.log('🤖 Iniciando asignación automática con lógica de vacaciones...')
 
-      // Usar función con cache que incluye lógica de vacaciones
       const bestUser = await getBestUserWithCache(typeId, brandId, priority, durationDays)
 
       if (!bestUser) {
@@ -299,10 +298,13 @@ export async function POST(req: Request) {
     // ===== PROCESAR ASIGNACIONES Y CALCULAR FECHAS =====
     const taskTiming = await processUserAssignments(usersToAssign, userSlotsForProcessing, priority, durationDays, brandId)
 
-    console.log('✅ Fechas calculadas para nueva tarea:')
-    console.log(`   - Start Date: ${taskTiming.startDate.toISOString()}`)
-    console.log(`   - Deadline: ${taskTiming.deadline.toISOString()}`)
-    console.log(`   - Queue Position: ${taskTiming.insertAt}`)
+    console.log('🎯 === FINAL TASK TIMING BEFORE CLICKUP CREATION ===');
+    console.log(`📅 Calculated start date: ${taskTiming.startDate.toISOString()}`);
+    console.log(`📅 Calculated deadline: ${taskTiming.deadline.toISOString()}`);
+    console.log(`📍 Queue position: ${taskTiming.insertAt}`);
+    console.log(`👥 Assigned users: ${usersToAssign.join(', ')}`);
+    console.log(`⏰ Duration: ${durationDays} days`);
+    console.log(`🔥 Priority: ${priority}`);
 
     // ===== PREPARAR DATOS PARA CLICKUP =====
     const categoryForClickUp = {
@@ -324,8 +326,8 @@ export async function POST(req: Request) {
       name,
       description,
       priority,
-      deadline: taskTiming.deadline,
-      startDate: taskTiming.startDate,
+      deadline: taskTiming.deadline,    // ✅ Use calculated deadline
+      startDate: taskTiming.startDate,  // ✅ Use calculated start date
       usersToAssign,
       category: categoryForClickUp,
       brand: brandForClickUp
@@ -343,8 +345,8 @@ export async function POST(req: Request) {
         categoryId: categoryId,
         brandId: brandId,
         priority,
-        startDate: taskTiming.startDate,
-        deadline: taskTiming.deadline,
+        startDate: taskTiming.startDate,  // ✅ Use calculated start date
+        deadline: taskTiming.deadline,    // ✅ Use calculated deadline
         queuePosition: taskTiming.insertAt,
         url: clickupTaskUrl,
         lastSyncAt: new Date(),

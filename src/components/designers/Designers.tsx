@@ -1,6 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-// src/components/organisms/ClickUpUsersSync.tsx
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// src/components/designers/Designers.tsx - FIXED VERSION
 'use client'
 
 import React, { useState, useMemo } from 'react'
@@ -78,31 +78,10 @@ export const ClickUpUsersSync: React.FC = () => {
     },
   })
 
-  const { mutate: deleteRole, isPending: deletingRole } = useDeleteUserRole({
-    onSuccess: () => {
-      toast.success('Role removed successfully')
-    },
-    onError: () => {
-      toast.error('Error removing role')
-    },
-  })
-
   const { mutate: addVacation, isPending: addingVacation } = useAddUserVacation({
     onSuccess: () => {
       toast.success('Vacation added successfully')
-    },
-    onError: () => {
-      toast.error('Error adding vacation')
-    },
-  })
-
-  const { mutate: deleteVacation, isPending: deletingVacation } = useDeleteUserVacation({
-    onSuccess: () => {
-      toast.success('Vacation removed successfully')
-    },
-    onError: () => {
-      toast.error('Error removing vacation')
-    },
+    }
   })
 
   // Computed values
@@ -171,7 +150,7 @@ export const ClickUpUsersSync: React.FC = () => {
     openModal({
       title: `Edit User: ${clickupUsers.find(u => u.clickupId === userId)?.name}`,
       content: (
-        <UserEditModal
+        <UserEditModalWrapper
           userId={userId}
           onAddRole={(typeId, brandId) => {
             addRole({ 
@@ -180,14 +159,8 @@ export const ClickUpUsersSync: React.FC = () => {
               brandId: brandId || null 
             })
           }}
-          onDeleteRole={(roleId) => {
-            deleteRole(roleId)
-          }}
           onAddVacation={(startDate, endDate) => {
             addVacation({ userId, startDate, endDate })
-          }}
-          onDeleteVacation={(vacationId) => {
-            deleteVacation(vacationId)
           }}
           loadingStates={{
             addingRole,
@@ -224,5 +197,53 @@ export const ClickUpUsersSync: React.FC = () => {
         />
       </div>
     </>
+  )
+}
+
+// ✅ Wrapper component to handle mutations properly within modal context
+interface UserEditModalWrapperProps {
+  userId: string
+  onAddRole: (typeId: number, brandId?: string) => void
+  onAddVacation: (startDate: string, endDate: string) => void
+  loadingStates: {
+    addingRole?: boolean
+    addingVacation?: boolean
+  }
+}
+
+const UserEditModalWrapper: React.FC<UserEditModalWrapperProps> = ({
+  userId,
+  onAddRole,
+  onAddVacation,
+  loadingStates
+}) => {
+  // ✅ Create deletion mutations with proper userId context
+  const { mutate: deleteRole } = useDeleteUserRole(userId, {
+    onSuccess: () => {
+      toast.success('Role removed successfully')
+    },
+    onError: () => {
+      toast.error('Error removing role')
+    },
+  })
+
+  const { mutate: deleteVacation } = useDeleteUserVacation(userId, {
+    onSuccess: () => {
+      toast.success('Vacation removed successfully')
+    },
+    onError: () => {
+      toast.error('Error removing vacation')
+    },
+  })
+
+  return (
+    <UserEditModal
+      userId={userId}
+      onAddRole={onAddRole}
+      onDeleteRole={(roleId) => deleteRole(roleId)}
+      onAddVacation={onAddVacation}
+      onDeleteVacation={(vacationId) => deleteVacation(vacationId)}
+      loadingStates={loadingStates}
+    />
   )
 }
