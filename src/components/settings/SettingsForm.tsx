@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react/no-unescaped-entities */
 // src/components/settings/SettingsForm.tsx
+'use client'
 import React, { useState, useEffect } from 'react'
 import { 
   Typography, 

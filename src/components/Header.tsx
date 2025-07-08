@@ -4,6 +4,8 @@ import { LabelImportantIcon, Queue01Icon, Settings01Icon, SwatchIcon, UserGroup0
 import Image from 'next/image'
 import { NavItem } from '@/components'
 import { IconButton } from '@mui/joy'
+import { useModalStore } from '@/stores/modalStore'
+import { SettingsForm } from '@/components'
 
 const navItems = [
   { href: '/', label: 'Tasks', icon: Queue01Icon },
@@ -13,6 +15,16 @@ const navItems = [
 ]
 
 export const Header = () => {
+  const { openModal } = useModalStore()
+
+  const handleSettingsClick = () => {
+    openModal({
+      title: 'System Settings',
+      content: <SettingsForm />,
+      size: 'lg'
+    })
+  }
+
   return (
     <header className="sticky top-0 bg-background/70 backdrop-blur-lg z-50 flex items-center justify-between px-4 border-b border-b-white/10">
       <div className='flex items-center gap-4'>
@@ -23,7 +35,11 @@ export const Header = () => {
           ))}
         </ul>
       </div>
-      <IconButton size='sm' variant='soft'>
+      <IconButton 
+        size='sm' 
+        variant='soft'
+        onClick={handleSettingsClick}
+      >
         <HugeiconsIcon icon={Settings01Icon} size={20} strokeWidth={1.5} />
       </IconButton>
     </header>
