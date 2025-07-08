@@ -1,7 +1,7 @@
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { Providers } from './providers'
-import { CreateTaskForm, Header } from '@/components'
+import { CreateTaskForm, GlobalModal, Header } from '@/components'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -12,16 +12,17 @@ export const metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={ inter.className }>
+    <html lang="en" className={inter.className}>
       <body>
         <Providers>
           <main className='flex'>
             <section className='flex-1 h-dvh overflow-y-auto flex flex-col'>
-              <Header/>
-              { children }
+              <Header />
+              {children}
             </section>
-            <CreateTaskForm/>
+            <CreateTaskForm />
           </main>
+          <GlobalModal />
         </Providers>
       </body>
     </html>

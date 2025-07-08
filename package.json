@@ -22,6 +22,7 @@
     "@phosphor-icons/react": "^2.1.10",
     "@prisma/client": "^6.10.1",
     "@tanstack/react-query": "^5.81.2",
+    "@tanstack/react-query-devtools": "^5.81.5",
     "axios": "^1.10.0",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
