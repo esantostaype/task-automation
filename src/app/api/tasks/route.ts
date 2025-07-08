@@ -296,7 +296,7 @@ export async function POST(req: Request) {
     })
 
     // ===== PROCESAR ASIGNACIONES Y CALCULAR FECHAS =====
-    const taskTiming = await processUserAssignments(usersToAssign, userSlotsForProcessing, priority, durationDays, brandId)
+    const taskTiming = await processUserAssignments(usersToAssign, userSlotsForProcessing, priority, durationDays)
 
     console.log('🎯 === FINAL TASK TIMING BEFORE CLICKUP CREATION ===');
     console.log(`📅 Calculated start date: ${taskTiming.startDate.toISOString()}`);

@@ -186,7 +186,7 @@ export async function POST(req: Request) {
 
     const brandForClickUp: ClickUpBrand = {
       ...brand,
-      statusMapping: (brand.statusMapping as Record<string, string>) || {}
+      teamId: brand.teamId ?? ''
     }
 
     const { clickupTaskId, clickupTaskUrl } = await createTaskInClickUp({

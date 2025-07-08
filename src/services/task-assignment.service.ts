@@ -1003,8 +1003,7 @@ export async function processUserAssignments(
   usersToAssign: string[],
   userSlots: UserSlot[],
   priority: Priority,
-  durationDays: number,
-  brandId: string
+  durationDays: number
 ): Promise<TaskTimingResult> {
   console.log(`\n🎯 === PROCESSING USER ASSIGNMENTS WITH VACATION AWARENESS ===`);
   console.log(`📋 Users to assign: ${usersToAssign.join(', ')}`);
