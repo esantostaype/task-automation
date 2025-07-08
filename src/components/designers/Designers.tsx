@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-// src/components/organisms/ClickUpUsersSync.tsx
+// src/components/designers/Designers.tsx - FIXED VERSION
 'use client'
 
 import React, { useState, useMemo } from 'react'
@@ -12,29 +12,21 @@ import { useModalStore } from '@/stores/modalStore'
 import {
   useClickUpUsers,
   useSyncUsers,
-  useAddUserRole,
-  useDeleteUserRole,
-  useAddUserVacation,
-  useDeleteUserVacation,
 } from '@/hooks/queries/useUsers'
 
 export const ClickUpUsersSync: React.FC = () => {
-  // State
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set())
   const [searchFilter, setSearchFilter] = useState('')
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
 
-  // Modal store
   const { openModal, closeModal } = useModalStore()
 
-  // Queries
   const { 
     data: usersData, 
     isLoading, 
     refetch: refreshUsers 
   } = useClickUpUsers()
 
-  // Mutations
   const { mutate: syncUsers, isPending: syncing } = useSyncUsers({
     onSuccess: (data) => {
       const { statistics, notFoundUsers, errors } = data
@@ -69,43 +61,6 @@ export const ClickUpUsersSync: React.FC = () => {
     },
   })
 
-  const { mutate: addRole, isPending: addingRole } = useAddUserRole({
-    onSuccess: () => {
-      toast.success('Role added successfully')
-    },
-    onError: () => {
-      toast.error('Error adding role')
-    },
-  })
-
-  const { mutate: deleteRole, isPending: deletingRole } = useDeleteUserRole({
-    onSuccess: () => {
-      toast.success('Role removed successfully')
-    },
-    onError: () => {
-      toast.error('Error removing role')
-    },
-  })
-
-  const { mutate: addVacation, isPending: addingVacation } = useAddUserVacation({
-    onSuccess: () => {
-      toast.success('Vacation added successfully')
-    },
-    onError: () => {
-      toast.error('Error adding vacation')
-    },
-  })
-
-  const { mutate: deleteVacation, isPending: deletingVacation } = useDeleteUserVacation({
-    onSuccess: () => {
-      toast.success('Vacation removed successfully')
-    },
-    onError: () => {
-      toast.error('Error removing vacation')
-    },
-  })
-
-  // Computed values
   const clickupUsers = usersData?.clickupUsers || []
   
   const filteredUsers = useMemo(() => {
@@ -126,7 +81,6 @@ export const ClickUpUsersSync: React.FC = () => {
       availableUsers.every((user) => selectedUsers.has(user.clickupId))
   }, [availableUsers, selectedUsers])
 
-  // Event handlers
   const handleUserSelection = (userId: string, checked: boolean) => {
     const newSelection = new Set(selectedUsers)
 
@@ -173,26 +127,10 @@ export const ClickUpUsersSync: React.FC = () => {
       content: (
         <UserEditModal
           userId={userId}
-          onAddRole={(typeId, brandId) => {
-            addRole({ 
-              userId, 
-              typeId, 
-              brandId: brandId || null 
-            })
-          }}
-          onDeleteRole={(roleId) => {
-            deleteRole(roleId)
-          }}
-          onAddVacation={(startDate, endDate) => {
-            addVacation({ userId, startDate, endDate })
-          }}
-          onDeleteVacation={(vacationId) => {
-            deleteVacation(vacationId)
-          }}
-          loadingStates={{
-            addingRole,
-            addingVacation,
-          }}
+          onAddRole={() => {}}
+          onDeleteRole={() => {}}
+          onAddVacation={() => {}}
+          onDeleteVacation={() => {}}
         />
       ),
       onClose: () => setEditingUserId(null),

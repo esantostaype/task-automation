@@ -1,4 +1,4 @@
-
+// src/components/designers/UserRoleRow.tsx - FIXED VERSION
 import React from 'react';
 import { IconButton } from '@mui/joy';
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -12,14 +12,14 @@ interface UserRoleRowProps {
   };
   onDelete: (roleId: number) => void;
   deleting?: boolean;
-  loading?: boolean; // Added loading prop
+  loading?: boolean;
 }
 
 export const UserRoleRow: React.FC<UserRoleRowProps> = ({
   role,
   onDelete,
   deleting = false,
-  loading = false // Default to false
+  loading = false
 }) => {
   return (
     <tr className="border-b border-white/10 text-sm">
@@ -35,6 +35,7 @@ export const UserRoleRow: React.FC<UserRoleRowProps> = ({
             variant="soft"
             onClick={() => onDelete(role.id)}
             loading={deleting}
+            disabled={deleting}
           >
             <HugeiconsIcon icon={Delete02Icon} size={16} />
           </IconButton>

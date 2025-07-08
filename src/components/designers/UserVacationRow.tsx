@@ -1,4 +1,4 @@
-
+// src/components/designers/UserVacationRow.tsx - FIXED VERSION
 import React from 'react';
 import { IconButton } from '@mui/joy';
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -12,14 +12,14 @@ interface UserVacationRowProps {
   };
   onDelete: (vacationId: number) => void;
   deleting?: boolean;
-  loading?: boolean; // Added loading prop
+  loading?: boolean;
 }
 
 export const UserVacationRow: React.FC<UserVacationRowProps> = ({
   vacation,
   onDelete,
   deleting = false,
-  loading = false // Default to false
+  loading = false
 }) => {
   const startDate = new Date(vacation.startDate);
   const endDate = new Date(vacation.endDate);
@@ -40,6 +40,7 @@ export const UserVacationRow: React.FC<UserVacationRowProps> = ({
             variant="soft"
             onClick={() => onDelete(vacation.id)}
             loading={deleting}
+            disabled={deleting}
           >
             <HugeiconsIcon icon={Delete02Icon} size={16} />
           </IconButton>
