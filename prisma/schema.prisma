@@ -16,6 +16,16 @@ enum Tier {
   E
 }
 
+model TierList {
+  id Int @id @default(autoincrement())
+  name Tier @unique
+  defaultDuration Float @map("default_duration")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  categories TaskCategory[]
+  @@map("tier")
+}
+
 enum Priority {
   LOW
   NORMAL
@@ -116,11 +126,15 @@ model TaskType {
 model TaskCategory {
   id Int @id @default(autoincrement())
   name String
-  duration Float
-  tier Tier
+  tier Tier  
   typeId Int
+  tierId Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   type TaskType @relation(fields: [typeId], references: [id])
+  tierSetting TierList @relation(fields: [tierId], references: [id])
   tasks Task[]
+  @@map("taskcategory")
 }
 
 model UserRole {

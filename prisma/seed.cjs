@@ -1,46 +1,58 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 // prisma/seed.cjs
-// Para ejecutar: npx prisma db seed
-// Asegúrate de que tu variable de entorno PRISMA_DATABASE_URL esté configurada.
+// Ejecutar con: npx prisma db seed
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+const { PrismaClient, Tier } = require('@prisma/client');
 
+let prisma; // Declara prisma con let para poder asignarlo en el try/catch
+
+// Definir las duraciones por defecto para cada Tier
 const tierDurations = {
   S: 30,
   A: 21,
   B: 14,
   C: 7,
   D: 3,
-  E: 0.5,
+  E: 0.5, // 0.5 días = 4 horas
 };
 
 async function main() {
-  console.log("🌱 Iniciando proceso de seeding...");
+  console.log('🌱 Iniciando seeding...');
 
-  // ===============================================
-  // 1. LIMPIEZA PREVIA
-  // ===============================================
-  console.log("🧹 Limpiando tablas existentes...");
-  
-  // Orden correcto para evitar errores de FK
+  // 0. Limpiar datos existentes (¡CUIDADO! Esto borrará todos los datos en estas tablas)
+  console.log('\n--- Limpiando datos existentes ---');
   await prisma.syncLog.deleteMany();
   await prisma.taskAssignment.deleteMany();
   await prisma.task.deleteMany();
-  await prisma.userVacation.deleteMany(); // ✅ NUEVO: Limpiar vacaciones
+  await prisma.userVacation.deleteMany();
   await prisma.userRole.deleteMany();
   await prisma.taskCategory.deleteMany();
   await prisma.taskType.deleteMany();
+  await prisma.tierList.deleteMany(); // CAMBIO: tierSetting a tierList
   await prisma.user.deleteMany();
   await prisma.brand.deleteMany();
-  
-  console.log("✅ Tablas limpiadas exitosamente");
+  console.log('✅ Datos antiguos eliminados.');
 
-  // ===============================================
-  // 2. CREAR BRANDS
-  // ===============================================
-  console.log("🏢 Creando Brands...");
-  
+  // 1. Seed de TierSetting (los tiers y sus duraciones por defecto)
+  console.log('\n--- Seeding TierSettings ---');
+  const seededTiers = {}; // Para almacenar los objetos TierSetting creados
+  for (const tierName of Object.keys(Tier)) {
+    const defaultDuration = tierDurations[tierName];
+    if (defaultDuration === undefined) {
+      console.warn(`⚠️ Duración no definida para el Tier: ${tierName}. Saltando.`);
+      continue;
+    }
+    const tier = await prisma.tierList.upsert({ // CAMBIO: tierSetting a tierList
+      where: { name: tierName },
+      update: { defaultDuration: defaultDuration },
+      create: { name: tierName, defaultDuration: defaultDuration },
+    });
+    seededTiers[tier.name] = tier; // Guardar el objeto tier completo
+    console.log(`Upserted Tier: ${tier.name} (Duration: ${tier.defaultDuration} days)`);
+  }
+
+  // 2. Seed de Brand
+  console.log('\n--- Seeding Brands ---');
   const brandData = [
     {
       id: "901700182493",
@@ -51,12 +63,6 @@ async function main() {
       isActive: true,
       description: "Main Inszone brand for insurance services",
       defaultStatus: "TO_DO",
-      statusMapping: {
-        "TO_DO": "to do",
-        "IN_PROGRESS": "in progress", 
-        "ON_APPROVAL": "review",
-        "COMPLETE": "closed"
-      }
     },
     {
       id: "901700182489",
@@ -67,12 +73,6 @@ async function main() {
       isActive: true,
       description: "R.E. Chaix brand for specialized insurance",
       defaultStatus: "TO_DO",
-      statusMapping: {
-        "TO_DO": "open",
-        "IN_PROGRESS": "in progress",
-        "ON_APPROVAL": "pending review", 
-        "COMPLETE": "done"
-      }
     },
     {
       id: "901704229078",
@@ -83,333 +83,264 @@ async function main() {
       isActive: true,
       description: "Pinney brand for life insurance solutions",
       defaultStatus: "TO_DO",
-      statusMapping: {
-        "TO_DO": "open",
-        "IN_PROGRESS": "in progress",
-        "ON_APPROVAL": "pending review", 
-        "COMPLETE": "done"
-      }
     },
   ];
+  for (const brand of brandData) {
+    await prisma.brand.upsert({
+      where: { id: brand.id },
+      update: brand,
+      create: brand,
+    });
+    console.log(`Upserted Brand: ${brand.name}`);
+  }
 
-  await prisma.brand.createMany({ data: brandData });
-  
-  const allBrands = await prisma.brand.findMany();
-  console.log(`✅ ${allBrands.length} brands creados exitosamente`);
-
-  // ===============================================
-  // 3. CREAR TASK TYPES Y CATEGORIES
-  // ===============================================
-  console.log("📋 Creando TaskTypes y TaskCategories...");
-  
-  const [uxType, graphicType] = await Promise.all([
-    // UX/UI Type con todas sus categorías
-    prisma.taskType.create({
-      data: {
-        name: "UX/UI",
-        categories: {
-          create: [
-            // Tier S - Proyectos más complejos (30 días)
-            { name: "Full website with multiple levels", duration: tierDurations.S, tier: "S" },
-            { name: "UX/UI for SaaS or B2B platform", duration: tierDurations.S, tier: "S" },
-            { name: "Design system with documentation", duration: tierDurations.S, tier: "S" },
-            { name: "Mobile app (15+ screens)", duration: tierDurations.S, tier: "S" },
-            { name: "Validated MVP prototype", duration: tierDurations.S, tier: "S" },
-            { name: "Cross-platform design", duration: tierDurations.S, tier: "S" },
-            
-            // Tier A - Proyectos grandes (21 días)
-            { name: "Complex intranet section", duration: tierDurations.A, tier: "A" },
-            { name: "Corporate website (5–7 sections)", duration: tierDurations.A, tier: "A" },
-            { name: "Prototype with microinteractions", duration: tierDurations.A, tier: "A" },
-            { name: "Intermediate design system", duration: tierDurations.A, tier: "A" },
-            { name: "Dashboard with charts and filters", duration: tierDurations.A, tier: "A" },
-            { name: "UX for onboarding or sign-up", duration: tierDurations.A, tier: "A" },
-            { name: "Full redesign of site/app", duration: tierDurations.A, tier: "A" },
-            
-            // Tier B - Proyectos medianos (14 días)
-            { name: "Simple intranet section", duration: tierDurations.B, tier: "B" },
-            { name: "Landing page design", duration: tierDurations.B, tier: "B" },
-            { name: "Complex internal pages", duration: tierDurations.B, tier: "B" },
-            { name: "3–5 UI screens", duration: tierDurations.B, tier: "B" },
-            { name: "Component with states/variants", duration: tierDurations.B, tier: "B" },
-            { name: "Simple clickable prototype", duration: tierDurations.B, tier: "B" },
-            { name: "Wireframes + simple mockup", duration: tierDurations.B, tier: "B" },
-            { name: "Responsive views of same page", duration: tierDurations.B, tier: "B" },
-            
-            // Tier C - Proyectos pequeños (7 días)
-            { name: "New section in existing page", duration: tierDurations.C, tier: "C" },
-            { name: "Mobile version of a page", duration: tierDurations.C, tier: "C" },
-            { name: "Simple view design", duration: tierDurations.C, tier: "C" },
-            { name: "Web banner adaptation", duration: tierDurations.C, tier: "C" },
-            { name: "Simple button/component states", duration: tierDurations.C, tier: "C" },
-            
-            // Tier D - Tareas pequeñas (3 días)
-            { name: "Copy changes", duration: tierDurations.D, tier: "D" },
-            { name: "Icon/image updates", duration: tierDurations.D, tier: "D" },
-            { name: "Spacing or padding adjustments", duration: tierDurations.D, tier: "D" },
-            { name: "Color or font edits", duration: tierDurations.D, tier: "D" },
-            { name: "Naming/layer cleanup", duration: tierDurations.D, tier: "D" },
-            { name: "Auto layout adjustments", duration: tierDurations.D, tier: "D" },
-          ],
-        },
-      },
-    }),
-
-    // Graphic Type con todas sus categorías
-    prisma.taskType.create({
-      data: {
-        name: "Graphic",
-        categories: {
-          create: [
-            // Tier S - Proyectos más complejos (30 días)
-            { name: "Complete visual identity", duration: tierDurations.S, tier: "S" },
-            { name: "Complex brochure", duration: tierDurations.S, tier: "S" },
-            
-            // Tier A - Proyectos grandes (21 días)
-            { name: "Simple brochure (Bi-fold/Tri-fold)", duration: tierDurations.A, tier: "A" },
-            { name: "Internal documents", duration: tierDurations.A, tier: "A" },
-            { name: "Complex infographic", duration: tierDurations.A, tier: "A" },
-            { name: "Basic brand manual", duration: tierDurations.A, tier: "A" },
-            { name: "Full packaging design", duration: tierDurations.A, tier: "A" },
-            { name: "Event/campaign graphic kit", duration: tierDurations.A, tier: "A" },
-            { name: "Ad visuals", duration: tierDurations.A, tier: "A" },
-            { name: "Social media for all brands", duration: tierDurations.A, tier: "A" },
-            { name: "PowerPoint (19–28 slides)", duration: tierDurations.A, tier: "A" },
-            
-            // Tier B - Proyectos medianos (14 días)
-            { name: "Flyer or poster", duration: tierDurations.B, tier: "B" },
-            { name: "PowerPoint template", duration: tierDurations.B, tier: "B" },
-            { name: "Basic infographic", duration: tierDurations.B, tier: "B" },
-            { name: "Complex updates in artworks", duration: tierDurations.B, tier: "B" },
-            { name: "PowerPoint (12–18 slides)", duration: tierDurations.B, tier: "B" },
-            
-            // Tier C - Proyectos pequeños (7 días)
-            { name: "Artwork resizing", duration: tierDurations.C, tier: "C" },
-            { name: "Template-based artwork", duration: tierDurations.C, tier: "C" },
-            { name: "Business card", duration: tierDurations.C, tier: "C" },
-            { name: "Letterhead", duration: tierDurations.C, tier: "C" },
-            { name: "Intermediate updates in artworks", duration: tierDurations.C, tier: "C" },
-            { name: "PowerPoint (6–11 slides)", duration: tierDurations.C, tier: "C" },
-            
-            // Tier D - Tareas pequeñas (3 días)
-            { name: "Text changes in artworks", duration: tierDurations.D, tier: "D" },
-            { name: "Logo/image replacements", duration: tierDurations.D, tier: "D" },
-            { name: "File export to other formats", duration: tierDurations.D, tier: "D" },
-            { name: "Signature (Formerly operating as)", duration: tierDurations.D, tier: "D" },
-            { name: "Simple info updates in artworks", duration: tierDurations.D, tier: "D" },
-            
-            // Tier E - Tareas muy pequeñas (0.5 días)
-            { name: "Signature (Powered by)", duration: tierDurations.E, tier: "E" },
-          ],
-        },
-      },
-    }),
-  ]);
-  
-  console.log(`✅ TaskTypes y TaskCategories creados: UX/UI (${uxType.id}), Graphic (${graphicType.id})`);
-
-  // ===============================================
-  // 4. CREAR USUARIOS
-  // ===============================================
-  console.log("👥 Creando Usuarios...");
-  
+  // 3. Seed de User
+  console.log('\n--- Seeding Users ---');
   const userData = [
-    { 
+    {
       id: "114240449", // ClickUp ID
-      name: "Erick Santos", 
+      name: "Erick Santos",
       email: "esantos@inszoneins.com",
       active: true
     },
-    { 
+    {
       id: "114217194", // ClickUp ID
-      name: "Diego Ganoza", 
+      name: "Diego Ganoza",
       email: "dganoza@inszoneins.com",
       active: true
     },
-    { 
+    {
       id: "114217195", // ClickUp ID
-      name: "Dayana Viggiani", 
+      name: "Dayana Viggiani",
       email: "dviggiani@inszoneins.com",
       active: true
     },
   ];
-
-  await prisma.user.createMany({ data: userData });
-  
-  const allUsers = await prisma.user.findMany();
-  console.log(`✅ ${allUsers.length} usuarios creados exitosamente`);
-
-  // ===============================================
-  // 5. CREAR USER ROLES
-  // ===============================================
-  console.log("🎭 Creando UserRoles...");
-  
-  const userRoleData = [
-    // Erick Santos - Especialista en UX/UI
-    { user: allUsers.find(u => u.name === "Erick Santos"), types: [uxType], brandId: null },
-    
-    // Diego Ganoza - Generalista (UX/UI + Graphic)
-    { user: allUsers.find(u => u.name === "Diego Ganoza"), types: [uxType, graphicType], brandId: null },
-    
-    // Dayana Viggiani - Especialista en Graphic
-    { user: allUsers.find(u => u.name === "Dayana Viggiani"), types: [graphicType], brandId: null },
-  ];
-
-  const roles = userRoleData.flatMap(({ user, types, brandId }) => {
-    if (!user) {
-      console.warn(`Usuario no encontrado para crear roles. Saltando.`);
-      return [];
-    }
-    return types.map((type) => ({
-      userId: user.id,
-      typeId: type.id,
-      brandId: brandId,
-    }));
-  });
-
-  await prisma.userRole.createMany({ data: roles, skipDuplicates: true });
-  console.log(`✅ ${roles.length} user roles creados exitosamente`);
-
-  // ===============================================
-  // 6. ✅ NUEVO: CREAR VACACIONES DE USUARIOS
-  // ===============================================
-  console.log("🏖️ Creando vacaciones de usuarios (para testing)...");
-  
-  const vacationData = [
-    // Erick Santos - Vacaciones futuras para testing de reglas de negocio
-    {
-      userId: "114240449", // Erick Santos
-      startDate: new Date("2025-08-15T00:00:00Z"), // 15 de agosto 2025
-      endDate: new Date("2025-08-25T23:59:59Z"),   // 25 de agosto 2025 (10 días)
-    },
-    {
-      userId: "114240449", // Erick Santos
-      startDate: new Date("2025-12-20T00:00:00Z"), // 20 de diciembre 2025
-      endDate: new Date("2026-01-05T23:59:59Z"),   // 5 de enero 2026 (vacaciones navideñas)
-    },
-    
-    // Diego Ganoza - Vacaciones cercanas para testing
-    {
-      userId: "114217194", // Diego Ganoza
-      startDate: new Date("2025-07-20T00:00:00Z"), // 20 de julio 2025
-      endDate: new Date("2025-07-27T23:59:59Z"),   // 27 de julio 2025 (1 semana)
-    },
-    
-    // Dayana Viggiani - Sin vacaciones por ahora (para tener un control)
-    // Esto permite testear usuarios sin conflictos de vacaciones
-  ];
-
-  await prisma.userVacation.createMany({ data: vacationData });
-  console.log(`✅ ${vacationData.length} períodos de vacaciones creados`);
-
-  // ===============================================
-  // 7. ✅ NUEVO: CREAR TAREAS DE EJEMPLO (OPCIONAL)
-  // ===============================================
-  console.log("📝 Creando tareas de ejemplo para testing...");
-  
-  // Obtener algunas categorías para las tareas de ejemplo
-  const sampleUXCategory = await prisma.taskCategory.findFirst({
-    where: { typeId: uxType.id, tier: "C" }
-  });
-  
-  const sampleGraphicCategory = await prisma.taskCategory.findFirst({
-    where: { typeId: graphicType.id, tier: "C" }
-  });
-
-  if (sampleUXCategory && sampleGraphicCategory) {
-    // Función helper para calcular fechas de trabajo
-    const calculateWorkingDates = (startDate, durationDays) => {
-      const start = new Date(startDate);
-      const deadline = new Date(start);
-      deadline.setUTCDate(start.getUTCDate() + durationDays);
-      return { start, deadline };
-    };
-
-    const baseDate = new Date("2025-07-01T15:00:00Z"); // 1 de julio, 10 AM Perú
-    
-    const sampleTasks = [
-      {
-        id: `sample_task_${Date.now()}_1`,
-        name: "Sample UX Task - Landing Page Redesign",
-        description: "Redesign of the main landing page for better conversion",
-        status: "TO_DO",
-        priority: "NORMAL",
-        ...calculateWorkingDates(baseDate, sampleUXCategory.duration),
-        queuePosition: 0,
-        typeId: uxType.id,
-        categoryId: sampleUXCategory.id,
-        brandId: allBrands[0].id, // Inszone
-        lastSyncAt: new Date(),
-        syncStatus: "SYNCED",
-      },
-      {
-        id: `sample_task_${Date.now()}_2`,
-        name: "Sample Graphic Task - Business Card Design",
-        description: "New business card design for R.E. Chaix brand",
-        status: "TO_DO",
-        priority: "LOW",
-        ...calculateWorkingDates(new Date(baseDate.getTime() + 7 * 24 * 60 * 60 * 1000), sampleGraphicCategory.duration),
-        queuePosition: 0,
-        typeId: graphicType.id,
-        categoryId: sampleGraphicCategory.id,
-        brandId: allBrands[1].id, // R.E. Chaix
-        lastSyncAt: new Date(),
-        syncStatus: "SYNCED",
-      }
-    ];
-
-    // Crear las tareas de ejemplo
-    for (const taskData of sampleTasks) {
-      const { start, deadline, ...taskCreateData } = taskData;
-      
-      const task = await prisma.task.create({
-        data: {
-          ...taskCreateData,
-          startDate: start,
-          deadline: deadline,
-        }
-      });
-
-      // Asignar la primera tarea a Erick (UX) y la segunda a Dayana (Graphic)
-      const assigneeId = taskData.typeId === uxType.id ? "114240449" : "114217195";
-      
-      await prisma.taskAssignment.create({
-        data: {
-          userId: assigneeId,
-          taskId: task.id,
-        }
-      });
-    }
-    
-    console.log(`✅ ${sampleTasks.length} tareas de ejemplo creadas`);
+  const allUsers = {}; // Para almacenar los objetos User creados
+  for (const user of userData) {
+    const createdUser = await prisma.user.upsert({
+      where: { id: user.id },
+      update: user,
+      create: user,
+    });
+    allUsers[createdUser.name] = createdUser;
+    console.log(`Upserted User: ${createdUser.name}`);
   }
 
-  // ===============================================
-  // 8. RESUMEN FINAL
-  // ===============================================
-  console.log("\n🎉 ===============================================");
-  console.log("✅ SEED COMPLETADO EXITOSAMENTE!");
-  console.log("===============================================");
-  console.log(`📊 Resumen de datos creados:`);
-  console.log(`   🏢 Brands: ${allBrands.length}`);
-  console.log(`   👥 Usuarios: ${allUsers.length}`);
-  console.log(`   🎭 User Roles: ${roles.length}`);
-  console.log(`   📋 Task Types: 2 (UX/UI, Graphic)`);
-  console.log(`   🏷️  Task Categories: ${Object.keys(tierDurations).length * 2} total`);
-  console.log(`   🏖️  Vacaciones: ${vacationData.length} períodos`);
-  console.log(`   📝 Tareas de ejemplo: 2`);
-  console.log("\n💡 Datos listos para testing del sistema de asignación!");
-  console.log("🧪 Puedes usar estos datos para probar:");
-  console.log("   • Asignación automática vs manual");
-  console.log("   • Reglas de prioridad en cola");
-  console.log("   • Gestión de vacaciones");
-  console.log("   • Cálculo de fechas laborales");
-  console.log("===============================================\n");
+  // 4. Seed de TaskType y TaskCategory (ahora con relación a TierSetting)
+  console.log('\n--- Seeding TaskTypes and TaskCategories ---');
+
+  // Define las categorías con su tipo y nombre de tier
+  const categoriesToCreate = [
+    // UX/UI Design Categories
+    { name: "UX Research", typeName: "UX/UI Design", tierName: Tier.A },
+    { name: "Wireframing", typeName: "UX/UI Design", tierName: Tier.B },
+    { name: "UI Design", typeName: "UX/UI Design", tierName: Tier.B },
+    { name: "Usability Testing", typeName: "UX/UI Design", tierName: Tier.C },
+    { name: "Prototyping", typeName: "UX/UI Design", tierName: Tier.C },
+    { name: "Full website with multiple levels", typeName: "UX/UI Design", tierName: Tier.S },
+    { name: "UX/UI for SaaS or B2B platform", typeName: "UX/UI Design", tierName: Tier.S },
+    { name: "Design system with documentation", typeName: "UX/UI Design", tierName: Tier.S },
+    { name: "Mobile app (15+ screens)", typeName: "UX/UI Design", tierName: Tier.S },
+    { name: "Validated MVP prototype", typeName: "UX/UI Design", tierName: Tier.S },
+    { name: "Cross-platform design", typeName: "UX/UI Design", tierName: Tier.S },
+    { name: "Complex intranet section", typeName: "UX/UI Design", tierName: Tier.A },
+    { name: "Corporate website (5–7 sections)", typeName: "UX/UI Design", tierName: Tier.A },
+    { name: "Prototype with microinteractions", typeName: "UX/UI Design", tierName: Tier.A },
+    { name: "Intermediate design system", typeName: "UX/UI Design", tierName: Tier.A },
+    { name: "Dashboard with charts and filters", typeName: "UX/UI Design", tierName: Tier.A },
+    { name: "UX for onboarding or sign-up", typeName: "UX/UI Design", tierName: Tier.A },
+    { name: "Full redesign of site/app", typeName: "UX/UI Design", tierName: Tier.A },
+    { name: "Simple intranet section", typeName: "UX/UI Design", tierName: Tier.B },
+    { name: "Landing page design", typeName: "UX/UI Design", tierName: Tier.B },
+    { name: "Complex internal pages", typeName: "UX/UI Design", tierName: Tier.B },
+    { name: "3–5 UI screens", typeName: "UX/UI Design", tierName: Tier.B },
+    { name: "Component with states/variants", typeName: "UX/UI Design", tierName: Tier.B },
+    { name: "Simple clickable prototype", typeName: "UX/UI Design", tierName: Tier.B },
+    { name: "Wireframes + simple mockup", typeName: "UX/UI Design", tierName: Tier.B },
+    { name: "Responsive views of same page", typeName: "UX/UI Design", tierName: Tier.B },
+    { name: "New section in existing page", typeName: "UX/UI Design", tierName: Tier.C },
+    { name: "Mobile version of a page", typeName: "UX/UI Design", tierName: Tier.C },
+    { name: "Simple view design", typeName: "UX/UI Design", tierName: Tier.C },
+    { name: "Web banner adaptation", typeName: "UX/UI Design", tierName: Tier.C },
+    { name: "Simple button/component states", typeName: "UX/UI Design", tierName: Tier.C },
+    { name: "Copy changes", typeName: "UX/UI Design", tierName: Tier.D },
+    { name: "Icon/image updates", typeName: "UX/UI Design", tierName: Tier.D },
+    { name: "Spacing or padding adjustments", typeName: "UX/UI Design", tierName: Tier.D },
+    { name: "Color or font edits", typeName: "UX/UI Design", tierName: Tier.D },
+    { name: "Naming/layer cleanup", typeName: "UX/UI Design", tierName: Tier.D },
+    { name: "Auto layout adjustments", typeName: "UX/UI Design", tierName: Tier.D },
+
+    // Graphic Design Categories
+    { name: "Complete visual identity", typeName: "Graphic Design", tierName: Tier.S },
+    { name: "Complex brochure", typeName: "Graphic Design", tierName: Tier.S },
+    { name: "Simple brochure (Bi-fold/Tri-fold)", typeName: "Graphic Design", tierName: Tier.A },
+    { name: "Internal documents", typeName: "Graphic Design", tierName: Tier.A },
+    { name: "Complex infographic", typeName: "Graphic Design", tierName: Tier.A },
+    { name: "Basic brand manual", typeName: "Graphic Design", tierName: Tier.A },
+    { name: "Full packaging design", typeName: "Graphic Design", tierName: Tier.A },
+    { name: "Event/campaign graphic kit", typeName: "Graphic Design", tierName: Tier.A },
+    { name: "Ad visuals", typeName: "Graphic Design", tierName: Tier.A },
+    { name: "Social media for all brands", typeName: "Graphic Design", tierName: Tier.A },
+    { name: "PowerPoint (19–28 slides)", typeName: "Graphic Design", tierName: Tier.A },
+    { name: "Flyer or poster", typeName: "Graphic Design", tierName: Tier.B },
+    { name: "PowerPoint template", typeName: "Graphic Design", tierName: Tier.B },
+    { name: "Basic infographic", typeName: "Graphic Design", tierName: Tier.B },
+    { name: "Complex updates in artworks", typeName: "Graphic Design", tierName: Tier.B },
+    { name: "PowerPoint (12–18 slides)", typeName: "Graphic Design", tierName: Tier.B },
+    { name: "Artwork resizing", typeName: "Graphic Design", tierName: Tier.C },
+    { name: "Template-based artwork", typeName: "Graphic Design", tierName: Tier.C },
+    { name: "Business card", typeName: "Graphic Design", tierName: Tier.C },
+    { name: "Letterhead", typeName: "Graphic Design", tierName: Tier.C },
+    { name: "Intermediate updates in artworks", typeName: "Graphic Design", tierName: Tier.C },
+    { name: "PowerPoint (6–11 slides)", typeName: "Graphic Design", tierName: Tier.C },
+    { name: "Text changes in artworks", typeName: "Graphic Design", tierName: Tier.D },
+    { name: "Logo/image replacements", typeName: "Graphic Design", tierName: Tier.D },
+    { name: "File export to other formats", typeName: "Graphic Design", tierName: Tier.D },
+    { name: "Signature (Formerly operating as)", typeName: "Graphic Design", tierName: Tier.D },
+    { name: "Simple info updates in artworks", typeName: "Graphic Design", tierName: Tier.D },
+    { name: "Signature (Powered by)", typeName: "Graphic Design", tierName: Tier.E },
+
+    // General Design Categories
+    { name: 'Miscellaneous', typeName: 'General Design', tierName: Tier.D },
+    { name: 'Consultation', typeName: 'General Design', tierName: Tier.C },
+  ];
+
+  const seededTaskTypes = {}; // Para almacenar los objetos TaskType creados
+  const taskTypeNames = [...new Set(categoriesToCreate.map(c => c.typeName))]; // Obtener nombres de tipos únicos
+  for (const typeName of taskTypeNames) {
+    const type = await prisma.taskType.upsert({
+      where: { name: typeName },
+      update: {},
+      create: { name: typeName },
+    });
+    seededTaskTypes[type.name] = type;
+    console.log(`Upserted TaskType: ${type.name}`);
+  }
+
+  for (const categoryData of categoriesToCreate) {
+    const type = seededTaskTypes[categoryData.typeName];
+    const tier = seededTiers[categoryData.tierName];
+
+    if (!type) {
+      console.error(`Error: TaskType "${categoryData.typeName}" no encontrado para la categoría "${categoryData.name}".`);
+      continue;
+    }
+    if (!tier) {
+      console.error(`Error: Tier "${categoryData.tierName}" no encontrado para la categoría "${categoryData.name}".`);
+      continue;
+    }
+
+    // Usar la clave compuesta única para upsert
+    const category = await prisma.taskCategory.upsert({
+      where: {
+        name_typeId: { // Usando la nueva clave compuesta
+          name: categoryData.name,
+          typeId: type.id,
+        },
+      },
+      update: {
+        tierId: tier.id,
+        tier: categoryData.tierName,
+      },
+      create: {
+        name: categoryData.name,
+        typeId: type.id,
+        tierId: tier.id,
+        tier: categoryData.tierName,
+      },
+    });
+    console.log(`Upserted TaskCategory: ${category.name} (Type: ${categoryData.typeName}, Tier: ${categoryData.tierName})`);
+  }
+
+  // 5. Seed de UserRole
+  console.log('\n--- Seeding UserRoles ---');
+  const userRoleData = [
+    // Erick Santos - Especialista en UX/UI
+    { user: allUsers["Erick Santos"], types: ["UX/UI Design"], brandId: null },
+    
+    // Diego Ganoza - Generalista (UX/UI + Graphic)
+    { user: allUsers["Diego Ganoza"], types: ["UX/UI Design", "Graphic Design"], brandId: null },
+    
+    // Dayana Viggiani - Especialista en Graphic
+    { user: allUsers["Dayana Viggiani"], types: ["Graphic Design"], brandId: null },
+  ];
+
+  for (const roleData of userRoleData) {
+    const user = roleData.user;
+    if (!user) {
+      console.warn(`Usuario no encontrado para crear roles: ${roleData.user?.name}. Saltando.`);
+      continue;
+    }
+    for (const typeName of roleData.types) {
+      const type = seededTaskTypes[typeName];
+      if (!type) {
+        console.warn(`TaskType "${typeName}" no encontrado para el rol del usuario ${user.name}. Saltando.`);
+        continue;
+      }
+      await prisma.userRole.upsert({
+        where: {
+          userId_typeId_brandId: {
+            userId: user.id,
+            typeId: type.id,
+            brandId: roleData.brandId,
+          },
+        },
+        update: {},
+        create: {
+          userId: user.id,
+          typeId: type.id,
+          brandId: roleData.brandId,
+        },
+      });
+      console.log(`Upserted UserRole: ${user.name} - ${type.name} ${roleData.brandId ? `(Brand: ${roleData.brandId})` : '(Global)'}`);
+    }
+  }
+
+  // 6. Seed de UserVacation
+  console.log('\n--- Seeding UserVacations ---');
+  const vacationData = [
+    {
+      userId: allUsers["Erick Santos"].id,
+      startDate: new Date('2025-07-15T00:00:00Z'),
+      endDate: new Date('2025-07-25T23:59:59Z'),
+    },
+    {
+      userId: allUsers["Diego Ganoza"].id,
+      startDate: new Date('2025-08-01T00:00:00Z'),
+      endDate: new Date('2025-08-07T23:59:59Z'),
+    },
+  ];
+  for (const vacation of vacationData) {
+    await prisma.userVacation.upsert({
+      where: {
+        userId_startDate_endDate: {
+          userId: vacation.userId,
+          startDate: vacation.startDate,
+          endDate: vacation.endDate,
+        },
+      },
+      update: {},
+      create: vacation,
+    });
+    console.log(`Upserted Vacation for ${vacation.userId}: ${vacation.startDate.toISOString().split('T')[0]} - ${vacation.endDate.toISOString().split('T')[0]}`);
+  }
+
+  console('\n✅ Seeding completado.');
 }
 
-main()
-  .catch((e) => {
-    console.error("❌ Error durante el seeding:", e);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+// Envuelve la llamada a main en un try-catch para manejar errores de inicialización de Prisma
+try {
+  prisma = new PrismaClient();
+  main()
+    .catch((e) => {
+      console.error('❌ Error durante el seeding:', e);
+      process.exit(1);
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
+} catch (e) {
+  console.error('❌ Error al inicializar PrismaClient:', e);
+  process.exit(1);
+}

@@ -1,5 +1,5 @@
 // src/hooks/useEnhancedUsers.ts
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 
 interface EnhancedUser {
@@ -120,24 +120,25 @@ export const useEnhancedUsers = ({
     fetchEnhancedUsers();
   }, [typeId, brandId, durationDays, shouldFetch]);
 
-  // Función para refetch manual
-  const refetch = () => {
+  // Función para refetch manual, memoizada para evitar re-renderizados
+  const refetch = useCallback(() => {
     if (shouldFetch) {
-      setError(null);
+      // Limpiar el error para forzar una nueva llamada en el useEffect
+      setError(null); 
     }
-  };
+  }, [shouldFetch]);
 
-  // Funciones helper para acceder a la data fácilmente
-  const getAllUsers = (): EnhancedUser[] => {
+  // Funciones helper para acceder a la data fácilmente, memoizadas con useCallback
+  const getAllUsers = useCallback((): EnhancedUser[] => {
     if (!data) return [];
     return [...data.availableUsers, ...data.usersOnVacation, ...data.overloadedUsers];
-  };
+  }, [data]); // Depende de 'data'
 
-  const getUserById = (userId: string): EnhancedUser | undefined => {
+  const getUserById = useCallback((userId: string): EnhancedUser | undefined => {
     return getAllUsers().find(user => user.id === userId);
-  };
+  }, [getAllUsers]); // Depende de 'getAllUsers'
 
-  const getVacationWarning = (userId: string): string | null => {
+  const getVacationWarning = useCallback((userId: string): string | null => {
     const user = getUserById(userId);
     if (!user) return null;
 
@@ -151,14 +152,14 @@ export const useEnhancedUsers = ({
     }
 
     return null;
-  };
+  }, [getUserById]); // Depende de 'getUserById'
 
   return {
     // Datos principales
     availableUsers: data?.availableUsers || [],
     usersOnVacation: data?.usersOnVacation || [],
     overloadedUsers: data?.overloadedUsers || [],
-    allUsers: getAllUsers(),
+    allUsers: getAllUsers(), // Usar la versión memoizada
     
     // Sugerencia inteligente
     smartSuggestion: data?.smartSuggestion,
@@ -175,8 +176,8 @@ export const useEnhancedUsers = ({
     message: data?.message || '',
     
     // Funciones helper
-    getUserById,
-    getVacationWarning,
+    getUserById, // Usar la versión memoizada
+    getVacationWarning, // Usar la versión memoizada
     refetch
   };
 };
