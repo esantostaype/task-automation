@@ -1,3 +1,5 @@
+// prisma/schema.prisma - VERSIÓN CORREGIDA
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -23,7 +25,7 @@ model TierList {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   categories TaskCategory[]
-  @@map("tier")
+  @@map("tier_list")
 }
 
 enum Priority {
@@ -127,14 +129,16 @@ model TaskCategory {
   id Int @id @default(autoincrement())
   name String
   tier Tier  
+  duration Float @default(1.0)
   typeId Int
   tierId Int
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   type TaskType @relation(fields: [typeId], references: [id])
-  tierSetting TierList @relation(fields: [tierId], references: [id])
+  tierList TierList @relation(fields: [tierId], references: [id])
   tasks Task[]
-  @@map("taskcategory")
+  @@unique([name, typeId])
+  @@map("task_category")
 }
 
 model UserRole {

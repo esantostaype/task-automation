@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-// prisma/seed.cjs
+// prisma/seed.cjs - VERSIÓN CORREGIDA
 // Ejecutar con: npx prisma db seed
 
 const { PrismaClient, Tier } = require('@prisma/client');
@@ -8,12 +8,12 @@ let prisma; // Declara prisma con let para poder asignarlo en el try/catch
 
 // Definir las duraciones por defecto para cada Tier
 const tierDurations = {
-  S: 30,
-  A: 21,
-  B: 14,
-  C: 7,
-  D: 3,
-  E: 0.5, // 0.5 días = 4 horas
+  S: 5,
+  A: 3,
+  B: 2,
+  C: 1,
+  D: 0.5,
+  E: 0.25
 };
 
 async function main() {
@@ -21,34 +21,66 @@ async function main() {
 
   // 0. Limpiar datos existentes (¡CUIDADO! Esto borrará todos los datos en estas tablas)
   console.log('\n--- Limpiando datos existentes ---');
-  await prisma.syncLog.deleteMany();
-  await prisma.taskAssignment.deleteMany();
-  await prisma.task.deleteMany();
-  await prisma.userVacation.deleteMany();
-  await prisma.userRole.deleteMany();
-  await prisma.taskCategory.deleteMany();
-  await prisma.taskType.deleteMany();
-  await prisma.tierList.deleteMany(); // CAMBIO: tierSetting a tierList
-  await prisma.user.deleteMany();
-  await prisma.brand.deleteMany();
-  console.log('✅ Datos antiguos eliminados.');
+  
+  try {
+    await prisma.syncLog.deleteMany();
+    console.log('✅ SyncLog limpiado');
+    
+    await prisma.taskAssignment.deleteMany();
+    console.log('✅ TaskAssignment limpiado');
+    
+    await prisma.task.deleteMany();
+    console.log('✅ Task limpiado');
+    
+    await prisma.userVacation.deleteMany();
+    console.log('✅ UserVacation limpiado');
+    
+    await prisma.userRole.deleteMany();
+    console.log('✅ UserRole limpiado');
+    
+    await prisma.taskCategory.deleteMany();
+    console.log('✅ TaskCategory limpiado');
+    
+    await prisma.taskType.deleteMany();
+    console.log('✅ TaskType limpiado');
+    
+    await prisma.tierList.deleteMany();
+    console.log('✅ TierList limpiado');
+    
+    await prisma.user.deleteMany();
+    console.log('✅ User limpiado');
+    
+    await prisma.brand.deleteMany();
+    console.log('✅ Brand limpiado');
+    
+    console.log('✅ Datos antiguos eliminados.');
+  } catch (error) {
+    console.error('❌ Error limpiando datos:', error);
+    throw error;
+  }
 
-  // 1. Seed de TierSetting (los tiers y sus duraciones por defecto)
-  console.log('\n--- Seeding TierSettings ---');
-  const seededTiers = {}; // Para almacenar los objetos TierSetting creados
-  for (const tierName of Object.keys(Tier)) {
-    const defaultDuration = tierDurations[tierName];
-    if (defaultDuration === undefined) {
-      console.warn(`⚠️ Duración no definida para el Tier: ${tierName}. Saltando.`);
-      continue;
+  // 1. Seed de TierList (los tiers y sus duraciones por defecto)
+  console.log('\n--- Seeding TierList ---');
+  const seededTiers = {}; // Para almacenar los objetos TierList creados
+  
+  try {
+    for (const tierName of Object.keys(Tier)) {
+      const defaultDuration = tierDurations[tierName];
+      if (defaultDuration === undefined) {
+        console.warn(`⚠️ Duración no definida para el Tier: ${tierName}. Saltando.`);
+        continue;
+      }
+      const tier = await prisma.tierList.upsert({
+        where: { name: tierName },
+        update: { defaultDuration: defaultDuration },
+        create: { name: tierName, defaultDuration: defaultDuration },
+      });
+      seededTiers[tier.name] = tier; // Guardar el objeto tier completo
+      console.log(`✅ Upserted Tier: ${tier.name} (Duration: ${tier.defaultDuration} days)`);
     }
-    const tier = await prisma.tierList.upsert({ // CAMBIO: tierSetting a tierList
-      where: { name: tierName },
-      update: { defaultDuration: defaultDuration },
-      create: { name: tierName, defaultDuration: defaultDuration },
-    });
-    seededTiers[tier.name] = tier; // Guardar el objeto tier completo
-    console.log(`Upserted Tier: ${tier.name} (Duration: ${tier.defaultDuration} days)`);
+  } catch (error) {
+    console.error('❌ Error creando TierList:', error);
+    throw error;
   }
 
   // 2. Seed de Brand
@@ -85,13 +117,19 @@ async function main() {
       defaultStatus: "TO_DO",
     },
   ];
-  for (const brand of brandData) {
-    await prisma.brand.upsert({
-      where: { id: brand.id },
-      update: brand,
-      create: brand,
-    });
-    console.log(`Upserted Brand: ${brand.name}`);
+  
+  try {
+    for (const brand of brandData) {
+      await prisma.brand.upsert({
+        where: { id: brand.id },
+        update: brand,
+        create: brand,
+      });
+      console.log(`✅ Upserted Brand: ${brand.name}`);
+    }
+  } catch (error) {
+    console.error('❌ Error creando Brands:', error);
+    throw error;
   }
 
   // 3. Seed de User
@@ -117,140 +155,154 @@ async function main() {
     },
   ];
   const allUsers = {}; // Para almacenar los objetos User creados
-  for (const user of userData) {
-    const createdUser = await prisma.user.upsert({
-      where: { id: user.id },
-      update: user,
-      create: user,
-    });
-    allUsers[createdUser.name] = createdUser;
-    console.log(`Upserted User: ${createdUser.name}`);
+  
+  try {
+    for (const user of userData) {
+      const createdUser = await prisma.user.upsert({
+        where: { id: user.id },
+        update: user,
+        create: user,
+      });
+      allUsers[createdUser.name] = createdUser;
+      console.log(`✅ Upserted User: ${createdUser.name}`);
+    }
+  } catch (error) {
+    console.error('❌ Error creando Users:', error);
+    throw error;
   }
 
-  // 4. Seed de TaskType y TaskCategory (ahora con relación a TierSetting)
+  // 4. Seed de TaskType y TaskCategory (ahora con relación a TierList)
   console.log('\n--- Seeding TaskTypes and TaskCategories ---');
 
   // Define las categorías con su tipo y nombre de tier
   const categoriesToCreate = [
     // UX/UI Design Categories
-    { name: "UX Research", typeName: "UX/UI Design", tierName: Tier.A },
-    { name: "Wireframing", typeName: "UX/UI Design", tierName: Tier.B },
-    { name: "UI Design", typeName: "UX/UI Design", tierName: Tier.B },
-    { name: "Usability Testing", typeName: "UX/UI Design", tierName: Tier.C },
-    { name: "Prototyping", typeName: "UX/UI Design", tierName: Tier.C },
-    { name: "Full website with multiple levels", typeName: "UX/UI Design", tierName: Tier.S },
-    { name: "UX/UI for SaaS or B2B platform", typeName: "UX/UI Design", tierName: Tier.S },
-    { name: "Design system with documentation", typeName: "UX/UI Design", tierName: Tier.S },
-    { name: "Mobile app (15+ screens)", typeName: "UX/UI Design", tierName: Tier.S },
-    { name: "Validated MVP prototype", typeName: "UX/UI Design", tierName: Tier.S },
-    { name: "Cross-platform design", typeName: "UX/UI Design", tierName: Tier.S },
-    { name: "Complex intranet section", typeName: "UX/UI Design", tierName: Tier.A },
-    { name: "Corporate website (5–7 sections)", typeName: "UX/UI Design", tierName: Tier.A },
-    { name: "Prototype with microinteractions", typeName: "UX/UI Design", tierName: Tier.A },
-    { name: "Intermediate design system", typeName: "UX/UI Design", tierName: Tier.A },
-    { name: "Dashboard with charts and filters", typeName: "UX/UI Design", tierName: Tier.A },
-    { name: "UX for onboarding or sign-up", typeName: "UX/UI Design", tierName: Tier.A },
-    { name: "Full redesign of site/app", typeName: "UX/UI Design", tierName: Tier.A },
-    { name: "Simple intranet section", typeName: "UX/UI Design", tierName: Tier.B },
-    { name: "Landing page design", typeName: "UX/UI Design", tierName: Tier.B },
-    { name: "Complex internal pages", typeName: "UX/UI Design", tierName: Tier.B },
-    { name: "3–5 UI screens", typeName: "UX/UI Design", tierName: Tier.B },
-    { name: "Component with states/variants", typeName: "UX/UI Design", tierName: Tier.B },
-    { name: "Simple clickable prototype", typeName: "UX/UI Design", tierName: Tier.B },
-    { name: "Wireframes + simple mockup", typeName: "UX/UI Design", tierName: Tier.B },
-    { name: "Responsive views of same page", typeName: "UX/UI Design", tierName: Tier.B },
-    { name: "New section in existing page", typeName: "UX/UI Design", tierName: Tier.C },
-    { name: "Mobile version of a page", typeName: "UX/UI Design", tierName: Tier.C },
-    { name: "Simple view design", typeName: "UX/UI Design", tierName: Tier.C },
-    { name: "Web banner adaptation", typeName: "UX/UI Design", tierName: Tier.C },
-    { name: "Simple button/component states", typeName: "UX/UI Design", tierName: Tier.C },
-    { name: "Copy changes", typeName: "UX/UI Design", tierName: Tier.D },
-    { name: "Icon/image updates", typeName: "UX/UI Design", tierName: Tier.D },
-    { name: "Spacing or padding adjustments", typeName: "UX/UI Design", tierName: Tier.D },
-    { name: "Color or font edits", typeName: "UX/UI Design", tierName: Tier.D },
-    { name: "Naming/layer cleanup", typeName: "UX/UI Design", tierName: Tier.D },
-    { name: "Auto layout adjustments", typeName: "UX/UI Design", tierName: Tier.D },
+    { name: "UX Research", typeName: "UX/UI Design", tierName: Tier.A, duration: 21 },
+    { name: "Wireframing", typeName: "UX/UI Design", tierName: Tier.B, duration: 14 },
+    { name: "UI Design", typeName: "UX/UI Design", tierName: Tier.B, duration: 14 },
+    { name: "Usability Testing", typeName: "UX/UI Design", tierName: Tier.C, duration: 7 },
+    { name: "Prototyping", typeName: "UX/UI Design", tierName: Tier.C, duration: 7 },
+    { name: "Full website with multiple levels", typeName: "UX/UI Design", tierName: Tier.S, duration: 30 },
+    { name: "UX/UI for SaaS or B2B platform", typeName: "UX/UI Design", tierName: Tier.S, duration: 30 },
+    { name: "Design system with documentation", typeName: "UX/UI Design", tierName: Tier.S, duration: 30 },
+    { name: "Mobile app (15+ screens)", typeName: "UX/UI Design", tierName: Tier.S, duration: 30 },
+    { name: "Validated MVP prototype", typeName: "UX/UI Design", tierName: Tier.S, duration: 30 },
+    { name: "Cross-platform design", typeName: "UX/UI Design", tierName: Tier.S, duration: 30 },
+    { name: "Complex intranet section", typeName: "UX/UI Design", tierName: Tier.A, duration: 21 },
+    { name: "Corporate website (5–7 sections)", typeName: "UX/UI Design", tierName: Tier.A, duration: 21 },
+    { name: "Prototype with microinteractions", typeName: "UX/UI Design", tierName: Tier.A, duration: 21 },
+    { name: "Intermediate design system", typeName: "UX/UI Design", tierName: Tier.A, duration: 21 },
+    { name: "Dashboard with charts and filters", typeName: "UX/UI Design", tierName: Tier.A, duration: 21 },
+    { name: "UX for onboarding or sign-up", typeName: "UX/UI Design", tierName: Tier.A, duration: 21 },
+    { name: "Full redesign of site/app", typeName: "UX/UI Design", tierName: Tier.A, duration: 21 },
+    { name: "Simple intranet section", typeName: "UX/UI Design", tierName: Tier.B, duration: 14 },
+    { name: "Landing page design", typeName: "UX/UI Design", tierName: Tier.B, duration: 14 },
+    { name: "Complex internal pages", typeName: "UX/UI Design", tierName: Tier.B, duration: 14 },
+    { name: "3–5 UI screens", typeName: "UX/UI Design", tierName: Tier.B, duration: 14 },
+    { name: "Component with states/variants", typeName: "UX/UI Design", tierName: Tier.B, duration: 14 },
+    { name: "Simple clickable prototype", typeName: "UX/UI Design", tierName: Tier.B, duration: 14 },
+    { name: "Wireframes + simple mockup", typeName: "UX/UI Design", tierName: Tier.B, duration: 14 },
+    { name: "Responsive views of same page", typeName: "UX/UI Design", tierName: Tier.B, duration: 14 },
+    { name: "New section in existing page", typeName: "UX/UI Design", tierName: Tier.C, duration: 7 },
+    { name: "Mobile version of a page", typeName: "UX/UI Design", tierName: Tier.C, duration: 7 },
+    { name: "Simple view design", typeName: "UX/UI Design", tierName: Tier.C, duration: 7 },
+    { name: "Web banner adaptation", typeName: "UX/UI Design", tierName: Tier.C, duration: 7 },
+    { name: "Simple button/component states", typeName: "UX/UI Design", tierName: Tier.C, duration: 7 },
+    { name: "Copy changes", typeName: "UX/UI Design", tierName: Tier.D, duration: 3 },
+    { name: "Icon/image updates", typeName: "UX/UI Design", tierName: Tier.D, duration: 3 },
+    { name: "Spacing or padding adjustments", typeName: "UX/UI Design", tierName: Tier.D, duration: 3 },
+    { name: "Color or font edits", typeName: "UX/UI Design", tierName: Tier.D, duration: 3 },
+    { name: "Naming/layer cleanup", typeName: "UX/UI Design", tierName: Tier.D, duration: 3 },
+    { name: "Auto layout adjustments", typeName: "UX/UI Design", tierName: Tier.D, duration: 3 },
 
     // Graphic Design Categories
-    { name: "Complete visual identity", typeName: "Graphic Design", tierName: Tier.S },
-    { name: "Complex brochure", typeName: "Graphic Design", tierName: Tier.S },
-    { name: "Simple brochure (Bi-fold/Tri-fold)", typeName: "Graphic Design", tierName: Tier.A },
-    { name: "Internal documents", typeName: "Graphic Design", tierName: Tier.A },
-    { name: "Complex infographic", typeName: "Graphic Design", tierName: Tier.A },
-    { name: "Basic brand manual", typeName: "Graphic Design", tierName: Tier.A },
-    { name: "Full packaging design", typeName: "Graphic Design", tierName: Tier.A },
-    { name: "Event/campaign graphic kit", typeName: "Graphic Design", tierName: Tier.A },
-    { name: "Ad visuals", typeName: "Graphic Design", tierName: Tier.A },
-    { name: "Social media for all brands", typeName: "Graphic Design", tierName: Tier.A },
-    { name: "PowerPoint (19–28 slides)", typeName: "Graphic Design", tierName: Tier.A },
-    { name: "Flyer or poster", typeName: "Graphic Design", tierName: Tier.B },
-    { name: "PowerPoint template", typeName: "Graphic Design", tierName: Tier.B },
-    { name: "Basic infographic", typeName: "Graphic Design", tierName: Tier.B },
-    { name: "Complex updates in artworks", typeName: "Graphic Design", tierName: Tier.B },
-    { name: "PowerPoint (12–18 slides)", typeName: "Graphic Design", tierName: Tier.B },
-    { name: "Artwork resizing", typeName: "Graphic Design", tierName: Tier.C },
-    { name: "Template-based artwork", typeName: "Graphic Design", tierName: Tier.C },
-    { name: "Business card", typeName: "Graphic Design", tierName: Tier.C },
-    { name: "Letterhead", typeName: "Graphic Design", tierName: Tier.C },
-    { name: "Intermediate updates in artworks", typeName: "Graphic Design", tierName: Tier.C },
-    { name: "PowerPoint (6–11 slides)", typeName: "Graphic Design", tierName: Tier.C },
-    { name: "Text changes in artworks", typeName: "Graphic Design", tierName: Tier.D },
-    { name: "Logo/image replacements", typeName: "Graphic Design", tierName: Tier.D },
-    { name: "File export to other formats", typeName: "Graphic Design", tierName: Tier.D },
-    { name: "Signature (Formerly operating as)", typeName: "Graphic Design", tierName: Tier.D },
-    { name: "Simple info updates in artworks", typeName: "Graphic Design", tierName: Tier.D },
-    { name: "Signature (Powered by)", typeName: "Graphic Design", tierName: Tier.E },
+    { name: "Complete visual identity", typeName: "Graphic Design", tierName: Tier.S, duration: 30 },
+    { name: "Complex brochure", typeName: "Graphic Design", tierName: Tier.S, duration: 30 },
+    { name: "Simple brochure (Bi-fold/Tri-fold)", typeName: "Graphic Design", tierName: Tier.A, duration: 21 },
+    { name: "Internal documents", typeName: "Graphic Design", tierName: Tier.A, duration: 21 },
+    { name: "Complex infographic", typeName: "Graphic Design", tierName: Tier.A, duration: 21 },
+    { name: "Basic brand manual", typeName: "Graphic Design", tierName: Tier.A, duration: 21 },
+    { name: "Full packaging design", typeName: "Graphic Design", tierName: Tier.A, duration: 21 },
+    { name: "Event/campaign graphic kit", typeName: "Graphic Design", tierName: Tier.A, duration: 21 },
+    { name: "Ad visuals", typeName: "Graphic Design", tierName: Tier.A, duration: 21 },
+    { name: "Social media for all brands", typeName: "Graphic Design", tierName: Tier.A, duration: 21 },
+    { name: "PowerPoint (19–28 slides)", typeName: "Graphic Design", tierName: Tier.A, duration: 21 },
+    { name: "Flyer or poster", typeName: "Graphic Design", tierName: Tier.B, duration: 14 },
+    { name: "PowerPoint template", typeName: "Graphic Design", tierName: Tier.B, duration: 14 },
+    { name: "Basic infographic", typeName: "Graphic Design", tierName: Tier.B, duration: 14 },
+    { name: "Complex updates in artworks", typeName: "Graphic Design", tierName: Tier.B, duration: 14 },
+    { name: "PowerPoint (12–18 slides)", typeName: "Graphic Design", tierName: Tier.B, duration: 14 },
+    { name: "Artwork resizing", typeName: "Graphic Design", tierName: Tier.C, duration: 7 },
+    { name: "Template-based artwork", typeName: "Graphic Design", tierName: Tier.C, duration: 7 },
+    { name: "Business card", typeName: "Graphic Design", tierName: Tier.C, duration: 7 },
+    { name: "Letterhead", typeName: "Graphic Design", tierName: Tier.C, duration: 7 },
+    { name: "Intermediate updates in artworks", typeName: "Graphic Design", tierName: Tier.C, duration: 7 },
+    { name: "PowerPoint (6–11 slides)", typeName: "Graphic Design", tierName: Tier.C, duration: 7 },
+    { name: "Text changes in artworks", typeName: "Graphic Design", tierName: Tier.D, duration: 3 },
+    { name: "Logo/image replacements", typeName: "Graphic Design", tierName: Tier.D, duration: 3 },
+    { name: "File export to other formats", typeName: "Graphic Design", tierName: Tier.D, duration: 3 },
+    { name: "Signature (Formerly operating as)", typeName: "Graphic Design", tierName: Tier.D, duration: 3 },
+    { name: "Simple info updates in artworks", typeName: "Graphic Design", tierName: Tier.D, duration: 3 },
+    { name: "Signature (Powered by)", typeName: "Graphic Design", tierName: Tier.E, duration: 0.5 },
 
     // General Design Categories
-    { name: 'Miscellaneous', typeName: 'General Design', tierName: Tier.D },
-    { name: 'Consultation', typeName: 'General Design', tierName: Tier.C },
+    { name: 'Miscellaneous', typeName: 'General Design', tierName: Tier.D, duration: 3 },
+    { name: 'Consultation', typeName: 'General Design', tierName: Tier.C, duration: 7 },
   ];
 
   const seededTaskTypes = {}; // Para almacenar los objetos TaskType creados
   const taskTypeNames = [...new Set(categoriesToCreate.map(c => c.typeName))]; // Obtener nombres de tipos únicos
-  for (const typeName of taskTypeNames) {
-    const type = await prisma.taskType.upsert({
-      where: { name: typeName },
-      update: {},
-      create: { name: typeName },
-    });
-    seededTaskTypes[type.name] = type;
-    console.log(`Upserted TaskType: ${type.name}`);
-  }
-
-  for (const categoryData of categoriesToCreate) {
-    const type = seededTaskTypes[categoryData.typeName];
-    const tier = seededTiers[categoryData.tierName];
-
-    if (!type) {
-      console.error(`Error: TaskType "${categoryData.typeName}" no encontrado para la categoría "${categoryData.name}".`);
-      continue;
-    }
-    if (!tier) {
-      console.error(`Error: Tier "${categoryData.tierName}" no encontrado para la categoría "${categoryData.name}".`);
-      continue;
+  
+  try {
+    for (const typeName of taskTypeNames) {
+      const type = await prisma.taskType.upsert({
+        where: { name: typeName },
+        update: {},
+        create: { name: typeName },
+      });
+      seededTaskTypes[type.name] = type;
+      console.log(`✅ Upserted TaskType: ${type.name}`);
     }
 
-    // Usar la clave compuesta única para upsert
-    const category = await prisma.taskCategory.upsert({
-      where: {
-        name_typeId: { // Usando la nueva clave compuesta
+    for (const categoryData of categoriesToCreate) {
+      const type = seededTaskTypes[categoryData.typeName];
+      const tier = seededTiers[categoryData.tierName];
+
+      if (!type) {
+        console.error(`❌ Error: TaskType "${categoryData.typeName}" no encontrado para la categoría "${categoryData.name}".`);
+        continue;
+      }
+      if (!tier) {
+        console.error(`❌ Error: Tier "${categoryData.tierName}" no encontrado para la categoría "${categoryData.name}".`);
+        continue;
+      }
+
+      // Usar la clave compuesta única para upsert
+      const category = await prisma.taskCategory.upsert({
+        where: {
+          name_typeId: { // Usando la clave compuesta
+            name: categoryData.name,
+            typeId: type.id,
+          },
+        },
+        update: {
+          tierId: tier.id,
+          tier: categoryData.tierName,
+          duration: categoryData.duration,
+        },
+        create: {
           name: categoryData.name,
           typeId: type.id,
+          tierId: tier.id,
+          tier: categoryData.tierName,
+          duration: categoryData.duration,
         },
-      },
-      update: {
-        tierId: tier.id,
-        tier: categoryData.tierName,
-      },
-      create: {
-        name: categoryData.name,
-        typeId: type.id,
-        tierId: tier.id,
-        tier: categoryData.tierName,
-      },
-    });
-    console.log(`Upserted TaskCategory: ${category.name} (Type: ${categoryData.typeName}, Tier: ${categoryData.tierName})`);
+      });
+      console.log(`✅ Upserted TaskCategory: ${category.name} (Type: ${categoryData.typeName}, Tier: ${categoryData.tierName}, Duration: ${categoryData.duration})`);
+    }
+  } catch (error) {
+    console.error('❌ Error creando TaskTypes y TaskCategories:', error);
+    throw error;
   }
 
   // 5. Seed de UserRole
@@ -266,35 +318,40 @@ async function main() {
     { user: allUsers["Dayana Viggiani"], types: ["Graphic Design"], brandId: null },
   ];
 
-  for (const roleData of userRoleData) {
-    const user = roleData.user;
-    if (!user) {
-      console.warn(`Usuario no encontrado para crear roles: ${roleData.user?.name}. Saltando.`);
-      continue;
-    }
-    for (const typeName of roleData.types) {
-      const type = seededTaskTypes[typeName];
-      if (!type) {
-        console.warn(`TaskType "${typeName}" no encontrado para el rol del usuario ${user.name}. Saltando.`);
+  try {
+    for (const roleData of userRoleData) {
+      const user = roleData.user;
+      if (!user) {
+        console.warn(`⚠️ Usuario no encontrado para crear roles: ${roleData.user?.name}. Saltando.`);
         continue;
       }
-      await prisma.userRole.upsert({
-        where: {
-          userId_typeId_brandId: {
+      for (const typeName of roleData.types) {
+        const type = seededTaskTypes[typeName];
+        if (!type) {
+          console.warn(`⚠️ TaskType "${typeName}" no encontrado para el rol del usuario ${user.name}. Saltando.`);
+          continue;
+        }
+        await prisma.userRole.upsert({
+          where: {
+            userId_typeId_brandId: {
+              userId: user.id,
+              typeId: type.id,
+              brandId: roleData.brandId,
+            },
+          },
+          update: {},
+          create: {
             userId: user.id,
             typeId: type.id,
             brandId: roleData.brandId,
           },
-        },
-        update: {},
-        create: {
-          userId: user.id,
-          typeId: type.id,
-          brandId: roleData.brandId,
-        },
-      });
-      console.log(`Upserted UserRole: ${user.name} - ${type.name} ${roleData.brandId ? `(Brand: ${roleData.brandId})` : '(Global)'}`);
+        });
+        console.log(`✅ Upserted UserRole: ${user.name} - ${type.name} ${roleData.brandId ? `(Brand: ${roleData.brandId})` : '(Global)'}`);
+      }
     }
+  } catch (error) {
+    console.error('❌ Error creando UserRoles:', error);
+    throw error;
   }
 
   // 6. Seed de UserVacation
@@ -311,22 +368,28 @@ async function main() {
       endDate: new Date('2025-08-07T23:59:59Z'),
     },
   ];
-  for (const vacation of vacationData) {
-    await prisma.userVacation.upsert({
-      where: {
-        userId_startDate_endDate: {
-          userId: vacation.userId,
-          startDate: vacation.startDate,
-          endDate: vacation.endDate,
+  
+  try {
+    for (const vacation of vacationData) {
+      await prisma.userVacation.upsert({
+        where: {
+          userId_startDate_endDate: {
+            userId: vacation.userId,
+            startDate: vacation.startDate,
+            endDate: vacation.endDate,
+          },
         },
-      },
-      update: {},
-      create: vacation,
-    });
-    console.log(`Upserted Vacation for ${vacation.userId}: ${vacation.startDate.toISOString().split('T')[0]} - ${vacation.endDate.toISOString().split('T')[0]}`);
+        update: {},
+        create: vacation,
+      });
+      console.log(`✅ Upserted Vacation for ${vacation.userId}: ${vacation.startDate.toISOString().split('T')[0]} - ${vacation.endDate.toISOString().split('T')[0]}`);
+    }
+  } catch (error) {
+    console.error('❌ Error creando UserVacations:', error);
+    throw error;
   }
 
-  console('\n✅ Seeding completado.');
+  console.log('\n✅ Seeding completado exitosamente.');
 }
 
 // Envuelve la llamada a main en un try-catch para manejar errores de inicialización de Prisma
