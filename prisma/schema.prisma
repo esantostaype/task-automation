@@ -21,7 +21,7 @@ enum Tier {
 model TierList {
   id Int @id @default(autoincrement())
   name Tier @unique
-  defaultDuration Float @map("default_duration")
+  duration Float @map("duration")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   categories TaskCategory[]
@@ -128,8 +128,6 @@ model TaskType {
 model TaskCategory {
   id Int @id @default(autoincrement())
   name String
-  tier Tier  
-  duration Float @default(1.0)
   typeId Int
   tierId Int
   createdAt DateTime @default(now())

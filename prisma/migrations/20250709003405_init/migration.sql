@@ -2,7 +2,7 @@
 CREATE TABLE `tier_list` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `name` ENUM('S', 'A', 'B', 'C', 'D', 'E') NOT NULL,
-    `default_duration` DOUBLE NOT NULL,
+    `duration` DOUBLE NOT NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
@@ -106,8 +106,6 @@ CREATE TABLE `TaskType` (
 CREATE TABLE `task_category` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `name` VARCHAR(191) NOT NULL,
-    `tier` ENUM('S', 'A', 'B', 'C', 'D', 'E') NOT NULL,
-    `duration` DOUBLE NOT NULL DEFAULT 1.0,
     `typeId` INTEGER NOT NULL,
     `tierId` INTEGER NOT NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
