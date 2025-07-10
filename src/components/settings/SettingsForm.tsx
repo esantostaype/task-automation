@@ -49,7 +49,7 @@ interface TierData {
 }
 
 // Grupos permitidos
-const ALLOWED_GROUPS = ["work_schedule", "task_assignment", "tier_settings"];
+const ALLOWED_GROUPS = ["work_schedule", "task_assignment"];
 
 export const SettingsForm: React.FC = () => {
   const { data: settingsData, isLoading, error, refetch } = useSettings();
@@ -311,20 +311,20 @@ export const SettingsForm: React.FC = () => {
     // Mapeo de keys a labels más cortos y tooltips
     const displayMap: Record<string, { label: string; tooltip: string }> = {
       'start_hour': {
-        label: 'Start',
-        tooltip: `${setting.label}: ${setting.description} (Range: ${setting.minValue}-${setting.maxValue})`
-      },
-      'end_hour': {
-        label: 'End',
+        label: 'Start Hour',
         tooltip: `${setting.label}: ${setting.description} (Range: ${setting.minValue}-${setting.maxValue})`
       },
       'lunch_start': {
-        label: 'Lunch',
+        label: 'Lunch Start Hour',
         tooltip: `${setting.label}: ${setting.description} (Range: ${setting.minValue}-${setting.maxValue})`
       },
-      'lunch_duration': {
-        label: 'Lunch Duration',
+      'lunch_end': {
+        label: 'Lunch End Hour',
         tooltip: `${setting.label}: ${setting.description} (Range: ${setting.minValue}-${setting.maxValue}h)`
+      },
+      'end_hour': {
+        label: 'End Hour',
+        tooltip: `${setting.label}: ${setting.description} (Range: ${setting.minValue}-${setting.maxValue})`
       },
       'normal_before_low_threshold': {
         label: 'Normal before Low',
@@ -353,7 +353,6 @@ export const SettingsForm: React.FC = () => {
         return Clock01Icon;
       case "task_assignment":
         return BriefcaseIcon;
-      case "tier_settings":
         return Layers01Icon;
       default:
         return Settings01Icon;
