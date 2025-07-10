@@ -1,371 +1,619 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react/no-unescaped-entities */
-// src/components/settings/SettingsForm.tsx
-'use client'
-import React, { useState, useEffect } from 'react'
-import { 
-  Typography, 
-  Card, 
-  CardContent, 
-  Button, 
-  Input, 
-  Switch, 
-  FormControl, 
-  FormLabel,
-  Divider,
-  Alert,
-  LinearProgress,
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
+"use client";
+import React, { useState, useEffect } from "react";
+import {
+  Button,
+  Input,
+  Switch,
+  FormControl,
   IconButton,
-  Tooltip
-} from '@mui/joy'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { 
-  Settings01Icon, 
-  RefreshIcon, 
+  Tooltip,
+  LinearProgress,
+  Alert,
+} from "@mui/joy";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  Settings01Icon,
   Download04Icon,
   Alert01Icon,
   InformationCircleIcon,
-  Rotate02Icon
-} from '@hugeicons/core-free-icons'
-import { useSettings, useUpdateSettings, useResetSettings } from '@/hooks/useSettings'
+  Rotate02Icon,
+  Clock01Icon,
+  Layers01Icon,
+  BriefcaseIcon,
+} from "@hugeicons/core-free-icons";
+import {
+  useSettings,
+  useUpdateSettings,
+  useResetSettings,
+} from "@/hooks/useSettings";
+import axios from "axios";
+import { toast } from "react-toastify";
+import { TableTh } from "../TableTh";
+import { TableTd } from "../TableTd";
 
 interface SettingValue {
-  category: string
-  key: string
-  value: any
-  hasChanged: boolean
+  category: string;
+  key: string;
+  value: any;
+  hasChanged: boolean;
 }
 
+interface TierData {
+  id: number;
+  name: string;
+  duration: number;
+  categoryCount: number;
+}
+
+// Grupos permitidos
+const ALLOWED_GROUPS = ["work_schedule", "task_assignment", "tier_settings"];
+
 export const SettingsForm: React.FC = () => {
-  const { data: settingsData, isLoading, error } = useSettings()
-  const updateSettingsMutation = useUpdateSettings()
-  const resetSettingsMutation = useResetSettings()
-  
-  const [settingValues, setSettingValues] = useState<Record<string, SettingValue>>({})
-  const [hasChanges, setHasChanges] = useState(false)
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
-    work_schedule: true // Expand work schedule by default
-  })
+  const { data: settingsData, isLoading, error, refetch } = useSettings();
+  const updateSettingsMutation = useUpdateSettings();
+  const resetSettingsMutation = useResetSettings();
+
+  const [settingValues, setSettingValues] = useState<
+    Record<string, SettingValue>
+  >({});
+  const [hasChanges, setHasChanges] = useState(false);
+  const [tiers, setTiers] = useState<TierData[]>([]);
+  const [tierChanges, setTierChanges] = useState<Record<number, number>>({});
+  const [loadingTiers, setLoadingTiers] = useState(true);
+  const [savingTiers, setSavingTiers] = useState(false);
+
+  // Cargar tiers
+  useEffect(() => {
+    const fetchTiers = async () => {
+      try {
+        setLoadingTiers(true);
+        const response = await axios.get("/api/tiers");
+        setTiers(response.data);
+      } catch (error) {
+        console.error("Error loading tiers:", error);
+        toast.error("Error loading tier settings");
+      } finally {
+        setLoadingTiers(false);
+      }
+    };
+    fetchTiers();
+  }, []);
 
   // Initialize setting values when data loads
   useEffect(() => {
     if (settingsData?.settings) {
-      const initialValues: Record<string, SettingValue> = {}
-      
+      const initialValues: Record<string, SettingValue> = {};
+
       Object.entries(settingsData.settings).forEach(([groupName, settings]) => {
-        settings.forEach(setting => {
-          const key = `${setting.category}.${setting.key}`
-          initialValues[key] = {
-            category: setting.category,
-            key: setting.key,
-            value: setting.value,
-            hasChanged: false
-          }
-        })
-      })
-      
-      setSettingValues(initialValues)
-      setHasChanges(false)
+        // Solo procesar grupos permitidos
+        if (ALLOWED_GROUPS.includes(groupName)) {
+          settings.forEach((setting) => {
+            const key = `${setting.category}.${setting.key}`;
+            initialValues[key] = {
+              category: setting.category,
+              key: setting.key,
+              value: setting.value,
+              hasChanged: false,
+            };
+          });
+        }
+      });
+
+      setSettingValues(initialValues);
+      setHasChanges(false);
     }
-  }, [settingsData])
+  }, [settingsData]);
 
   // Handle input changes
-  const handleSettingChange = (category: string, key: string, newValue: any) => {
-    const settingKey = `${category}.${key}`
-    const originalSetting = settingsData?.settings && 
+  const handleSettingChange = (
+    category: string,
+    key: string,
+    newValue: any
+  ) => {
+    const settingKey = `${category}.${key}`;
+    const originalSetting =
+      settingsData?.settings &&
       Object.values(settingsData.settings)
         .flat()
-        .find(s => s.category === category && s.key === key)
-    
-    const hasChanged = originalSetting ? originalSetting.value !== newValue : false
-    
-    setSettingValues(prev => ({
+        .find((s) => s.category === category && s.key === key);
+
+    const hasChanged = originalSetting
+      ? originalSetting.value !== newValue
+      : false;
+
+    setSettingValues((prev) => ({
       ...prev,
       [settingKey]: {
         category,
         key,
         value: newValue,
-        hasChanged
-      }
-    }))
+        hasChanged,
+      },
+    }));
 
-    // Check if any setting has changed
-    const anyChanged = Object.values({
-      ...settingValues,
-      [settingKey]: { category, key, value: newValue, hasChanged }
-    }).some(setting => setting.hasChanged)
-    
-    setHasChanges(anyChanged)
-  }
+    updateHasChanges(settingValues, settingKey, hasChanged, tierChanges);
+  };
+
+  // Handle tier duration changes
+  const handleTierDurationChange = (tierId: number, newDuration: number) => {
+    const originalTier = tiers.find((t) => t.id === tierId);
+    if (!originalTier) return;
+
+    if (originalTier.duration === newDuration) {
+      // Si vuelve al valor original, remover del registro de cambios
+      const newTierChanges = { ...tierChanges };
+      delete newTierChanges[tierId];
+      setTierChanges(newTierChanges);
+    } else {
+      // Registrar el cambio
+      setTierChanges((prev) => ({
+        ...prev,
+        [tierId]: newDuration,
+      }));
+    }
+
+    updateHasChanges(settingValues, null, false, {
+      ...tierChanges,
+      [tierId]: newDuration,
+    });
+  };
+
+  // Check if any setting has changed
+  const updateHasChanges = (
+    settings: Record<string, SettingValue>,
+    updatedKey: string | null,
+    keyHasChanged: boolean,
+    currentTierChanges: Record<number, number>
+  ) => {
+    const settingsChanged = Object.values(settings).some(
+      (setting) =>
+        setting.hasChanged ||
+        (updatedKey === `${setting.category}.${setting.key}` && keyHasChanged)
+    );
+    const tiersChanged = Object.keys(currentTierChanges).length > 0;
+
+    setHasChanges(settingsChanged || tiersChanged);
+  };
 
   // Handle form submission
   const handleSave = async () => {
-    const changedSettings = Object.values(settingValues)
-      .filter(setting => setting.hasChanged)
-      .map(setting => ({
-        category: setting.category,
-        key: setting.key,
-        value: setting.value
-      }))
+    try {
+      // Guardar cambios en settings
+      const changedSettings = Object.values(settingValues)
+        .filter((setting) => setting.hasChanged)
+        .map((setting) => ({
+          category: setting.category,
+          key: setting.key,
+          value: setting.value,
+        }));
 
-    if (changedSettings.length === 0) {
-      return
+      if (changedSettings.length > 0) {
+        await updateSettingsMutation.mutateAsync(changedSettings);
+      }
+
+      // Guardar cambios en tiers
+      if (Object.keys(tierChanges).length > 0) {
+        setSavingTiers(true);
+
+        const updatePromises = Object.entries(tierChanges).map(
+          ([tierId, duration]) =>
+            axios.patch(`/api/tiers/${tierId}`, { duration })
+        );
+
+        await Promise.all(updatePromises);
+
+        // Recargar tiers
+        const response = await axios.get("/api/tiers");
+        setTiers(response.data);
+        setTierChanges({});
+
+        toast.success("Tier durations updated successfully");
+      }
+
+      // Recargar settings
+      await refetch();
+    } catch (error) {
+      console.error("Error saving:", error);
+      toast.error("Error saving settings");
+    } finally {
+      setSavingTiers(false);
     }
-
-    await updateSettingsMutation.mutateAsync(changedSettings)
-  }
+  };
 
   // Handle reset to defaults
   const handleReset = async () => {
-    if (window.confirm('Are you sure you want to reset ALL settings to their default values? This action cannot be undone.')) {
-      await resetSettingsMutation.mutateAsync()
+    if (
+      window.confirm(
+        "Are you sure you want to reset these settings to their default values?"
+      )
+    ) {
+      await resetSettingsMutation.mutateAsync();
+      setTierChanges({});
     }
-  }
-
-  // Toggle group expansion
-  const toggleGroup = (groupName: string) => {
-    setExpandedGroups(prev => ({
-      ...prev,
-      [groupName]: !prev[groupName]
-    }))
-  }
+  };
 
   // Render input based on data type
-  const renderSettingInput = (setting: any) => {
-    const settingKey = `${setting.category}.${setting.key}`
-    const currentValue = settingValues[settingKey]?.value ?? setting.value
-    const hasChanged = settingValues[settingKey]?.hasChanged ?? false
+  const renderSettingInput = (setting: any, size: "sm" | "md" = "sm") => {
+    const settingKey = `${setting.category}.${setting.key}`;
+    const currentValue = settingValues[settingKey]?.value ?? setting.value;
+    const hasChanged = settingValues[settingKey]?.hasChanged ?? false;
 
     switch (setting.dataType) {
-      case 'boolean':
+      case "boolean":
         return (
           <Switch
             checked={Boolean(currentValue)}
-            onChange={(event) => handleSettingChange(setting.category, setting.key, event.target.checked)}
-            color={hasChanged ? 'warning' : 'primary'}
+            onChange={(event) =>
+              handleSettingChange(
+                setting.category,
+                setting.key,
+                event.target.checked
+              )
+            }
+            color={hasChanged ? "warning" : "primary"}
+            size={size}
           />
-        )
+        );
 
-      case 'number':
+      case "number":
         return (
           <Input
             type="number"
             value={currentValue.toString()}
             onChange={(event) => {
-              const value = parseFloat(event.target.value)
+              const value = parseFloat(event.target.value);
               if (!isNaN(value)) {
-                handleSettingChange(setting.category, setting.key, value)
+                handleSettingChange(setting.category, setting.key, value);
               }
             }}
             slotProps={{
               input: {
                 min: setting.minValue,
                 max: setting.maxValue,
-                step: setting.key.includes('duration') ? 0.1 : 1
-              }
+                step: setting.key.includes("duration") ? 0.1 : 1,
+              },
             }}
-            color={hasChanged ? 'warning' : 'neutral'}
+            color={hasChanged ? "warning" : "neutral"}
+            size={size}
+            className="w-full"
           />
-        )
+        );
 
       default:
+        // Para tier_info, no mostrar input
+        if (setting.key === 'tier_info') {
+          return null;
+        }
+        
         return (
           <Input
             value={currentValue.toString()}
-            onChange={(event) => handleSettingChange(setting.category, setting.key, event.target.value)}
-            color={hasChanged ? 'warning' : 'neutral'}
+            onChange={(event) =>
+              handleSettingChange(
+                setting.category,
+                setting.key,
+                event.target.value
+              )
+            }
+            color={hasChanged ? "warning" : "neutral"}
+            size={size}
+            className="w-full"
           />
-        )
+        );
     }
-  }
+  };
 
-  // Group name mapping for better display
+  // Get setting display info
+  const getSettingDisplayInfo = (setting: any) => {
+    // Mapeo de keys a labels más cortos y tooltips
+    const displayMap: Record<string, { label: string; tooltip: string }> = {
+      'start_hour': {
+        label: 'Start',
+        tooltip: `${setting.label}: ${setting.description} (Range: ${setting.minValue}-${setting.maxValue})`
+      },
+      'end_hour': {
+        label: 'End',
+        tooltip: `${setting.label}: ${setting.description} (Range: ${setting.minValue}-${setting.maxValue})`
+      },
+      'lunch_start': {
+        label: 'Lunch',
+        tooltip: `${setting.label}: ${setting.description} (Range: ${setting.minValue}-${setting.maxValue})`
+      },
+      'lunch_duration': {
+        label: 'Lunch Duration',
+        tooltip: `${setting.label}: ${setting.description} (Range: ${setting.minValue}-${setting.maxValue}h)`
+      },
+      'normal_before_low_threshold': {
+        label: 'Normal before Low',
+        tooltip: `${setting.label}: ${setting.description} (Range: ${setting.minValue}-${setting.maxValue})`
+      },
+      'consecutive_low_threshold': {
+        label: 'Max Low Tasks',
+        tooltip: `${setting.label}: ${setting.description} (Range: ${setting.minValue}-${setting.maxValue})`
+      },
+      'deadline_difference_threshold': {
+        label: 'Deadline Diff',
+        tooltip: `${setting.label}: ${setting.description} (Range: ${setting.minValue}-${setting.maxValue} days)`
+      }
+    };
+
+    return displayMap[setting.key] || {
+      label: setting.label,
+      tooltip: setting.description || setting.label
+    };
+  };
+
+  // Group icons
+  const getGroupIcon = (groupName: string) => {
+    switch (groupName) {
+      case "work_schedule":
+        return Clock01Icon;
+      case "task_assignment":
+        return BriefcaseIcon;
+      case "tier_settings":
+        return Layers01Icon;
+      default:
+        return Settings01Icon;
+    }
+  };
+
+  // Group name mapping
   const getGroupDisplayName = (groupName: string) => {
     const mapping: Record<string, string> = {
-      work_schedule: 'Work Schedule',
-      task_assignment: 'Task Assignment',
-      tier_settings: 'Tier Settings',
-      performance: 'Performance & Cache',
-      validation: 'Validation Rules',
-      clickup: 'ClickUp Integration',
-      ui: 'User Interface'
-    }
-    return mapping[groupName] || groupName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-  }
+      work_schedule: "Work Schedule",
+      task_assignment: "Task Assignment"
+    };
+    return mapping[groupName] || groupName;
+  };
 
   if (isLoading) {
     return (
-      <div className="p-8">
+      <div className="p-8 max-w-6xl mx-auto">
         <div className="flex items-center gap-2 mb-4">
           <HugeiconsIcon icon={Settings01Icon} size={20} />
-          <Typography level="title-md">Loading Settings...</Typography>
+          <span className="text-lg font-medium">Loading Settings...</span>
         </div>
         <LinearProgress />
       </div>
-    )
+    );
   }
 
   if (error) {
     return (
-      <div className="p-8">
+      <div className="p-8 max-w-6xl mx-auto">
         <Alert color="danger" variant="soft">
-          <Typography level="title-sm">Failed to load settings</Typography>
-          <Typography level="body-sm">
-            {error instanceof Error ? error.message : 'Unknown error occurred'}
-          </Typography>
+          <div className="text-sm font-medium">Failed to load settings</div>
+          <div className="text-xs mt-1">
+            {error instanceof Error ? error.message : "Unknown error occurred"}
+          </div>
         </Alert>
       </div>
-    )
+    );
   }
 
   if (!settingsData?.settings) {
     return (
-      <div className="p-8">
+      <div className="p-8 max-w-6xl mx-auto">
         <Alert color="neutral" variant="soft">
-          <Typography>No settings available</Typography>
+          <span>No settings available</span>
         </Alert>
       </div>
-    )
+    );
   }
 
+  // Filtrar solo los grupos permitidos
+  const filteredSettings = Object.entries(settingsData.settings).filter(
+    ([groupName]) => ALLOWED_GROUPS.includes(groupName)
+  );
+
   return (
-    <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <HugeiconsIcon icon={Settings01Icon} size={24} />
-          <Typography level="h4">System Settings</Typography>
+    <div className="p-8">      
+
+      {/* Settings Groups */}
+      <div className="space-y-6">
+        {filteredSettings.map(([groupName, settings]) => {
+          const GroupIcon = getGroupIcon(groupName);
+
+          // Excluir tier_info de los settings a mostrar
+          const settingsToShow = settings.filter(s => s.key !== 'tier_info');
+
+          if (settingsToShow.length === 0 && groupName !== 'tier_settings') {
+            return null;
+          }
+
+          return (
+            <div key={groupName}>
+              <div className="flex items-center gap-2 mb-4">
+                <HugeiconsIcon
+                  icon={GroupIcon}
+                  size={20}
+                  className="text-accent"
+                />
+                <h2 className="text-lg font-medium">
+                  {getGroupDisplayName(groupName)}
+                </h2>
+              </div>
+
+              {settingsToShow.length > 0 && (
+                <div className="border border-white/10 rounded-lg overflow-y-hidden overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-white/5">
+                      <tr>
+                        {settingsToShow.map((setting) => {
+                          const { label, tooltip } = getSettingDisplayInfo(setting);
+                          const settingKey = `${setting.category}.${setting.key}`;
+                          const hasChanged = settingValues[settingKey]?.hasChanged ?? false;
+                          
+                          return (
+                            <TableTh key={settingKey}>
+                              <div className="flex items-center gap-2">
+                                <span>{label}</span>
+                                {hasChanged && (
+                                  <div
+                                    className="w-2 h-2 bg-orange-500 rounded-full"
+                                    title="Changed"
+                                  />
+                                )}
+                                <Tooltip title={tooltip}>
+                                  <HugeiconsIcon
+                                    icon={InformationCircleIcon}
+                                    size={14}
+                                    className="text-gray-400 cursor-help"
+                                  />
+                                </Tooltip>
+                              </div>
+                            </TableTh>
+                          );
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        {settingsToShow.map((setting) => {
+                          const settingKey = `${setting.category}.${setting.key}`;
+                          
+                          return (
+                            <TableTd key={settingKey}>
+                              <div className="py-2 w-full">
+                                <FormControl className="w-full">
+                                  {renderSettingInput(setting)}
+                                </FormControl>
+                              </div>
+                            </TableTd>
+                          );
+                        })}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Tier Settings Table */}
+        <div>
+          <div className="flex items-center gap-2 mb-4">
+            <HugeiconsIcon
+              icon={Layers01Icon}
+              size={20}
+              className="text-accent"
+            />
+            <h2 className="text-lg font-medium">Tier Durations</h2>
+          </div>
+
+          {loadingTiers ? (
+            <LinearProgress />
+          ) : (
+            <div className="border border-white/10 rounded-lg overflow-y-hidden overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-white/5">
+                  <tr>
+                    {tiers.map((tier) => {
+                      const hasChanged = tierChanges[tier.id] !== undefined;
+                      
+                      return (
+                        <TableTh key={tier.id}>
+                          <div className="flex items-center gap-2">
+                            <span>Tier {tier.name}</span>
+                            {hasChanged && (
+                              <div
+                                className="w-2 h-2 bg-orange-500 rounded-full"
+                                title="Changed"
+                              />
+                            )}
+                          </div>
+                        </TableTh>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    {tiers.map((tier) => {
+                      const hasChanged = tierChanges[tier.id] !== undefined;
+                      const currentDuration =
+                        tierChanges[tier.id] ?? tier.duration;
+
+                      return (
+                        <TableTd key={tier.id}>
+                          <div className="py-2 px-2 w-full">
+                            <Input
+                              type="number"
+                              value={currentDuration.toString()}
+                              onChange={(e) => {
+                                const value = parseFloat(e.target.value);
+                                if (!isNaN(value) && value > 0) {
+                                  handleTierDurationChange(tier.id, value);
+                                }
+                              }}
+                              slotProps={{
+                                input: {
+                                  min: 0.1,
+                                  step: 0.1,
+                                },
+                              }}
+                              color={hasChanged ? "warning" : "neutral"}
+                              size="sm"
+                              className="w-24"
+                            />
+                          </div>
+                        </TableTd>
+                      );
+                    })}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-        
-        <div className="flex items-center gap-2">
-          <Tooltip title="Reset all settings to defaults">
-            <IconButton
-              variant="outlined"
-              color="danger"
-              size="sm"
-              onClick={handleReset}
-              loading={resetSettingsMutation.isPending}
-            >
-              <HugeiconsIcon icon={Rotate02Icon} size={16} />
-            </IconButton>
-          </Tooltip>
-          
+      </div>
+
+      {/* Header */}
+      <div className="flex items-center justify-between mt-8 mb-4">
+        <div className="flex justify-end items-center gap-2">
+          <IconButton
+            variant="outlined"
+            color="danger"
+            onClick={handleReset}
+            loading={resetSettingsMutation.isPending}
+          >
+            <HugeiconsIcon icon={Rotate02Icon} size={16} />
+          </IconButton>
+
           <Button
             startDecorator={<HugeiconsIcon icon={Download04Icon} size={16} />}
             onClick={handleSave}
             disabled={!hasChanges}
-            loading={updateSettingsMutation.isPending}
-            color={hasChanges ? 'warning' : 'primary'}
+            loading={updateSettingsMutation.isPending || savingTiers}
+            color={hasChanges ? "warning" : "primary"}
           >
-            {hasChanges ? 'Save Changes' : 'No Changes'}
+            {hasChanges ? "Save Changes" : "No Changes"}
           </Button>
         </div>
       </div>
 
       {/* Warning for changes */}
       {hasChanges && (
-        <Alert color="warning" variant="soft">
+        <Alert color="warning" variant="soft" className="mb-6">
           <div className="flex items-center gap-2">
             <HugeiconsIcon icon={Alert01Icon} size={16} />
-            <Typography level="body-sm">
+            <span className="text-sm">
               You have unsaved changes. Don't forget to save your settings.
-            </Typography>
+            </span>
           </div>
         </Alert>
       )}
 
-      {/* Settings Groups */}
-      <div className="space-y-4">
-        {Object.entries(settingsData.settings).map(([groupName, settings]) => (
-          <Accordion 
-            key={groupName}
-            expanded={expandedGroups[groupName] || false}
-            onChange={() => toggleGroup(groupName)}
-          >
-            <AccordionSummary>
-              <Typography level="title-md">
-                {getGroupDisplayName(groupName)}
-              </Typography>
-              <Typography level="body-sm" className="ml-2 text-gray-400">
-                ({settings.length} settings)
-              </Typography>
-            </AccordionSummary>
-            
-            <AccordionDetails>
-              <div className="space-y-4">
-                {settings.map((setting) => {
-                  const settingKey = `${setting.category}.${setting.key}`
-                  const hasChanged = settingValues[settingKey]?.hasChanged ?? false
-                  
-                  return (
-                    <Card key={settingKey} variant="outlined">
-                      <CardContent>
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <Typography level="title-sm">
-                                {setting.label}
-                              </Typography>
-                              {hasChanged && (
-                                <div className="w-2 h-2 bg-orange-500 rounded-full" title="Changed" />
-                              )}
-                              {setting.description && (
-                                <Tooltip title={setting.description}>
-                                  <HugeiconsIcon 
-                                    icon={InformationCircleIcon} 
-                                    size={14} 
-                                    className="text-gray-400 cursor-help" 
-                                  />
-                                </Tooltip>
-                              )}
-                            </div>
-                            
-                            {setting.description && (
-                              <Typography level="body-xs" className="text-gray-500 mb-2">
-                                {setting.description}
-                              </Typography>
-                            )}
-                            
-                            <Typography level="body-xs" className="text-gray-400 font-mono">
-                              {setting.category}.{setting.key}
-                            </Typography>
-                            
-                            {/* Validation info */}
-                            {(setting.minValue !== null || setting.maxValue !== null) && (
-                              <Typography level="body-xs" className="text-gray-500 mt-1">
-                                Range: {setting.minValue ?? '∞'} - {setting.maxValue ?? '∞'}
-                              </Typography>
-                            )}
-                          </div>
-                          
-                          <div className="flex-shrink-0">
-                            <FormControl>
-                              {renderSettingInput(setting)}
-                            </FormControl>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )
-                })}
-              </div>
-            </AccordionDetails>
-          </Accordion>
-        ))}
-      </div>
-
       {/* Footer Info */}
-      <div className="pt-4 border-t border-gray-700">
-        <Typography level="body-xs" className="text-gray-500 text-center">
-          Total settings: {settingsData.totalSettings} • 
-          Groups: {settingsData.groups.length} • 
+      <div className="mt-8 pt-4 border-t border-white/10">
+        <p className="text-sm text-gray-500 text-center">
           Changes will take effect immediately after saving
-        </Typography>
+        </p>
       </div>
     </div>
-  )
-}
+  );
+};

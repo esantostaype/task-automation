@@ -1,9 +1,9 @@
 // src/app/api/users/enhanced/route.ts
 import { NextResponse } from 'next/server';
 import { prisma } from '@/utils/prisma';
-import { 
-  getNextAvailableStart, 
-  calculateWorkingDeadline 
+import {
+  getNextAvailableStart,
+  calculateWorkingDeadline
 } from '@/utils/task-calculation-utils';
 
 interface EnhancedUser {
@@ -119,7 +119,7 @@ export async function GET(req: Request) {
 
     for (const user of compatibleUsers) {
       console.log(`\n👤 Analyzing ${user.name} (${user.id})`);
-      
+
       // Verificar si es especialista
       const matchingRoles = user.roles.filter(role => role.typeId === typeId);
       const isSpecialist = matchingRoles.length === 1 && user.roles.length === 1;
@@ -131,13 +131,20 @@ export async function GET(req: Request) {
           status: { notIn: ['COMPLETE'] }
         },
         orderBy: { queuePosition: 'asc' },
-        include: { category: true }
+        include: {
+          category: {
+            include: {
+              tierList: true // Para acceder a duration
+            }
+          }
+        }
       });
 
       const currentWorkload = {
         taskCount: userTasks.length,
         durationDays: userTasks.reduce((sum, task) => {
-          return sum + (task.customDuration !== null ? task.customDuration : task.category.duration);
+          // Usar customDuration si existe, sino usar duration de tierList
+          return sum + (task.customDuration !== null ? task.customDuration : task.category.tierList.duration);
         }, 0),
         lastTaskDeadline: userTasks.length > 0 ? userTasks[userTasks.length - 1].deadline.toISOString().split('T')[0] : undefined
       };
@@ -161,7 +168,7 @@ export async function GET(req: Request) {
 
       // Verificar vacación actual
       const now = new Date();
-      const currentVacation = upcomingVacations.find(vacation => 
+      const currentVacation = upcomingVacations.find(vacation =>
         vacation.startDate <= now && vacation.endDate >= now
       );
 
@@ -193,14 +200,14 @@ export async function GET(req: Request) {
 
       // Análisis de recomendación inteligente
       let recommendation: EnhancedUser['recommendation'] = undefined;
-      
+
       if (hasVacationConflict && returnDate) {
         // Calcular cuántos días se ahorrarían esperando vs asignar a usuarios disponibles
         const workingDaysUntilReturn = Math.ceil((returnDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
         const workingDaysUntilAvailable = Math.ceil((baseAvailableDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-        
+
         const daysSavedByWaiting = Math.max(0, workingDaysUntilAvailable - workingDaysUntilReturn);
-        
+
         if (daysSavedByWaiting > 5) { // Solo recomendar si ahorra más de 5 días
           recommendation = {
             shouldWaitForReturn: true,
@@ -218,8 +225,8 @@ export async function GET(req: Request) {
         email: user.email,
         active: user.active,
         isSpecialist,
-        status: currentVacation || hasVacationConflict ? 'on_vacation' : 
-               currentWorkload.durationDays > 15 ? 'overloaded' : 'available',
+        status: currentVacation || hasVacationConflict ? 'on_vacation' :
+          currentWorkload.durationDays > 15 ? 'overloaded' : 'available',
         availableFrom: (returnDate || baseAvailableDate).toISOString().split('T')[0],
         hasVacationConflict,
         currentWorkload,
@@ -292,9 +299,9 @@ export async function GET(req: Request) {
       overloadedUsers,
       smartSuggestion,
       totalCompatible: compatibleUsers.length,
-      message: smartSuggestion 
+      message: smartSuggestion
         ? `Smart suggestion: Wait for ${smartSuggestion.userId} to return (saves ${smartSuggestion.daysSaved} days)`
-        : availableUsers.length > 0 
+        : availableUsers.length > 0
           ? `${availableUsers.length} designers immediately available`
           : usersOnVacation.length > 0
             ? 'All compatible designers are on vacation'
@@ -303,7 +310,7 @@ export async function GET(req: Request) {
 
   } catch (error) {
     console.error('❌ Error in enhanced user analysis:', error);
-    
+
     return NextResponse.json({
       error: 'Internal server error in enhanced user analysis',
       details: error instanceof Error ? error.message : 'Unknown error'

@@ -9,10 +9,14 @@ export interface TaskType {
 export interface TaskCategory {
   id: number
   name: string
-  duration: number
-  tier: Tier
   typeId: number
+  tierId: number
   type: TaskType
+  tierList: {
+    id: number
+    name: Tier
+    duration: number
+  }
 }
 
 export interface Brand {
@@ -94,6 +98,18 @@ export interface TaskAssignment {
   userId: string
   taskId: string
   user: User
+}
+
+export interface TierInfo {
+  id: number
+  name: string
+  duration: number
+  categoryCount: number
+  categories: Array<{
+    id: number
+    name: string
+    typeName: string
+  }>
 }
 
 export interface UserSlot {

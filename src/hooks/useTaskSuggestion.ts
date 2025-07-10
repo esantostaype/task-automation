@@ -13,7 +13,7 @@ export const useTaskSuggestion = (
 ) => {
   const [suggestedAssignment, setSuggestedAssignment] = useState<SuggestedAssignment | null>(null)
   const [fetchingSuggestion, setFetchingSuggestion] = useState(false)
-  
+
   // ✅ NUEVO: Referencias para detectar cambios y debouncing
   const lastValidSuggestion = useRef<SuggestedAssignment | null>(null)
   const debounceTimeout = useRef<NodeJS.Timeout | null>(null)
@@ -34,7 +34,7 @@ export const useTaskSuggestion = (
   // ✅ MEJORADO: Función de obtención de sugerencias con debouncing
   const getSuggestion = async (immediate = false) => {
     const currentParams = createParamsKey(typeId, durationDays, brandId)
-    
+
     console.log('🔍 useTaskSuggestion - Evaluating conditions:', {
       typeId,
       durationDays,
@@ -46,10 +46,9 @@ export const useTaskSuggestion = (
 
     // Validar parámetros
     if (!areParamsValid(typeId, durationDays)) {
-      console.log('❌ Invalid parameters - clearing suggestion')
-      setSuggestedAssignment(null)
+      console.log('⚠️ Invalid parameters - waiting for valid duration')
       setFetchingSuggestion(false)
-      lastParams.current = ''
+      // No limpiar la sugerencia inmediatamente, esperar a que llegue una duración válida
       return
     }
 
@@ -78,7 +77,7 @@ export const useTaskSuggestion = (
         const response = await axios.get(`/api/tasks/suggestion/simple`, {
           params
         })
-        
+
         const { suggestedUserId, userInfo } = response.data
 
         const newSuggestion: SuggestedAssignment = {
@@ -87,13 +86,13 @@ export const useTaskSuggestion = (
         }
 
         // ✅ NUEVO: Detectar cambios en la sugerencia para notificar al usuario
-        const suggestionChanged = lastValidSuggestion.current && 
+        const suggestionChanged = lastValidSuggestion.current &&
           lastValidSuggestion.current.userId !== newSuggestion.userId
 
         if (suggestionChanged) {
           console.log(`🔄 Suggestion changed from ${lastValidSuggestion.current?.userId} to ${newSuggestion.userId}`)
           console.log(`📊 Reason: Duration changed from ${lastValidSuggestion.current?.durationDays} to ${duration} days`)
-          
+
           // ✅ NUEVO: Log detallado del cambio para debugging
           if (userInfo) {
             console.log(`👤 New suggested user: ${userInfo.name}`)
@@ -114,7 +113,7 @@ export const useTaskSuggestion = (
       } catch (error) {
         console.error('Error al obtener sugerencia de usuario:', error)
         setSuggestedAssignment(null)
-        
+
         if (axios.isAxiosError(error)) {
           if (error.response?.status === 400) {
             console.log('Validation error, not showing toast:', error.response.data.error)
@@ -161,9 +160,9 @@ export const useTaskSuggestion = (
     getSuggestion(true)
   }
 
-  return { 
-    suggestedAssignment, 
-    fetchingSuggestion, 
+  return {
+    suggestedAssignment,
+    fetchingSuggestion,
     forceSuggestionUpdate // ✅ NUEVO: Exponer función para forzar update
   }
 }

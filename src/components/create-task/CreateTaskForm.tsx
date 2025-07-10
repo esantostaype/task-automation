@@ -1,7 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import React, { useState, useEffect, FC, Dispatch, SetStateAction } from "react";
+import React, {
+  useState,
+  useEffect,
+  FC,
+  Dispatch,
+  SetStateAction,
+} from "react";
 import axios from "axios";
 import { Formik, Form, useFormikContext } from "formik";
 import { Button, Typography } from "@mui/joy";
@@ -92,29 +98,32 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
 
   // Efecto para aplicar duración inmediatamente cuando se selecciona categoría existente
   useEffect(() => {
-    if (!isNewCategory && values.categoryId && !durationManuallyEdited) {
+  if (!isNewCategory && values.categoryId && !durationManuallyEdited) {
+    console.log(
+      "🔍 Detectado cambio a categoría existente, aplicando duración automáticamente..."
+    );
+
+    const selectedCategory = allCategories.find(
+      (cat) => cat.id.toString() === values.categoryId
+    );
+
+    // ✅ CAMBIO: Acceder a duration a través de tierList
+    if (selectedCategory && selectedCategory.tierList?.duration) {
       console.log(
-        "🔍 Detectado cambio a categoría existente, aplicando duración automáticamente..."
+        `✅ Aplicando duración de categoría existente: ${selectedCategory.tierList.duration} días`
       );
-
-      const selectedCategory = allCategories.find(
-        (cat) => cat.id.toString() === values.categoryId
-      );
-
-      if (selectedCategory && selectedCategory.duration) {
-        console.log(
-          `✅ Aplicando duración de categoría existente: ${selectedCategory.duration} días`
-        );
-        setFieldValue("durationDays", selectedCategory.duration.toString());
-      }
+      setFieldValue("durationDays", selectedCategory.tierList.duration.toString());
+    } else if (selectedCategory) {
+      console.warn('⚠️ Categoría seleccionada no tiene tierList o duration:', selectedCategory);
     }
-  }, [
-    values.categoryId,
-    isNewCategory,
-    allCategories,
-    setFieldValue,
-    durationManuallyEdited,
-  ]);
+  }
+}, [
+  values.categoryId,
+  isNewCategory,
+  allCategories,
+  setFieldValue,
+  durationManuallyEdited,
+]);
 
   // Detectar cambios manuales en duración
   useEffect(() => {
@@ -134,10 +143,10 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
   }, [values.categoryId, values.isNewCategory, selectedKind]);
 
   // Hook de sugerencias con función de forzar update
-  const { 
-    suggestedAssignment, 
-    fetchingSuggestion, 
-    forceSuggestionUpdate: hookForceSuggestionUpdate 
+  const {
+    suggestedAssignment,
+    fetchingSuggestion,
+    forceSuggestionUpdate: hookForceSuggestionUpdate,
   } = useTaskSuggestion(
     isSubmitting ? undefined : currentTypeId,
     isSubmitting ? "" : (values.durationDays as string),
@@ -148,7 +157,7 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
   // Exponer función de forzar update al componente padre
   useEffect(() => {
     if (forceSuggestionUpdate && hookForceSuggestionUpdate()) {
-      console.log('🔗 Linking force suggestion update function');
+      console.log("🔗 Linking force suggestion update function");
     }
   }, [forceSuggestionUpdate, hookForceSuggestionUpdate]);
 
@@ -177,14 +186,17 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
     setFetchingSuggestion(fetchingSuggestion);
 
     // Detectar cambios en la sugerencia
-    const suggestionChanged = suggestedAssignment && 
-      values.assignedUserIds.length > 0 && 
+    const suggestionChanged =
+      suggestedAssignment &&
+      values.assignedUserIds.length > 0 &&
       values.assignedUserIds[0] !== suggestedAssignment.userId;
 
     if (suggestionChanged) {
-      console.log(`🔄 Suggestion changed from ${values.assignedUserIds[0]} to ${suggestedAssignment.userId}`);
+      console.log(
+        `🔄 Suggestion changed from ${values.assignedUserIds[0]} to ${suggestedAssignment.userId}`
+      );
       setSuggestionChanged(true);
-      
+
       // Reset the flag after a short delay
       setTimeout(() => setSuggestionChanged(false), 4000);
     }
@@ -237,6 +249,7 @@ export const CreateTaskForm: FC = () => {
     types,
     brands,
     users,
+    tiers,
     loading: dataLoading,
     refreshTypes,
   } = useTaskData();
@@ -254,7 +267,8 @@ export const CreateTaskForm: FC = () => {
     durationDays: number;
   } | null>(null);
   const [fetchingSuggestion, setFetchingSuggestion] = useState(false);
-  const [userHasManuallyChanged, setUserHasManuallyChanged] = useState<boolean>(false);
+  const [userHasManuallyChanged, setUserHasManuallyChanged] =
+    useState<boolean>(false);
 
   // Estados para detectar cambios de sugerencia
   const [suggestionChanged, setSuggestionChanged] = useState(false);
@@ -290,6 +304,7 @@ export const CreateTaskForm: FC = () => {
   };
 
   const allCategories = getAllCategories();
+  console.log('📊 Estructura de categorías:', allCategories[0]);
 
   const initialValues: ExtendedFormValues = {
     name: "Task 1",
@@ -324,9 +339,12 @@ export const CreateTaskForm: FC = () => {
           return;
         }
 
-        const finalDurationDays = parseFloat(values.durationDays as string);
-        if (finalDurationDays <= 0) {
-          toast.error("Duration must be greater than zero for new category");
+        // ✅ BUSCAR EL TIER SELECCIONADO
+        const selectedTier = tiers.find(
+          (t) => t.name === values.newCategoryTier
+        );
+        if (!selectedTier) {
+          toast.error("Selected tier not found");
           return;
         }
 
@@ -339,15 +357,15 @@ export const CreateTaskForm: FC = () => {
         finalTypeId = selectedType.id;
 
         console.log(
-          `🆕 Creando nueva categoría: (name: ${values.newCategoryName.trim()}, duration: ${finalDurationDays}, tier: ${
-            values.newCategoryTier
+          `🆕 Creando nueva categoría: (name: ${values.newCategoryName.trim()}, tierId: ${
+            selectedTier.id
           }, typeId: ${finalTypeId})`
         );
 
+        // ✅ ENVIAR tierId EN LUGAR DE duration Y tier
         const categoryResponse = await axios.post("/api/categories", {
           name: values.newCategoryName.trim(),
-          duration: finalDurationDays,
-          tier: values.newCategoryTier,
+          tierId: selectedTier.id, // ✅ USAR EL ID DEL TIER
           typeId: finalTypeId,
         });
 
@@ -481,7 +499,7 @@ export const CreateTaskForm: FC = () => {
   };
 
   return (
-    <aside className='bg-background sticky w-[28rem] p-10 h-dvh overflow-y-auto top-0 border-l border-l-white/10'>
+    <aside className="bg-background sticky w-[28rem] p-10 h-dvh overflow-y-auto top-0 border-l border-l-white/10">
       <SpinnerCreatingTask isActive={loading} />
       <SpinnerSearching isActive={fetchingSuggestion} />
       <Formik
@@ -675,7 +693,11 @@ export const CreateTaskForm: FC = () => {
                 // ✅ NEW: Pass parameters for vacation-aware filtering
                 typeId={currentTypeId}
                 brandId={values.brandId || undefined}
-                durationDays={values.durationDays ? parseFloat(values.durationDays as string) : undefined}
+                durationDays={
+                  values.durationDays
+                    ? parseFloat(values.durationDays as string)
+                    : undefined
+                }
               />
 
               <Button
@@ -687,7 +709,7 @@ export const CreateTaskForm: FC = () => {
                   (brands.length === 0 && !dataLoading)
                 }
                 size="lg"
-                sx={{ marginTop: '1rem' }}
+                sx={{ marginTop: "1rem" }}
               >
                 {isSubmitting ? "Creating..." : "Create Task"}
               </Button>

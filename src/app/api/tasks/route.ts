@@ -1,3 +1,4 @@
+// src/app/api/tasks/route.ts
 import { NextResponse } from 'next/server'
 import { prisma } from '@/utils/prisma'
 import axios from 'axios'
@@ -15,11 +16,6 @@ import { API_CONFIG } from '@/config'
 
 const CLICKUP_TOKEN = process.env.CLICKUP_API_TOKEN
 
-/**
- * GET /api/tasks
- * Obtiene tareas con filtros y paginación
- * Query params: ?brandId=X&status=Y&priority=Z&page=1&limit=10
- */
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
@@ -32,7 +28,6 @@ export async function GET(req: Request) {
     const limit = parseInt(searchParams.get('limit') || '10')
     const skip = (page - 1) * limit
 
-    // Construir filtros
     const where: TaskWhereInput = {}
     if (brandId) where.brandId = brandId
     if (status && Object.values(Status).includes(status as Status)) {
@@ -42,7 +37,6 @@ export async function GET(req: Request) {
       where.priority = priority as Priority
     }
 
-    // Obtener tareas con relaciones
     const tasks = await prisma.task.findMany({
       where,
       skip,
@@ -51,7 +45,8 @@ export async function GET(req: Request) {
       include: {
         category: {
           include: {
-            type: true
+            type: true,
+            tierList: true // IMPORTANTE: Incluir tierList
           }
         },
         type: true,
@@ -70,7 +65,6 @@ export async function GET(req: Request) {
       }
     })
 
-    // Contar total para paginación
     const totalTasks = await prisma.task.count({ where })
 
     console.log(`📋 Tareas obtenidas: ${tasks.length} de ${totalTasks} total`)
@@ -97,8 +91,8 @@ export async function GET(req: Request) {
         category: {
           id: task.category.id,
           name: task.category.name,
-          duration: task.category.duration,
-          tier: task.category.tier,
+          duration: task.category.tierList.duration, // Acceder a través de tierList
+          tier: task.category.tierList.name, // El nombre del tier
           type: {
             id: task.category.type.id,
             name: task.category.type.name
@@ -140,11 +134,6 @@ export async function GET(req: Request) {
   }
 }
 
-/**
- * POST /api/tasks
- * Crea una nueva tarea con lógica de vacaciones
- * Body: { name, description?, typeId, categoryId, priority, brandId, assignedUserIds?, durationDays }
- */
 export async function POST(req: Request) {
   if (!CLICKUP_TOKEN) {
     console.error('ERROR: CLICKUP_API_TOKEN no configurado.')
@@ -164,7 +153,6 @@ export async function POST(req: Request) {
       durationDays
     }: TaskCreationParams = body
 
-    // Validar campos requeridos
     if (!name || !typeId || !categoryId || !priority || !brandId || typeof durationDays !== 'number' || durationDays <= 0) {
       return NextResponse.json({
         error: 'Faltan campos requeridos o duración inválida',
@@ -181,11 +169,13 @@ export async function POST(req: Request) {
     console.log(`   - Brand ID: ${brandId}`)
     console.log(`   - Users: ${assignedUserIds || 'AUTO-ASSIGNMENT'}`)
 
-    // Obtener categoría y brand
     const [category, brand] = await Promise.all([
       prisma.taskCategory.findUnique({
         where: { id: categoryId },
-        include: { type: true }
+        include: { 
+          type: true,
+          tierList: true // IMPORTANTE: Incluir tierList
+        }
       }),
       prisma.brand.findUnique({
         where: { id: brandId }
@@ -252,14 +242,9 @@ export async function POST(req: Request) {
       usersToAssign = validUsers.map(user => user.id)
       console.log(`✅ Usuarios válidos para asignación manual: ${usersToAssign.length}`)
 
-      // ❌ FIND this line:
-      userSlotsForProcessing = await calculateUserSlots(validUsers, typeId, brandId)
-
-      // ✅ REPLACE with (ADD durationDays parameter):
-      userSlotsForProcessing = await calculateUserSlots(validUsers, typeId, brandId, durationDays)
+      userSlotsForProcessing = await calculateUserSlots(validUsers, typeId, durationDays)
 
     } else {
-      // ✅ The automatic assignment section should already be correct, but verify it looks like this:
       console.log('🤖 Iniciando asignación automática con lógica de vacaciones...')
 
       const bestUser = await getBestUserWithCache(typeId, brandId, priority, durationDays)
@@ -281,7 +266,6 @@ export async function POST(req: Request) {
       })
     }
 
-    // ===== DEBUG: ESTADO ANTES DE ASIGNAR =====
     console.log('🔍 DEBUG - Estados de usuarios ANTES de asignar:')
     userSlotsForProcessing.forEach(slot => {
       if (usersToAssign.includes(slot.userId)) {
@@ -295,7 +279,6 @@ export async function POST(req: Request) {
       }
     })
 
-    // ===== PROCESAR ASIGNACIONES Y CALCULAR FECHAS =====
     const taskTiming = await processUserAssignments(usersToAssign, userSlotsForProcessing, priority, durationDays)
 
     console.log('🎯 === FINAL TASK TIMING BEFORE CLICKUP CREATION ===');
@@ -306,13 +289,14 @@ export async function POST(req: Request) {
     console.log(`⏰ Duration: ${durationDays} days`);
     console.log(`🔥 Priority: ${priority}`);
 
-    // ===== PREPARAR DATOS PARA CLICKUP =====
     const categoryForClickUp = {
       ...category,
       type: {
         ...category.type,
         categories: []
-      }
+      },
+      duration: category.tierList.duration,
+      tier: category.tierList.name
     }
 
     const brandForClickUp: ClickUpBrand = {
@@ -320,14 +304,13 @@ export async function POST(req: Request) {
       teamId: brand.teamId ?? ''
     }
 
-    // ===== CREAR TAREA EN CLICKUP =====
     console.log('📤 Creando tarea en ClickUp...')
     const { clickupTaskId, clickupTaskUrl } = await createTaskInClickUp({
       name,
       description,
       priority,
-      deadline: taskTiming.deadline,    // ✅ Use calculated deadline
-      startDate: taskTiming.startDate,  // ✅ Use calculated start date
+      deadline: taskTiming.deadline,
+      startDate: taskTiming.startDate,
       usersToAssign,
       category: categoryForClickUp,
       brand: brandForClickUp
@@ -335,7 +318,6 @@ export async function POST(req: Request) {
 
     console.log(`✅ Tarea creada en ClickUp: ${clickupTaskId}`)
 
-    // ===== GUARDAR EN BASE DE DATOS LOCAL =====
     const task = await prisma.task.create({
       data: {
         id: clickupTaskId,
@@ -345,18 +327,19 @@ export async function POST(req: Request) {
         categoryId: categoryId,
         brandId: brandId,
         priority,
-        startDate: taskTiming.startDate,  // ✅ Use calculated start date
-        deadline: taskTiming.deadline,    // ✅ Use calculated deadline
+        startDate: taskTiming.startDate,
+        deadline: taskTiming.deadline,
         queuePosition: taskTiming.insertAt,
         url: clickupTaskUrl,
         lastSyncAt: new Date(),
         syncStatus: 'SYNCED',
-        customDuration: durationDays !== category.duration ? durationDays : null
+        customDuration: durationDays !== category.tierList.duration ? durationDays : null // Comparar con tierList.duration
       },
       include: {
         category: {
           include: {
-            type: true
+            type: true,
+            tierList: true // Incluir tierList
           }
         },
         type: true,
@@ -375,7 +358,6 @@ export async function POST(req: Request) {
       },
     })
 
-    // ===== CREAR ASIGNACIONES =====
     await prisma.taskAssignment.createMany({
       data: usersToAssign.map(userId => ({
         userId: userId,
@@ -385,11 +367,9 @@ export async function POST(req: Request) {
 
     console.log(`✅ Asignaciones creadas para ${usersToAssign.length} usuarios`)
 
-    // ===== RECALCULAR FECHAS DE TAREAS EXISTENTES =====
     console.log('🔄 Iniciando recálculo de fechas de tareas existentes...')
     for (const userId of usersToAssign) {
       try {
-        // Removed brandId from shiftUserTasks call
         await shiftUserTasks(userId, task.id, taskTiming.deadline, taskTiming.insertAt)
         console.log(`✅ Fechas recalculadas para usuario ${userId}`)
       } catch (shiftError) {
@@ -397,13 +377,13 @@ export async function POST(req: Request) {
       }
     }
 
-    // ===== OBTENER TAREA COMPLETA CON ASIGNACIONES =====
     const taskWithAssignees = await prisma.task.findUnique({
       where: { id: task.id },
       include: {
         category: {
           include: {
-            type: true
+            type: true,
+            tierList: true // Incluir tierList
           }
         },
         type: true,
@@ -422,7 +402,6 @@ export async function POST(req: Request) {
       }
     })
 
-    // ===== DEBUG: ESTADO DESPUÉS DE CREAR TAREA =====
     console.log('🔍 DEBUG - Estado DESPUÉS de crear tarea:')
     for (const userId of usersToAssign) {
       const userTasks = await prisma.task.findMany({
@@ -431,7 +410,13 @@ export async function POST(req: Request) {
           status: { notIn: ['COMPLETE'] }
         },
         orderBy: { queuePosition: 'asc' },
-        include: { category: true }
+        include: { 
+          category: {
+            include: {
+              tierList: true
+            }
+          }
+        }
       })
 
       console.log(`  👤 Usuario ${userId} ahora tiene ${userTasks.length} tareas:`)
@@ -440,7 +425,6 @@ export async function POST(req: Request) {
       })
     }
 
-    // ===== EMITIR EVENTO WEBSOCKET =====
     try {
       await axios.post(API_CONFIG.SOCKET_EMITTER_URL, {
         eventName: 'task_update',
@@ -451,13 +435,11 @@ export async function POST(req: Request) {
       console.error('⚠️ Error al enviar evento a socket-emitter:', emitterError)
     }
 
-    // ===== INVALIDAR CACHE =====
     invalidateAllCache()
     console.log('🗑️ Cache invalidado después de crear tarea')
 
     console.log(`🎉 === TAREA "${name}" CREADA EXITOSAMENTE ===`)
 
-    // ===== RESPUESTA FINAL =====
     return NextResponse.json({
       id: taskWithAssignees?.id,
       name: taskWithAssignees?.name,
@@ -472,8 +454,8 @@ export async function POST(req: Request) {
       category: {
         id: taskWithAssignees?.category.id,
         name: taskWithAssignees?.category.name,
-        duration: taskWithAssignees?.category.duration,
-        tier: taskWithAssignees?.category.tier,
+        duration: taskWithAssignees?.category.tierList.duration, // Desde tierList
+        tier: taskWithAssignees?.category.tierList.name, // Desde tierList
         type: {
           id: taskWithAssignees?.category.type.id,
           name: taskWithAssignees?.category.type.name

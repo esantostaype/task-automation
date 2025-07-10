@@ -85,8 +85,8 @@ export const dynamicTheme = extendTheme({
           },
           ...(ownerState.size === 'sm' && {
             fontSize: '0.875rem',
-            padding: '0.5rem 0.75rem',
-            minHeight: '2rem',
+            padding: '0 0.75rem',
+            height: '2.25rem',
             borderRadius: '0.375rem',
             '&::placeholder': {
               fontSize: '0.875rem',
@@ -99,8 +99,8 @@ export const dynamicTheme = extendTheme({
           }),
           ...(ownerState.size === 'md' && {
             fontSize: '1rem',
-            padding: '0.8rem 1rem',
-            minHeight: '2.5rem',
+            padding: '0 1rem',
+            height: '3rem',
             borderRadius: '0.5rem',
 
             '&::placeholder': {
@@ -115,8 +115,8 @@ export const dynamicTheme = extendTheme({
           }),
           ...(ownerState.size === 'lg' && {
             fontSize: '1.125rem',
-            padding: '1rem 1.25rem',
-            minHeight: '3rem',
+            padding: '0 1.25rem',
+            height: '3.5rem',
             borderRadius: '0.625rem',
 
             '&::placeholder': {
@@ -157,8 +157,8 @@ export const dynamicTheme = extendTheme({
           },
           ...(ownerState.size === 'sm' && {
             fontSize: '0.875rem',
-            padding: '0.5rem 0.75rem',
-            minHeight: '2rem',
+            padding: '0 0.75rem',
+            height: '2.25rem',
             borderRadius: '0.375rem',
             '&::placeholder': {
               fontSize: '0.875rem',
@@ -171,8 +171,8 @@ export const dynamicTheme = extendTheme({
           }),
           ...(ownerState.size === 'md' && {
             fontSize: '1rem',
-            padding: '0.8rem 1rem',
-            minHeight: '2.5rem',
+            padding: '0 1rem',
+            height: '3rem',
             borderRadius: '0.5rem',
 
             '&::placeholder': {
@@ -187,8 +187,8 @@ export const dynamicTheme = extendTheme({
           }),
           ...(ownerState.size === 'lg' && {
             fontSize: '1.125rem',
-            padding: '1rem 1.25rem',
-            minHeight: '3rem',
+            padding: '0 1.25rem',
+            height: '3.5rem',
             borderRadius: '0.625rem',
 
             '&::placeholder': {
@@ -291,19 +291,19 @@ export const dynamicTheme = extendTheme({
           ...(ownerState.size === 'sm' && {
             padding: '0.5rem 0.75rem',
             fontSize: '0.875rem',
-            minHeight: '2rem',
+            height: '2.25rem',
           }),
 
           ...(ownerState.size === 'md' && {
             padding: '0.75rem 1rem',
             fontSize: '1rem',
-            minHeight: '2.5rem',
+            height: '3rem',
           }),
 
           ...(ownerState.size === 'lg' && {
             padding: '1rem 1.25rem',
             fontSize: '1.125rem',
-            minHeight: '3rem',
+            height: '3.5rem',
           }),
 
           ...(ownerState.variant === 'solid' && {
@@ -374,19 +374,22 @@ export const dynamicTheme = extendTheme({
           ...(ownerState.size === 'sm' && {
             padding: '0.5rem',
             fontSize: '0.875rem',
-            minHeight: '2rem',
+            height: '2.25rem',
+            width: '2.25rem'
           }),
 
           ...(ownerState.size === 'md' && {
             padding: '0.75rem',
             fontSize: '1rem',
-            minHeight: '2.5rem',
+            height: '3rem',
+            width: '3rem'
           }),
 
           ...(ownerState.size === 'lg' && {
             padding: '1rem',
             fontSize: '1.125rem',
-            minHeight: '3rem',
+            height: '3.5rem',
+            width: '3.5rem'
           }),
 
           ...(ownerState.variant === 'solid' && {
@@ -483,16 +486,73 @@ export const dynamicTheme = extendTheme({
     },
     JoyAutocomplete: {
       styleOverrides: {
-        root: () => ({
-          fontSize: '1rem',
-          padding: '0.8rem 1rem',
-          height: '3.125rem',
+        root: ({ ownerState }) => ({
           backgroundColor: 'var(--soft-bg)',
-          border: 'none',
-          transition: 'background-color 0.1s ease-in-out',
+          border: '1px solid transparent',
+          borderRadius: '0.5rem',
+          fontFamily: 'inherit',
+          fontWeight: '400',
+          transition: 'all 0.2s ease-in-out',
           '&:hover': {
             backgroundColor: 'var(--soft-bg-hover)',
           },
+
+          '&:focus-within': {
+            backgroundColor: 'var(--soft-bg-active)',
+            outline: '1px solid var(--color-accent-500)',
+          },
+
+          '&:disabled': {
+            opacity: 0.5,
+            cursor: 'not-allowed',
+            backgroundColor: 'var(--soft-bg)',
+          },
+          ...(ownerState.size === 'sm' && {
+            fontSize: '0.875rem',
+            padding: '0 0.75rem',
+            height: '2.25rem',
+            borderRadius: '0.375rem',
+            '&::placeholder': {
+              fontSize: '0.875rem',
+              color: 'var(--color-gray-400)'
+            },
+            '&:focus-within': {
+              backgroundColor: 'var(--soft-bg-active)',
+              outline: 'none'
+            }
+          }),
+          ...(ownerState.size === 'md' && {
+            fontSize: '1rem',
+            padding: '0 1rem',
+            height: '3rem',
+            borderRadius: '0.5rem',
+
+            '&::placeholder': {
+              fontSize: '1rem',
+              color: 'var(--color-gray-400)'
+            },
+
+            '&:focus-within': {
+              backgroundColor: 'var(--soft-bg-active)',
+              outline: 'none'
+            }
+          }),
+          ...(ownerState.size === 'lg' && {
+            fontSize: '1.125rem',
+            padding: '0 1.25rem',
+            height: '3.5rem',
+            borderRadius: '0.625rem',
+
+            '&::placeholder': {
+              fontSize: '1.125rem',
+              color: 'var(--color-gray-400)',
+            },
+
+            '&:focus-within': {
+              backgroundColor: 'var(--soft-bg-active)',
+              outline: 'none',
+            }
+          })
         }),
         listbox: {
           fontSize: '1rem',

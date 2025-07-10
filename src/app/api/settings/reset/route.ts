@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/utils/prisma';
 
-// Settings predefinidos con sus valores por defecto
 const DEFAULT_SETTINGS = [
   // Work Schedule
   {
@@ -110,97 +109,39 @@ const DEFAULT_SETTINGS = [
   }
 ];
 
-// GET /api/settings
-export async function GET() {
+// POST /api/settings/reset
+export async function POST() {
   try {
-    // Obtener settings de la base de datos
-    let settings = await prisma.systemSettings.findMany({
+    console.log('🔄 Resetting settings to defaults...');
+
+    // Eliminar todos los settings actuales
+    await prisma.systemSettings.deleteMany();
+
+    // Recrear con valores por defecto
+    for (const defaultSetting of DEFAULT_SETTINGS) {
+      await prisma.systemSettings.create({
+        data: defaultSetting
+      });
+    }
+
+    const settings = await prisma.systemSettings.findMany({
       orderBy: [
         { group: 'asc' },
         { order: 'asc' }
       ]
     });
 
-    // Si no hay settings, crear los por defecto
-    if (settings.length === 0) {
-      console.log('🔄 Creating default settings...');
-      
-      for (const defaultSetting of DEFAULT_SETTINGS) {
-        await prisma.systemSettings.create({
-          data: defaultSetting
-        });
-      }
-      
-      settings = await prisma.systemSettings.findMany({
-        orderBy: [
-          { group: 'asc' },
-          { order: 'asc' }
-        ]
-      });
-    }
-
-    return NextResponse.json({
-      settings,
-      count: settings.length
-    });
-
-  } catch (error) {
-    console.error('❌ Error fetching settings:', error);
-    return NextResponse.json({
-      error: 'Error fetching settings',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 });
-  }
-}
-
-// PATCH /api/settings
-export async function PATCH(req: Request) {
-  try {
-    const { updates } = await req.json();
-
-    if (!Array.isArray(updates) || updates.length === 0) {
-      return NextResponse.json({
-        error: 'Invalid updates array'
-      }, { status: 400 });
-    }
-
-    const results = [];
-
-    for (const update of updates) {
-      const { category, key, value } = update;
-
-      if (!category || !key || value === undefined) {
-        continue;
-      }
-
-      const updated = await prisma.systemSettings.updateMany({
-        where: {
-          category,
-          key
-        },
-        data: {
-          value: value
-        }
-      });
-
-      results.push({
-        category,
-        key,
-        updated: updated.count > 0
-      });
-    }
-
-    console.log(`✅ Updated ${results.length} settings`);
+    console.log('✅ Settings reset to defaults');
 
     return NextResponse.json({
       success: true,
-      results
+      settings
     });
 
   } catch (error) {
-    console.error('❌ Error updating settings:', error);
+    console.error('❌ Error resetting settings:', error);
     return NextResponse.json({
-      error: 'Error updating settings',
+      error: 'Error resetting settings',
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
   }

@@ -3,6 +3,7 @@ import React from 'react';
 import { IconButton } from '@mui/joy';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Delete02Icon } from '@hugeicons/core-free-icons';
+import { TableTd } from '@/components';
 
 interface UserVacationRowProps {
   vacation: {
@@ -27,10 +28,10 @@ export const UserVacationRow: React.FC<UserVacationRowProps> = ({
 
   return (
     <tr className="border-b border-white/10 text-sm">
-      <td className="px-3 py-2">{loading ? 'Loading...' : startDate.toLocaleDateString()}</td>
-      <td className="px-3 py-2">{loading ? 'Loading...' : endDate.toLocaleDateString()}</td>
-      <td className="px-3 py-2">{loading ? 'Loading...' : `${durationDays} days`}</td>
-      <td className="px-3 py-2">
+      <TableTd>{loading ? 'Loading...' : startDate.toLocaleDateString()}</TableTd>
+      <TableTd>{loading ? 'Loading...' : endDate.toLocaleDateString()}</TableTd>
+      <TableTd>{loading ? 'Loading...' : `${durationDays} days`}</TableTd>
+      <TableTd>
         {loading ? (
           'Loading...'
         ) : (
@@ -45,7 +46,7 @@ export const UserVacationRow: React.FC<UserVacationRowProps> = ({
             <HugeiconsIcon icon={Delete02Icon} size={16} />
           </IconButton>
         )}
-      </td>
+      </TableTd>
     </tr>
   );
 };

@@ -3,7 +3,13 @@ import { prisma } from '@/utils/prisma'
 
 export async function GET() {
   const types = await prisma.taskType.findMany({
-    include: { categories: true }
+    include: {
+      categories: {
+        include: {
+          tierList: true  // ✅ ASEGÚRATE de que esto esté incluido
+        }
+      }
+    }
   })
 
   return NextResponse.json(types)

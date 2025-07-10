@@ -1,26 +1,26 @@
 // src/app/api/categories/route.ts
 import { NextResponse } from 'next/server';
 import { prisma } from '@/utils/prisma';
-import { Tier } from '@prisma/client';
 
 export async function POST(req: Request) {
   try {
-    const { name, duration, tier, typeId } = await req.json();
+    const { name, tierId, typeId } = await req.json();
 
     // Validar campos requeridos
-    if (!name || typeof duration !== 'number' || duration <= 0 || !tier || !typeId) {
+    if (!name || !tierId || !typeId) {
       return NextResponse.json({
-        error: 'Faltan campos requeridos o inválidos para crear la categoría.',
-        required: ['name', 'duration', 'tier', 'typeId']
+        error: 'Faltan campos requeridos para crear la categoría.',
+        required: ['name', 'tierId', 'typeId']
       }, { status: 400 });
     }
 
-    // Validar que el tier sea uno de los valores válidos del enum
-    const validTiers = Object.values(Tier);
-    if (!validTiers.includes(tier)) {
-      return NextResponse.json({
-        error: `El tier proporcionado no es válido. Valores permitidos: ${validTiers.join(', ')}`,
-      }, { status: 400 });
+    // Validar que el tierId exista
+    const existingTier = await prisma.tierList.findUnique({
+      where: { id: tierId },
+    });
+
+    if (!existingTier) {
+      return NextResponse.json({ error: 'Tier (tierId) no encontrado.' }, { status: 404 });
     }
 
     // Validar que el typeId exista
@@ -35,10 +35,13 @@ export async function POST(req: Request) {
     const newCategory = await prisma.taskCategory.create({
       data: {
         name,
-        duration,
-        tier,
+        tierId,
         typeId,
       },
+      include: {
+        tierList: true,
+        type: true
+      }
     });
 
     console.log(`✅ Nueva categoría creada: ${newCategory.name} (ID: ${newCategory.id})`);
@@ -53,11 +56,13 @@ export async function POST(req: Request) {
   }
 }
 
-// Puedes añadir un GET para listar todas las categorías si lo necesitas
 export async function GET() {
   try {
     const categories = await prisma.taskCategory.findMany({
-      include: { type: true } // Incluye el tipo para poder filtrar por UX/UI o Graphic
+      include: { 
+        type: true,
+        tierList: true // Incluir TierList para acceder a duration y tier name
+      }
     });
     return NextResponse.json(categories);
   } catch (error) {

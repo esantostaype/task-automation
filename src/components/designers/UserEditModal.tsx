@@ -8,6 +8,7 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { UserIcon, Calendar04Icon } from '@hugeicons/core-free-icons'
 import { useUserDetails, useTaskTypes, useBrands } from '@/hooks/queries/useUsers'
 import { Alert } from '@mui/joy'
+import { TableTh } from '@/components'
 
 interface UserEditModalProps {
   userId: string
@@ -113,9 +114,9 @@ export const UserEditModal: React.FC<UserEditModalProps> = ({
           <table className="w-full">
             <thead className="bg-white/5">
               <tr>
-                <th className="px-3 py-2 text-left text-sm font-medium text-gray-300">Type</th>
-                <th className="px-3 py-2 text-left text-sm font-medium text-gray-300">Brand</th>
-                <th className="px-3 py-2 text-left text-sm font-medium text-gray-300 w-[5rem]">Actions</th>
+                <TableTh>Type</TableTh>
+                <TableTh>Brand</TableTh>
+                <TableTh actions>Actions</TableTh>
               </tr>
             </thead>
             <tbody>
@@ -165,10 +166,10 @@ export const UserEditModal: React.FC<UserEditModalProps> = ({
           <table className="w-full">
             <thead className="bg-white/5">
               <tr>
-                <th className="px-3 py-2 text-left text-sm font-medium text-gray-300">Start Date</th>
-                <th className="px-3 py-2 text-left text-sm font-medium text-gray-300">End Date</th>
-                <th className="px-3 py-2 text-left text-sm font-medium text-gray-300">Duration</th>
-                <th className="px-3 py-2 text-left text-sm font-medium text-gray-300 w-[5rem]">Actions</th>
+                <TableTh>Start Date</TableTh>
+                <TableTh>End Date</TableTh>
+                <TableTh>Duration</TableTh>
+                <TableTh actions>Actions</TableTh>
               </tr>
             </thead>
             <tbody>

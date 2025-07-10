@@ -1,109 +1,102 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// src/hooks/useSettings.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { toast } from 'react-toastify'
 
-interface SettingItem {
+interface Setting {
   id: string
   category: string
   key: string
   value: any
-  dataType: 'string' | 'number' | 'boolean' | 'object' | 'array'
+  dataType: string
   label: string
   description?: string
+  group: string
+  order: number
   minValue?: number
   maxValue?: number
-  options?: any[]
+  options?: any
   required: boolean
 }
 
-interface SettingsGroup {
-  [groupName: string]: SettingItem[]
-}
-
 interface SettingsResponse {
-  settings: SettingsGroup
+  settings: Record<string, Setting[]>
   groups: string[]
   totalSettings: number
 }
 
-interface UpdateSettingParams {
+interface UpdateSettingPayload {
   category: string
   key: string
   value: any
 }
 
-// Query Keys
-export const settingsKeys = {
-  all: ['settings'] as const,
-  groups: () => [...settingsKeys.all, 'groups'] as const,
-}
-
-// Get all settings grouped
+// Obtener configuraciones
 export const useSettings = () => {
-  return useQuery({
-    queryKey: settingsKeys.groups(),
-    queryFn: async (): Promise<SettingsResponse> => {
-      const { data } = await axios.get('/api/settings')
-      return data
-    },
-    staleTime: 5 * 60 * 1000, // 5 minutes
+  return useQuery<SettingsResponse>({
+    queryKey: ['settings'],
+    queryFn: async () => {
+      const response = await axios.get('/api/settings')
+      
+      // Agrupar settings por grupo
+      const grouped: Record<string, Setting[]> = {}
+      const settings = response.data.settings || []
+      
+      settings.forEach((setting: Setting) => {
+        if (!grouped[setting.group]) {
+          grouped[setting.group] = []
+        }
+        grouped[setting.group].push(setting)
+      })
+      
+      // Ordenar cada grupo por order
+      Object.keys(grouped).forEach(group => {
+        grouped[group].sort((a, b) => a.order - b.order)
+      })
+      
+      return {
+        settings: grouped,
+        groups: Object.keys(grouped),
+        totalSettings: settings.length
+      }
+    }
   })
 }
 
-// Update multiple settings
+// Actualizar configuraciones
 export const useUpdateSettings = () => {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: async (updates: UpdateSettingParams[]) => {
-      const { data } = await axios.put('/api/settings', { updates })
-      return data
+    mutationFn: async (updates: UpdateSettingPayload[]) => {
+      const response = await axios.patch('/api/settings', { updates })
+      return response.data
     },
-    onSuccess: (data) => {
-      // Invalidate settings cache
-      queryClient.invalidateQueries({ queryKey: settingsKeys.all })
-      
-      const { success, errors } = data
-      
-      if (success > 0) {
-        toast.success(`${success} settings updated successfully`)
-      }
-      
-      if (errors > 0) {
-        toast.error(`${errors} settings failed to update`)
-        console.error('Settings update errors:', data.errors)
-      }
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] })
+      toast.success('Settings updated successfully')
     },
     onError: (error: any) => {
-      console.error('❌ Settings update error:', error)
-      const message = error.response?.data?.error || error.message
-      toast.error(`Settings update failed: ${message}`)
-    },
+      toast.error(error.response?.data?.error || 'Error updating settings')
+    }
   })
 }
 
-// Reset all settings to defaults
+// Reset configuraciones
 export const useResetSettings = () => {
   const queryClient = useQueryClient()
   
   return useMutation({
     mutationFn: async () => {
-      const { data } = await axios.post('/api/settings/reset', { 
-        confirmReset: true 
-      })
-      return data
+      const response = await axios.post('/api/settings/reset')
+      return response.data
     },
     onSuccess: () => {
-      // Invalidate settings cache
-      queryClient.invalidateQueries({ queryKey: settingsKeys.all })
-      toast.success('All settings reset to defaults successfully')
+      queryClient.invalidateQueries({ queryKey: ['settings'] })
+      toast.success('Settings reset to defaults')
     },
     onError: (error: any) => {
-      console.error('❌ Settings reset error:', error)
-      const message = error.response?.data?.error || error.message
-      toast.error(`Settings reset failed: ${message}`)
-    },
+      toast.error(error.response?.data?.error || 'Error resetting settings')
+    }
   })
 }

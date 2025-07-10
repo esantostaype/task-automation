@@ -83,7 +83,7 @@ export const DurationField: React.FC<DurationFieldProps> = ({
     
     if (localInputValue && !values.isNewCategory && values.categoryId) {
       const selectedCategory = allCategories.find(cat => cat.id.toString() === values.categoryId)
-      if (selectedCategory && selectedCategory.duration.toString() === localInputValue) {
+      if (selectedCategory && selectedCategory.tierList?.duration.toString() === localInputValue) {
         return 'category'
       }
     }

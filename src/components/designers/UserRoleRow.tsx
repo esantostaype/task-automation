@@ -3,6 +3,7 @@ import React from 'react';
 import { IconButton } from '@mui/joy';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Delete02Icon } from '@hugeicons/core-free-icons';
+import { TableTd } from '@/components';
 
 interface UserRoleRowProps {
   role: {
@@ -23,9 +24,9 @@ export const UserRoleRow: React.FC<UserRoleRowProps> = ({
 }) => {
   return (
     <tr className="border-b border-white/10 text-sm">
-      <td className="px-3 py-2">{loading ? 'Loading...' : role.type.name}</td>
-      <td className="px-3 py-2">{loading ? 'Loading...' : (role.brand?.name || 'Global')}</td>
-      <td className="px-3 py-2">
+      <TableTd>{ loading ? 'Loading...' : role.type.name }</TableTd>
+      <TableTd>{ loading ? 'Loading...' : ( role.brand?.name || 'Global' ) }</TableTd>
+      <TableTd>
         {loading ? (
           'Loading...'
         ) : (
@@ -40,7 +41,7 @@ export const UserRoleRow: React.FC<UserRoleRowProps> = ({
             <HugeiconsIcon icon={Delete02Icon} size={16} />
           </IconButton>
         )}
-      </td>
+      </TableTd>
     </tr>
   );
 };
