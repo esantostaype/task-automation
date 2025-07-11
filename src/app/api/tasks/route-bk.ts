@@ -1,12 +1,11 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 // src/app/api/tasks/route.ts
 import { NextResponse } from 'next/server'
 import { prisma } from '@/utils/prisma'
 import axios from 'axios'
 import { Status, Priority } from '@prisma/client'
 import {
-  calculateUserSlots,
-  processUserAssignments,
+  calculateUserSlots, // ✅ Usar la versión corregida
+  processUserAssignments, // ✅ Usar la versión corregida
   getBestUserWithCache
 } from '@/services/task-assignment.service'
 import { createTaskInClickUp } from '@/services/clickup.service'
@@ -47,7 +46,7 @@ export async function GET(req: Request) {
         category: {
           include: {
             type: true,
-            tierList: true // IMPORTANTE: Incluir tierList
+            tierList: true
           }
         },
         type: true,
@@ -92,8 +91,8 @@ export async function GET(req: Request) {
         category: {
           id: task.category.id,
           name: task.category.name,
-          duration: task.category.tierList.duration, // Acceder a través de tierList
-          tier: task.category.tierList.name, // El nombre del tier
+          duration: task.category.tierList.duration,
+          tier: task.category.tierList.name,
           type: {
             id: task.category.type.id,
             name: task.category.type.name
@@ -161,7 +160,7 @@ export async function POST(req: Request) {
       }, { status: 400 })
     }
 
-    console.log(`🚀 === CREANDO TAREA "${name}" CON LÓGICA DE VACACIONES ===`)
+    console.log(`🚀 === CREANDO TAREA "${name}" CON FECHAS CONSECUTIVAS REALES ===`)
     console.log(`📋 Parámetros:`)
     console.log(`   - Priority: ${priority}`)
     console.log(`   - Duration: ${durationDays} días`)
@@ -175,7 +174,7 @@ export async function POST(req: Request) {
         where: { id: categoryId },
         include: { 
           type: true,
-          tierList: true // IMPORTANTE: Incluir tierList
+          tierList: true
         }
       }),
       prisma.brand.findUnique({
@@ -243,10 +242,11 @@ export async function POST(req: Request) {
       usersToAssign = validUsers.map(user => user.id)
       console.log(`✅ Usuarios válidos para asignación manual: ${usersToAssign.length}`)
 
-      userSlotsForProcessing = await calculateUserSlots(validUsers, typeId, durationDays)
+      // ✅ PASAR BRAND ID para cálculo de fechas consecutivas
+      userSlotsForProcessing = await calculateUserSlots(validUsers, typeId, durationDays, brandId)
 
     } else {
-      console.log('🤖 Iniciando asignación automática con lógica de vacaciones...')
+      console.log('🤖 Iniciando asignación automática con fechas consecutivas...')
 
       const bestUser = await getBestUserWithCache(typeId, brandId, priority, durationDays)
 
@@ -267,11 +267,12 @@ export async function POST(req: Request) {
       })
     }
 
-    console.log('🔍 DEBUG - Estados de usuarios ANTES de asignar:')
+    console.log('🔍 DEBUG - Estados de usuarios ANTES de calcular fechas:')
     userSlotsForProcessing.forEach(slot => {
       if (usersToAssign.includes(slot.userId)) {
         console.log(`  👤 ${slot.userName}:`)
         console.log(`     - Carga actual: ${slot.cargaTotal} tareas`)
+        console.log(`     - Carga de duración: ${slot.totalAssignedDurationDays} días`)
         console.log(`     - Disponible desde: ${slot.availableDate.toISOString()}`)
         console.log(`     - Es especialista: ${slot.isSpecialist}`)
         if (slot.tasks.length > 0) {
@@ -280,15 +281,23 @@ export async function POST(req: Request) {
       }
     })
 
-    const taskTiming = await processUserAssignments(usersToAssign, userSlotsForProcessing, priority, durationDays)
+    // ✅ USAR FUNCIÓN CORREGIDA CON BRAND ID para fechas consecutivas
+    const taskTiming = await processUserAssignments(
+      usersToAssign, 
+      userSlotsForProcessing, 
+      priority, 
+      durationDays,
+      brandId // ✅ PASAR BRAND ID
+    )
 
-    console.log('🎯 === FINAL TASK TIMING BEFORE CLICKUP CREATION ===');
-    console.log(`📅 Calculated start date: ${taskTiming.startDate.toISOString()}`);
-    console.log(`📅 Calculated deadline: ${taskTiming.deadline.toISOString()}`);
-    console.log(`📍 Queue position: ${taskTiming.insertAt}`);
-    console.log(`👥 Assigned users: ${usersToAssign.join(', ')}`);
-    console.log(`⏰ Duration: ${durationDays} days`);
-    console.log(`🔥 Priority: ${priority}`);
+    console.log('🎯 === FECHAS FINALES CALCULADAS (CONSECUTIVAS REALES) ===');
+    console.log(`📅 Fecha de inicio calculada: ${taskTiming.startDate.toISOString()}`);
+    console.log(`📅 Deadline calculado: ${taskTiming.deadline.toISOString()}`);
+    console.log(`📍 Posición en cola: ${taskTiming.insertAt}`);
+    console.log(`👥 Usuarios asignados: ${usersToAssign.join(', ')}`);
+    console.log(`⏰ Duración: ${durationDays} días`);
+    console.log(`🔥 Prioridad: ${priority}`);
+    console.log(`📌 Esta tarea respeta la secuencia de fechas existentes`);
 
     const categoryForClickUp = {
       ...category,
@@ -305,9 +314,17 @@ export async function POST(req: Request) {
       teamId: brand.teamId ?? ''
     }
 
-    console.log('📤 Creando tarea en ClickUp...')
-     const clickupTaskId = `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
+    console.log('📤 Creando tarea en ClickUp con fechas consecutivas...')
+    const { clickupTaskId, clickupTaskUrl } = await createTaskInClickUp({
+      name,
+      description,
+      priority,
+      deadline: taskTiming.deadline,
+      startDate: taskTiming.startDate, // ✅ Usar fechas consecutivas calculadas
+      usersToAssign,
+      category: categoryForClickUp,
+      brand: brandForClickUp
+    })
 
     console.log(`✅ Tarea creada en ClickUp: ${clickupTaskId}`)
 
@@ -320,19 +337,19 @@ const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
         categoryId: categoryId,
         brandId: brandId,
         priority,
-        startDate: taskTiming.startDate,
-        deadline: taskTiming.deadline,
+        startDate: taskTiming.startDate, // ✅ Fechas consecutivas
+        deadline: taskTiming.deadline, // ✅ Fechas consecutivas
         queuePosition: taskTiming.insertAt,
         url: clickupTaskUrl,
         lastSyncAt: new Date(),
         syncStatus: 'SYNCED',
-        customDuration: durationDays !== category.tierList.duration ? durationDays : null // Comparar con tierList.duration
+        customDuration: durationDays !== category.tierList.duration ? durationDays : null
       },
       include: {
         category: {
           include: {
             type: true,
-            tierList: true // Incluir tierList
+            tierList: true
           }
         },
         type: true,
@@ -360,7 +377,8 @@ const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
 
     console.log(`✅ Asignaciones creadas para ${usersToAssign.length} usuarios`)
 
-    console.log('🔄 Iniciando recálculo de fechas de tareas existentes...')
+    // ✅ REORDENAR TAREAS EXISTENTES CONSIDERANDO LAS NUEVAS FECHAS
+    console.log('🔄 Iniciando reordenamiento de tareas existentes...')
     for (const userId of usersToAssign) {
       try {
         await shiftUserTasks(userId, task.id, taskTiming.deadline, taskTiming.insertAt)
@@ -376,7 +394,7 @@ const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
         category: {
           include: {
             type: true,
-            tierList: true // Incluir tierList
+            tierList: true
           }
         },
         type: true,
@@ -395,12 +413,13 @@ const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
       }
     })
 
-    console.log('🔍 DEBUG - Estado DESPUÉS de crear tarea:')
+    console.log('🔍 DEBUG - Estado DESPUÉS de crear tarea con fechas consecutivas:')
     for (const userId of usersToAssign) {
       const userTasks = await prisma.task.findMany({
         where: {
           assignees: { some: { userId } },
-          status: { notIn: ['COMPLETE'] }
+          status: { notIn: ['COMPLETE'] },
+          brandId: brandId // ✅ Filtrar por brand
         },
         orderBy: { queuePosition: 'asc' },
         include: { 
@@ -412,7 +431,7 @@ const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
         }
       })
 
-      console.log(`  👤 Usuario ${userId} ahora tiene ${userTasks.length} tareas:`)
+      console.log(`  👤 Usuario ${userId} ahora tiene ${userTasks.length} tareas para brand ${brandId}:`)
       userTasks.forEach((t, i) => {
         console.log(`    ${i + 1}. [${t.queuePosition}] "${t.name}": ${t.startDate.toISOString()} → ${t.deadline.toISOString()}`)
       })
@@ -431,7 +450,7 @@ const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
     invalidateAllCache()
     console.log('🗑️ Cache invalidado después de crear tarea')
 
-    console.log(`🎉 === TAREA "${name}" CREADA EXITOSAMENTE ===`)
+    console.log(`🎉 === TAREA "${name}" CREADA CON FECHAS CONSECUTIVAS EXITOSAMENTE ===`)
 
     return NextResponse.json({
       id: taskWithAssignees?.id,
@@ -447,8 +466,8 @@ const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
       category: {
         id: taskWithAssignees?.category.id,
         name: taskWithAssignees?.category.name,
-        duration: taskWithAssignees?.category.tierList.duration, // Desde tierList
-        tier: taskWithAssignees?.category.tierList.name, // Desde tierList
+        duration: taskWithAssignees?.category.tierList.duration,
+        tier: taskWithAssignees?.category.tierList.name,
         type: {
           id: taskWithAssignees?.category.type.id,
           name: taskWithAssignees?.category.type.name

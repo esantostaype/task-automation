@@ -1,82 +1,100 @@
+// src/app/api/sync/clickup-tasks/route.ts - VERSIÓN CORREGIDA
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// src/app/api/sync/clickup-tasks/route.ts
+
 import { NextResponse } from 'next/server';
 import axios from 'axios';
 import { prisma } from '@/utils/prisma';
 import { API_CONFIG } from '@/config';
+import { mapClickUpStatusToLocal } from '@/utils/clickup-task-mapping-utils';
 
 const CLICKUP_TOKEN = process.env.CLICKUP_API_TOKEN;
 
-interface ClickUpAssignee {
-  id: number;
-  username: string;
-  email: string;
-  color: string;
-  initials: string;
-  profilePicture: string;
+// ✅ NUEVA FUNCIÓN: Calcular queuePosition basado en fechas reales
+async function calculateProperQueuePosition(
+  userId: string, 
+  startDate: Date, 
+  deadline: Date,
+  typeId: number
+): Promise<number> {
+  // Obtener todas las tareas del usuario para este tipo, ordenadas por fecha de inicio
+  const userTasks = await prisma.task.findMany({
+    where: {
+      assignees: { some: { userId } },
+      typeId: typeId,
+      status: { notIn: ['COMPLETE'] }
+    },
+    orderBy: { startDate: 'asc' },
+    select: { 
+      id: true, 
+      startDate: true, 
+      deadline: true, 
+      queuePosition: true,
+      name: true 
+    }
+  });
+
+  // Si no hay tareas, es la primera
+  if (userTasks.length === 0) {
+    return 1;
+  }
+
+  // Encontrar la posición correcta basada en la fecha de inicio
+  let insertPosition = 1;
+  
+  for (let i = 0; i < userTasks.length; i++) {
+    const existingTask = userTasks[i];
+    
+    // Si la nueva tarea debe ir antes que esta tarea existente
+    if (startDate < existingTask.startDate) {
+      insertPosition = i + 1;
+      break;
+    }
+    
+    // Si llegamos al final, va después de todas
+    if (i === userTasks.length - 1) {
+      insertPosition = userTasks.length + 1;
+    }
+  }
+
+  return insertPosition;
 }
 
-interface ClickUpTask {
-  id: string;
-  custom_id: string | null;
-  name: string;
-  text_content: string;
-  description: string;
-  status: {
-    id: string;
-    status: string;
-    color: string;
-    type: string;
-    orderindex: number;
-  };
-  orderindex: string;
-  date_created: string;
-  date_updated: string;
-  date_closed: string | null;
-  date_done: string | null;
-  assignees: ClickUpAssignee[];
-  watchers: ClickUpAssignee[];
-  checklists: any[];
-  tags: Array<{
-    name: string;
-    tag_fg: string;
-    tag_bg: string;
-  }>;
-  parent: string | null;
-  priority: {
-    id: string;
-    priority: string;
-    color: string;
-    orderindex: string;
-  } | null;
-  due_date: string | null;
-  start_date: string | null;
-  points: number | null;
-  time_estimate: number | null;
-  time_spent: number | null;
-  list: {
-    id: string;
-    name: string;
-    access: boolean;
-  };
-  folder: {
-    id: string;
-    name: string;
-    hidden: boolean;
-    access: boolean;
-  };
-  space: {
-    id: string;
-    name: string;
-  };
-  url: string;
+// ✅ NUEVA FUNCIÓN: Reordenar posiciones de cola después de insertar
+async function reorderQueuePositions(
+  userId: string, 
+  typeId: number, 
+  newTaskId: string
+): Promise<void> {
+  console.log(`🔄 Reordenando posiciones de cola para usuario ${userId}, tipo ${typeId}`);
+  
+  // Obtener todas las tareas del usuario ordenadas por fecha de inicio
+  const userTasks = await prisma.task.findMany({
+    where: {
+      assignees: { some: { userId } },
+      typeId: typeId,
+      status: { notIn: ['COMPLETE'] }
+    },
+    orderBy: { startDate: 'asc' },
+    select: { id: true, queuePosition: true, startDate: true, name: true }
+  });
+
+  // Actualizar las posiciones secuencialmente
+  for (let i = 0; i < userTasks.length; i++) {
+    const correctPosition = i + 1;
+    const task = userTasks[i];
+    
+    if (task.queuePosition !== correctPosition) {
+      await prisma.task.update({
+        where: { id: task.id },
+        data: { queuePosition: correctPosition }
+      });
+      
+      console.log(`  ✅ Tarea "${task.name}": posición ${task.queuePosition} → ${correctPosition}`);
+    }
+  }
 }
 
-/**
- * GET /api/sync/clickup-tasks
- * Obtiene todas las tareas de ClickUp y las compara con las tareas locales
- */
 export async function GET() {
   if (!CLICKUP_TOKEN) {
     return NextResponse.json({ 
@@ -87,7 +105,7 @@ export async function GET() {
   try {
     console.log('🔍 Obteniendo tareas de ClickUp...');
 
-    // Obtener teams primero
+    // ... (código existente para obtener teams, spaces, etc.) ...
     const teamsResponse = await axios.get(
       `${API_CONFIG.CLICKUP_API_BASE}/team`,
       {
@@ -98,7 +116,6 @@ export async function GET() {
       }
     );
 
-    // Obtener todos los spaces de los teams
     const allSpaces = [];
     for (const team of teamsResponse.data.teams) {
       try {
@@ -119,15 +136,12 @@ export async function GET() {
 
     console.log(`📊 Spaces encontrados: ${allSpaces.length}`);
 
-    // Obtener todas las tareas de todos los spaces usando el enfoque correcto:
-    // Space -> Folders -> Lists -> Tasks
-    const allTasks: ClickUpTask[] = [];
+    const allTasks: any[] = [];
     
     for (const space of allSpaces) {
       try {
         console.log(`   Obteniendo folders del space: ${space.name}`);
         
-        // Obtener folders del space
         const foldersResponse = await axios.get(
           `${API_CONFIG.CLICKUP_API_BASE}/space/${space.id}/folder?archived=false`,
           {
@@ -139,9 +153,8 @@ export async function GET() {
         );
 
         const folders = foldersResponse.data.folders || [];
-        console.log(`     Folders encontrados: ${folders.length}`);
 
-        // También obtener listas que están directamente en el space (sin folder)
+        // Obtener listas directas del space
         try {
           const spaceListsResponse = await axios.get(
             `${API_CONFIG.CLICKUP_API_BASE}/space/${space.id}/list?archived=false`,
@@ -154,25 +167,16 @@ export async function GET() {
           );
 
           const spaceLists = spaceListsResponse.data.lists || [];
-          console.log(`     Listas directas del space: ${spaceLists.length}`);
-
-          // Obtener tareas de las listas directas del space
           for (const list of spaceLists) {
             await getTasksFromList(list, allTasks);
           }
         } catch (spaceListError) {
-          if (spaceListError && typeof spaceListError === 'object' && 'response' in spaceListError) {
-            console.warn(`     ⚠️ Error obteniendo listas directas del space ${space.name}:`, (spaceListError as any).response?.status);
-          } else {
-            console.warn(`     ⚠️ Error obteniendo listas directas del space ${space.name}:`, spaceListError);
-          }
+          console.warn(`⚠️ Error obteniendo listas directas del space ${space.name}`);
         }
 
         // Obtener listas de cada folder
         for (const folder of folders) {
           try {
-            console.log(`     Obteniendo listas del folder: ${folder.name}`);
-            
             const listsResponse = await axios.get(
               `${API_CONFIG.CLICKUP_API_BASE}/folder/${folder.id}/list?archived=false`,
               {
@@ -184,19 +188,11 @@ export async function GET() {
             );
 
             const lists = listsResponse.data.lists || [];
-            console.log(`       Listas encontradas: ${lists.length}`);
-
-            // Obtener tareas de cada lista
             for (const list of lists) {
               await getTasksFromList(list, allTasks);
             }
-
           } catch (folderError) {
-            if (folderError && typeof folderError === 'object' && 'response' in folderError) {
-              console.warn(`     ⚠️ Error obteniendo listas del folder ${folder.name}:`, (folderError as any).response?.status);
-            } else {
-              console.warn(`     ⚠️ Error obteniendo listas del folder ${folder.name}:`, folderError);
-            }
+            console.warn(`⚠️ Error obteniendo listas del folder ${folder.name}`);
           }
         }
         
@@ -205,15 +201,14 @@ export async function GET() {
       }
     }
 
-    // Función auxiliar para obtener tareas de una lista
-    async function getTasksFromList(list: any, tasksArray: ClickUpTask[]) {
+    async function getTasksFromList(list: any, tasksArray: any[]) {
       try {
         console.log(`       Obteniendo tareas de la lista: ${list.name}`);
         
         let page = 0;
         let hasMorePages = true;
         
-        while (hasMorePages && page < 5) { // Límite de páginas por lista
+        while (hasMorePages && page < 5) {
           const tasksResponse = await axios.get(
             `${API_CONFIG.CLICKUP_API_BASE}/list/${list.id}/task`,
             {
@@ -233,12 +228,18 @@ export async function GET() {
           );
 
           const tasks = tasksResponse.data.tasks || [];
-          tasksArray.push(...tasks);
           
-          console.log(`         Página ${page}: ${tasks.length} tareas`);
+          // ✅ FILTRAR SOLO TAREAS CON ESTADOS TO_DO E IN_PROGRESS
+          const filteredTasks = tasks.filter((task: any) => {
+            const mappedStatus = mapClickUpStatusToLocal(task.status?.status || '');
+            return mappedStatus === 'TO_DO' || mappedStatus === 'IN_PROGRESS';
+          });
           
-          // Verificar si hay más páginas (ClickUp no siempre envía last_page)
-          hasMorePages = tasks.length > 0 && tasks.length >= 100; // 100 es el límite por página
+          tasksArray.push(...filteredTasks);
+          
+          console.log(`         Página ${page}: ${tasks.length} tareas totales, ${filteredTasks.length} filtradas`);
+          
+          hasMorePages = tasks.length > 0 && tasks.length >= 100;
           page++;
         }
         
@@ -247,9 +248,9 @@ export async function GET() {
       }
     }
 
-    console.log(`🎯 Total de tareas encontradas en ClickUp: ${allTasks.length}`);
+    console.log(`🎯 Total de tareas encontradas y filtradas en ClickUp: ${allTasks.length}`);
 
-    // Obtener tareas existentes en la DB local que coincidan con IDs o URLs de ClickUp
+    // Obtener tareas existentes en la DB local
     const localTasks = await prisma.task.findMany({
       select: { 
         id: true, 
@@ -261,36 +262,40 @@ export async function GET() {
 
     console.log(`💾 Tareas en DB local: ${localTasks.length}`);
 
-    // Crear mapas para comparación rápida por ID y URL
     const localTaskIds = new Set(localTasks.map(task => task.id));
     const localTaskUrls = new Set(localTasks.map(task => task.url).filter(Boolean));
 
-    // Mapear tareas de ClickUp con información de sincronización
+    // ✅ MEJORADO: Verificar estados más detalladamente
     const clickupTasksWithSyncStatus = allTasks
       .filter(clickupTask => {
         if (!clickupTask.id || !clickupTask.name) {
           console.warn(`⚠️ Tarea sin ID/nombre omitida:`, clickupTask.id);
           return false;
         }
+        
+        // ✅ VERIFICAR ESTADO MAPEADO
+        const mappedStatus = mapClickUpStatusToLocal(clickupTask.status?.status || '');
+        console.log(`📋 Tarea "${clickupTask.name}": ${clickupTask.status?.status} → ${mappedStatus}`);
+        
         return true;
       })
       .map(clickupTask => {
         const taskId = clickupTask.id;
         const taskUrl = clickupTask.url;
         
-        // Verificar si existe por ID o por URL
         const existsByQuery = localTaskIds.has(taskId) || localTaskUrls.has(taskUrl);
+        const mappedStatus = mapClickUpStatusToLocal(clickupTask.status?.status || '');
         
         return {
           clickupId: taskId,
           customId: clickupTask.custom_id,
           name: clickupTask.name,
           description: clickupTask.description || clickupTask.text_content || '',
-          status: clickupTask.status.status,
+          status: mappedStatus, // ✅ USAR ESTADO MAPEADO
           statusColor: clickupTask.status.color,
           priority: clickupTask.priority?.priority || 'normal',
           priorityColor: clickupTask.priority?.color || '#6366f1',
-          assignees: clickupTask.assignees.map(assignee => ({
+          assignees: clickupTask.assignees.map((assignee: any) => ({
             id: assignee.id.toString(),
             name: assignee.username,
             email: assignee.email,
@@ -302,7 +307,7 @@ export async function GET() {
           timeEstimate: clickupTask.time_estimate,
           timeSpent: clickupTask.time_spent,
           points: clickupTask.points,
-          tags: clickupTask.tags.map(tag => tag.name),
+          tags: clickupTask.tags.map((tag: any) => tag.name),
           list: {
             id: clickupTask.list.id,
             name: clickupTask.list.name
@@ -319,7 +324,6 @@ export async function GET() {
           dateCreated: new Date(parseInt(clickupTask.date_created)).toISOString(),
           dateUpdated: new Date(parseInt(clickupTask.date_updated)).toISOString(),
           dateClosed: clickupTask.date_closed ? new Date(parseInt(clickupTask.date_closed)).toISOString() : null,
-          // Estado de sincronización basado en ID o URL
           existsInLocal: existsByQuery,
           canSync: !existsByQuery,
         };
@@ -370,10 +374,6 @@ export async function GET() {
   }
 }
 
-/**
- * POST /api/sync/clickup-tasks
- * Sincroniza tareas seleccionadas de ClickUp a la base de datos local
- */
 export async function POST(req: Request) {
   if (!CLICKUP_TOKEN) {
     return NextResponse.json({ 
@@ -404,9 +404,8 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    console.log(`🔄 Sincronizando ${taskIds.length} tareas...`);
+    console.log(`🔄 Sincronizando ${taskIds.length} tareas con fechas consecutivas...`);
 
-    // Verificar que el brand existe
     const brand = await prisma.brand.findUnique({
       where: { id: brandId }
     });
@@ -435,8 +434,15 @@ export async function POST(req: Request) {
           }
         );
 
-        tasksData.push(taskResponse.data);
-        console.log(`   ✅ Datos obtenidos para tarea: ${taskResponse.data.name}`);
+        // ✅ FILTRAR POR ESTADO ANTES DE AGREGAR
+        const mappedStatus = mapClickUpStatusToLocal(taskResponse.data.status?.status || '');
+        if (mappedStatus === 'TO_DO' || mappedStatus === 'IN_PROGRESS') {
+          tasksData.push(taskResponse.data);
+          console.log(`   ✅ Datos obtenidos para tarea: ${taskResponse.data.name} (Estado: ${mappedStatus})`);
+        } else {
+          console.log(`   ⚠️ Tarea ${taskId} omitida por estado: ${mappedStatus}`);
+          notFoundTasks.push(taskId);
+        }
         
       } catch (error) {
         console.warn(`   ⚠️ Tarea ${taskId} no encontrada o error al obtener datos`);
@@ -446,12 +452,12 @@ export async function POST(req: Request) {
 
     if (tasksData.length === 0) {
       return NextResponse.json({
-        error: 'No se encontró información de ninguna tarea en ClickUp',
+        error: 'No se encontró información de ninguna tarea válida en ClickUp',
         notFoundTasks: notFoundTasks
       }, { status: 400 });
     }
 
-    // Verificar que las tareas no existan ya (por ID o URL)
+    // Verificar que las tareas no existan ya
     const existingTasks = await prisma.task.findMany({
       where: {
         OR: [
@@ -467,7 +473,6 @@ export async function POST(req: Request) {
       console.warn(`⚠️ Tareas ya existentes omitidas: ${existingInfo.join(', ')}`);
     }
 
-    // Filtrar tareas nuevas (que no existan por ID ni por URL)
     const existingIds = new Set(existingTasks.map(t => t.id));
     const existingUrls = new Set(existingTasks.map(t => t.url));
     const newTasksData = tasksData.filter(task => 
@@ -481,13 +486,19 @@ export async function POST(req: Request) {
       });
     }
 
-    // Obtener la posición máxima actual para el queue
-    const maxPosition = await prisma.task.aggregate({
-      _max: { queuePosition: true }
+    // ✅ PASO CRÍTICO: Ordenar tareas por fecha de inicio antes de crear
+    newTasksData.sort((a, b) => {
+      const dateA = a.start_date ? parseInt(a.start_date) : Date.now();
+      const dateB = b.start_date ? parseInt(b.start_date) : Date.now();
+      return dateA - dateB;
     });
-    let nextPosition = (maxPosition._max.queuePosition || 0) + 1;
 
-    // Crear tareas en la base de datos local
+    console.log(`📅 Tareas ordenadas por fecha de inicio:`);
+    newTasksData.forEach((task, index) => {
+      const startDate = task.start_date ? new Date(parseInt(task.start_date)).toISOString() : 'Sin fecha';
+      console.log(`   ${index + 1}. "${task.name}": ${startDate}`);
+    });
+
     const createdTasks = [];
     const errors = [];
     
@@ -495,35 +506,48 @@ export async function POST(req: Request) {
       try {
         console.log(`   Creando tarea: ${clickupTask.name}`);
 
-        // Usar el ID de ClickUp directamente como ID de la tarea
         const taskId = clickupTask.id;
+        const mappedStatus = mapClickUpStatusToLocal(clickupTask.status?.status || '');
 
-        // Verificar que no exista ya una tarea con este ID
-        const existingTaskById = await prisma.task.findUnique({
-          where: { id: taskId }
-        });
+        // ✅ USAR FECHAS ORIGINALES DE CLICKUP SI EXISTEN
+        const startDate = clickupTask.start_date 
+          ? new Date(parseInt(clickupTask.start_date))
+          : new Date();
+        
+        const deadline = clickupTask.due_date 
+          ? new Date(parseInt(clickupTask.due_date))
+          : new Date(startDate.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-        if (existingTaskById) {
-          console.warn(`   ⚠️ Tarea con ID ${taskId} ya existe, omitiendo...`);
-          continue;
+        // ✅ CALCULAR QUEUE POSITION BASADO EN FECHAS PARA CADA ASSIGNEE
+        let calculatedQueuePosition = 1;
+        
+        if (clickupTask.assignees && clickupTask.assignees.length > 0) {
+          // Usar el primer assignee para calcular la posición
+          const firstAssigneeId = clickupTask.assignees[0].id.toString();
+          calculatedQueuePosition = await calculateProperQueuePosition(
+            firstAssigneeId,
+            startDate,
+            deadline,
+            categoryId ? (await prisma.taskCategory.findUnique({ where: { id: categoryId }, include: { type: true } }))?.typeId || 1 : 1
+          );
         }
 
         const newTask = await prisma.task.create({
           data: {
-            id: taskId, // Usar ID de ClickUp directamente
+            id: taskId,
             name: clickupTask.name,
             description: clickupTask.description || clickupTask.text_content || '',
-            status: mapClickUpStatus(clickupTask.status.status),
+            status: mappedStatus, // ✅ USAR ESTADO MAPEADO CORRECTO
             priority: mapClickUpPriority(clickupTask.priority?.priority),
-            startDate: clickupTask.start_date ? new Date(parseInt(clickupTask.start_date)) : new Date(),
-            deadline: clickupTask.due_date ? new Date(parseInt(clickupTask.due_date)) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 días por defecto
-            timeEstimate: clickupTask.time_estimate ? Math.round(clickupTask.time_estimate / 3600000) : null, // Convert ms to hours
+            startDate: startDate, // ✅ USAR FECHA ORIGINAL
+            deadline: deadline, // ✅ USAR FECHA ORIGINAL
+            timeEstimate: clickupTask.time_estimate ? Math.round(clickupTask.time_estimate / 3600000) : null,
             points: clickupTask.points,
             tags: clickupTask.tags?.map((t: any) => t.name).join(', ') || null,
             url: clickupTask.url,
-            queuePosition: nextPosition++,
+            queuePosition: calculatedQueuePosition, // ✅ USAR POSICIÓN CALCULADA
             typeId: categoryId ? (await prisma.taskCategory.findUnique({ where: { id: categoryId }, include: { type: true } }))?.typeId || 1 : 1,
-            categoryId: categoryId || 1, // Usar categoría proporcionada o default
+            categoryId: categoryId || 1,
             brandId: brandId,
           },
           include: {
@@ -537,12 +561,11 @@ export async function POST(req: Request) {
           }
         });
 
-        // Crear asignaciones si hay assignees válidos
+        // Crear asignaciones
         if (clickupTask.assignees && clickupTask.assignees.length > 0) {
           for (const assignee of clickupTask.assignees) {
             const assigneeId = assignee.id.toString();
             
-            // Verificar que el usuario existe en nuestra DB
             const userExists = await prisma.user.findUnique({
               where: { id: assigneeId }
             });
@@ -552,21 +575,28 @@ export async function POST(req: Request) {
                 await prisma.taskAssignment.create({
                   data: {
                     userId: assigneeId,
-                    taskId: taskId // Usar el ID de ClickUp
+                    taskId: taskId
                   }
                 });
-                console.log(`   ✅ Asignado usuario ${assignee.username} a tarea ${clickupTask.name}`);
+                
+                // ✅ REORDENAR POSICIONES DESPUÉS DE CADA ASIGNACIÓN
+                await reorderQueuePositions(assigneeId, newTask.typeId, taskId);
+                
+                console.log(`   ✅ Usuario ${assignee.username} asignado y cola reordenada`);
               } catch (assignError) {
                 console.warn(`   ⚠️ Error asignando usuario ${assignee.username}:`, assignError);
               }
             } else {
-              console.warn(`   ⚠️ Usuario ${assigneeId} (${assignee.username}) no existe en DB local`);
+              console.warn(`   ⚠️ Usuario ${assigneeId} no existe en DB local`);
             }
           }
         }
 
         createdTasks.push(newTask);
-        console.log(`✅ Tarea creada: ${newTask.name} (ID: ${newTask.id})`);
+        console.log(`✅ Tarea creada con fechas originales: ${newTask.name}`);
+        console.log(`   📅 Start: ${startDate.toISOString()}`);
+        console.log(`   📅 Deadline: ${deadline.toISOString()}`);
+        console.log(`   📍 Queue Position: ${calculatedQueuePosition}`);
 
       } catch (createError) {
         const errorMsg = `Error creando tarea ${clickupTask.name}: ${createError instanceof Error ? createError.message : 'Error desconocido'}`;
@@ -575,10 +605,10 @@ export async function POST(req: Request) {
       }
     }
 
-    console.log(`🎉 Sincronización completada: ${createdTasks.length} tareas creadas`);
+    console.log(`🎉 Sincronización completada: ${createdTasks.length} tareas creadas con fechas consecutivas`);
 
     return NextResponse.json({
-      message: `${createdTasks.length} tareas sincronizadas exitosamente`,
+      message: `${createdTasks.length} tareas sincronizadas exitosamente con fechas consecutivas`,
       createdTasks: createdTasks,
       skippedTasks: existingTasks,
       notFoundTasks: notFoundTasks.length > 0 ? notFoundTasks : undefined,
@@ -601,21 +631,6 @@ export async function POST(req: Request) {
       details: error instanceof Error ? error.message : 'Error desconocido'
     }, { status: 500 });
   }
-}
-
-// Funciones auxiliares para mapear estados y prioridades
-function mapClickUpStatus(clickupStatus: string): 'TO_DO' | 'IN_PROGRESS' | 'ON_APPROVAL' | 'COMPLETE' {
-  const statusMap: Record<string, 'TO_DO' | 'IN_PROGRESS' | 'ON_APPROVAL' | 'COMPLETE'> = {
-    'to do': 'TO_DO',
-    'open': 'TO_DO',
-    'in progress': 'IN_PROGRESS',
-    'review': 'ON_APPROVAL',
-    'done': 'COMPLETE',
-    'closed': 'COMPLETE',
-    'complete': 'COMPLETE'
-  };
-  
-  return statusMap[clickupStatus.toLowerCase()] || 'TO_DO';
 }
 
 function mapClickUpPriority(clickupPriority?: string): 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT' {

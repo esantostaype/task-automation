@@ -12,18 +12,16 @@ import { Task, Priority } from '@prisma/client';
  * - LOW: Al final, pero permite hasta 4 tareas LOW consecutivas
  */
 export function determineQueueInsertPosition(
-  queue: (Task & { category: { tier: string } })[],
+  queue: (Task & { category: { tierList: { name: string } } })[],  // ✅ CORREGIDO
   priority: Priority
 ): number {
   console.log(`🎯 Determinando posición para prioridad: ${priority}, cola actual: ${queue.length} tareas`);
 
-  // URGENT siempre va al inicio
   if (priority === 'URGENT') {
     console.log(`  -> URGENT: Insertando en posición 0`);
     return 0;
   }
 
-  // HIGH: Lógica especial basada en el tier de la primera tarea
   if (priority === 'HIGH') {
     if (queue.length === 0) {
       console.log(`  -> HIGH: Cola vacía, insertando en posición 0`);
@@ -31,23 +29,20 @@ export function determineQueueInsertPosition(
     }
 
     const firstTask = queue[0];
-    const firstTaskTier = firstTask.category?.tier;
+    const firstTaskTier = firstTask.category?.tierList?.name; // ✅ CORREGIDO
     
     console.log(`  -> HIGH: Primera tarea tiene tier "${firstTaskTier}"`);
 
-    // Si la primera tarea es de tier alto (C, B, A, S), insertar al inicio
     if (firstTaskTier && ['C', 'B', 'A', 'S'].includes(firstTaskTier)) {
       console.log(`  -> HIGH: Tier alto detectado, insertando en posición 0`);
       return 0;
     }
     
-    // Si es tier bajo (D, E), insertar en posición 1
     if (firstTaskTier && ['D', 'E'].includes(firstTaskTier)) {
       console.log(`  -> HIGH: Tier bajo detectado, insertando en posición 1`);
       return 1;
     }
 
-    // Fallback: insertar al inicio
     console.log(`  -> HIGH: Fallback, insertando en posición 0`);
     return 0;
   }
@@ -123,9 +118,9 @@ export function determineQueueInsertPosition(
 /**
  * Función auxiliar para depurar la cola de tareas
  */
-export function debugQueue(queue: (Task & { category: { tier: string } })[]): void {
+export function debugQueue(queue: (Task & { category: { tierList: { name: string } } })[]): void { // ✅ CORREGIDO
   console.log('📋 Estado actual de la cola:');
   queue.forEach((task, index) => {
-    console.log(`  ${index}: "${task.name}" - ${task.priority} (Tier: ${task.category.tier})`);
+    console.log(`  ${index}: "${task.name}" - ${task.priority} (Tier: ${task.category.tierList.name})`); // ✅ CORREGIDO
   });
 }
