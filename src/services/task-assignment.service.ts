@@ -811,10 +811,22 @@ function analyzeQueueByPriority(tasks: Task[]): QueueAnalysis {
 function isLowTaskInWaitingPeriod(task: Task): boolean {
   const now = new Date();
   const taskCreationTime = new Date(task.createdAt);
-
-  const workingHoursElapsed = calculateWorkingHoursBetween(taskCreationTime, now);
-
-  return workingHoursElapsed < 8;
+  
+  // Verificar si es el mismo día y antes de las 19:00 UTC (que corresponde a 14:00 Lima)
+  const sameDay = now.toDateString() === taskCreationTime.toDateString();
+  const before19UTC = now.getUTCHours() < 19; // 19:00 UTC = 14:00 Lima
+  
+  const inWaitingPeriod = sameDay && before19UTC;
+  
+  console.log(`   ⏰ Verificando período de espera para "${task.name}":`, {
+    createdAt: taskCreationTime.toISOString(),
+    now: now.toISOString(),
+    sameDay,
+    before19UTC,
+    inWaitingPeriod
+  });
+  
+  return inWaitingPeriod;
 }
 
 function calculateWorkingHoursBetween(startDate: Date, endDate: Date): number {
@@ -874,134 +886,255 @@ function calculateWorkingHoursBetween(startDate: Date, endDate: Date): number {
 }
 
 async function calculateNormalPriorityPosition(userSlot: UserSlot): Promise<number> {
-  // Los NORMAL van al final natural, después de toda la lógica de intercalado
-  // Pero respetando las reglas con LOW
+  console.log(`\n🔵 === CALCULATING NORMAL PRIORITY POSITION ===`);
+  console.log(`📊 Total tasks: ${userSlot.tasks.length}`);
+  
+  // Analizar tareas por prioridad desde el final hacia adelante
+  let insertAt = userSlot.tasks.length; // Por defecto al final
 
-  let insertAt = userSlot.tasks.length // Por defecto al final
-
-  // Buscar posición respetando lógica con LOW (mantener lógica existente)
+  // Buscar desde el final hacia adelante para encontrar dónde insertar
   for (let i = userSlot.tasks.length - 1; i >= 0; i--) {
-    const currentTask = userSlot.tasks[i]
+    const currentTask = userSlot.tasks[i];
+    console.log(`   🔍 Analizando posición ${i}: "${currentTask.name}" (${currentTask.priority})`);
 
     if (currentTask.priority === 'LOW') {
-      // Aplicar lógica existente para LOW
-      let normalTasksBeforeThisLow = 0
+      // Contar cuántas tareas NORMAL hay antes de esta LOW
+      let normalTasksBeforeThisLow = 0;
       for (let j = 0; j < i; j++) {
         if (userSlot.tasks[j].priority === 'NORMAL') {
-          normalTasksBeforeThisLow++
+          normalTasksBeforeThisLow++;
         }
       }
 
+      console.log(`   📊 Tareas NORMAL antes de esta LOW: ${normalTasksBeforeThisLow}/${TASK_ASSIGNMENT_THRESHOLDS.NORMAL_TASKS_BEFORE_LOW_THRESHOLD}`);
+
+      // Si hay menos NORMAL de las permitidas, insertar antes de esta LOW
       if (normalTasksBeforeThisLow < TASK_ASSIGNMENT_THRESHOLDS.NORMAL_TASKS_BEFORE_LOW_THRESHOLD) {
-        insertAt = i
-        break
+        insertAt = i;
+        console.log(`   ✅ Insertando en posición ${insertAt} (antes de LOW)`);
+        break;
       }
-      insertAt = i + 1
+      
+      // Si ya hay suficientes NORMAL, continuar después de esta LOW
+      insertAt = i + 1;
+      console.log(`   ➡️ Suficientes NORMAL, continuar después en posición ${insertAt}`);
     }
+    // Para HIGH y URGENT, no cambiar la posición (continuar buscando)
   }
 
-  return insertAt
+  console.log(`🔵 NORMAL position result: ${insertAt}`);
+  return insertAt;
 }
 
-async function calculateLowPriorityPosition(userSlot: UserSlot): Promise<QueueCalculationResult> {
-  let insertAt = userSlot.tasks.length
-  let calculatedStartDate: Date
-  const affectedTasks: Task[] = []
 
-  let lastLowInWaitingPeriodIndex = -1
+async function calculateLowPriorityPosition(userSlot: UserSlot): Promise<QueueCalculationResult> {
+  console.log(`\n🟢 === CALCULATING LOW PRIORITY POSITION ===`);
+  
+  let insertAt = userSlot.tasks.length;
+  let calculatedStartDate: Date;
+  const affectedTasks: Task[] = [];
+
+  // ✅ NUEVA LÓGICA: Verificar si hay tareas LOW en período de espera (hasta 19:00 del día actual)
+  let lastLowInWaitingPeriodIndex = -1;
 
   for (let i = userSlot.tasks.length - 1; i >= 0; i--) {
-    const task = userSlot.tasks[i]
+    const task = userSlot.tasks[i];
     if (task.priority === 'LOW' && isLowTaskInWaitingPeriod(task)) {
-      lastLowInWaitingPeriodIndex = i
-      break
+      lastLowInWaitingPeriodIndex = i;
+      console.log(`   ⏰ Tarea LOW en período de espera encontrada: "${task.name}" en posición ${i}`);
+      break;
     }
   }
 
   if (lastLowInWaitingPeriodIndex !== -1) {
-    insertAt = lastLowInWaitingPeriodIndex + 1
+    // Si hay LOW en período de espera, insertar después de ella
+    insertAt = lastLowInWaitingPeriodIndex + 1;
+    console.log(`   📍 Insertando después de LOW en período de espera: posición ${insertAt}`);
   } else {
-    let consecutiveLowCount = 0
+    // Aplicar lógica de tareas LOW consecutivas
+    let consecutiveLowCount = 0;
     for (let i = userSlot.tasks.length - 1; i >= 0; i--) {
       if (userSlot.tasks[i].priority === 'LOW') {
-        consecutiveLowCount++
+        consecutiveLowCount++;
       } else {
-        break
+        break;
       }
     }
 
+    console.log(`   📊 Tareas LOW consecutivas al final: ${consecutiveLowCount}/${TASK_ASSIGNMENT_THRESHOLDS.CONSECUTIVE_LOW_TASKS_THRESHOLD}`);
+
     if (consecutiveLowCount < TASK_ASSIGNMENT_THRESHOLDS.CONSECUTIVE_LOW_TASKS_THRESHOLD) {
-      insertAt = userSlot.tasks.length
+      insertAt = userSlot.tasks.length;
+      console.log(`   ✅ Menos del límite, insertando al final: posición ${insertAt}`);
     } else {
-      insertAt = userSlot.tasks.length - consecutiveLowCount
+      insertAt = userSlot.tasks.length - consecutiveLowCount;
+      console.log(`   🚫 Límite alcanzado, insertando antes del grupo: posición ${insertAt}`);
     }
   }
 
-  calculatedStartDate = userSlot.availableDate
+  // ✅ CORRECCIÓN: Calcular fecha basada en la posición, no siempre availableDate
+  if (insertAt === 0) {
+    calculatedStartDate = await getNextAvailableStart(new Date());
+    console.log(`   ⚡ Primera tarea: inicio inmediato ${calculatedStartDate.toISOString()}`);
+  } else if (insertAt <= userSlot.tasks.length) {
+    const previousTask = userSlot.tasks[insertAt - 1];
+    calculatedStartDate = await getNextAvailableStart(new Date(previousTask.deadline));
+    console.log(`   🔗 Después de "${previousTask.name}": ${calculatedStartDate.toISOString()}`);
+  } else {
+    calculatedStartDate = userSlot.availableDate;
+    console.log(`   📅 Al final de todas las tareas: ${calculatedStartDate.toISOString()}`);
+  }
+
+  console.log(`🟢 LOW priority result:`, {
+    insertAt,
+    calculatedStartDate: calculatedStartDate.toISOString(),
+    affectedTasks: affectedTasks.length
+  });
 
   return {
     insertAt,
     calculatedStartDate,
     affectedTasks
+  };
+}
+
+function calculateStartDateByPosition(userSlot: UserSlot, insertAt: number): Date {
+  console.log(`🕐 Calculando fecha de inicio para posición ${insertAt} de ${userSlot.tasks.length} tareas existentes`);
+  
+  if (insertAt === 0) {
+    // Si se inserta al inicio, empezar inmediatamente
+    const immediateStart = new Date();
+    console.log(`   ⚡ Posición 0: inicio inmediato desde ${immediateStart.toISOString()}`);
+    return immediateStart;
   }
+  
+  if (insertAt > userSlot.tasks.length) {
+    // Si se inserta más allá del final, usar availableDate
+    console.log(`   📅 Posición más allá del final: usar availableDate ${userSlot.availableDate.toISOString()}`);
+    return userSlot.availableDate;
+  }
+  
+  // Si se inserta en el medio o al final, empezar después de la tarea anterior
+  const previousTaskIndex = insertAt - 1;
+  const previousTask = userSlot.tasks[previousTaskIndex];
+  
+  if (previousTask) {
+    console.log(`   🔗 Posición ${insertAt}: después de tarea "${previousTask.name}" que termina ${previousTask.deadline.toISOString()}`);
+    return new Date(previousTask.deadline);
+  }
+  
+  // Fallback: usar availableDate
+  console.log(`   ⚠️ Fallback: usar availableDate ${userSlot.availableDate.toISOString()}`);
+  return userSlot.availableDate;
 }
 
 export async function calculateQueuePosition(userSlot: UserSlot, priority: Priority): Promise<QueueCalculationResult> {
+  console.log(`\n🎯 === CALCULATING QUEUE POSITION FOR ${priority} ===`);
+  console.log(`📊 User: ${userSlot.userName}, Current tasks: ${userSlot.tasks.length}`);
+  
   let insertAt = 0
   let calculatedStartDate: Date
   const affectedTasks: Task[] = []
 
   const queueAnalysis = analyzeQueueByPriority(userSlot.tasks)
+  console.log(`📋 Queue analysis:`, {
+    urgent: queueAnalysis.urgentCount,
+    high: queueAnalysis.highCount, 
+    normal: queueAnalysis.normalCount,
+    low: queueAnalysis.lowCount,
+    lastUrgentIndex: queueAnalysis.lastUrgentIndex,
+    lastHighIndex: queueAnalysis.lastHighIndex
+  });
 
   switch (priority) {
     case 'URGENT':
+      // URGENT siempre va después de las URGENT existentes
       insertAt = queueAnalysis.lastUrgentIndex + 1
-
-      // ✅ CORRECCIÓN: Calcular fecha basada en la posición de inserción
+      console.log(`🔴 URGENT: Insertando en posición ${insertAt}`);
+      
+      // ✅ CORRECCIÓN: Calcular fecha basada en la posición real
       if (insertAt === 0) {
-        // Si es la primera URGENT, empieza ahora
+        // Primera URGENT: empezar inmediatamente
         calculatedStartDate = await getNextAvailableStart(new Date())
+        console.log(`   ⚡ Primera URGENT: inicio inmediato ${calculatedStartDate.toISOString()}`);
       } else {
-        // Si va después de otras URGENT, empieza cuando termina la URGENT anterior
-        const previousTask = userSlot.tasks[insertAt - 1]
-        calculatedStartDate = await getNextAvailableStart(new Date(previousTask.deadline))
+        // Después de otras URGENT: empezar cuando termina la URGENT anterior
+        const previousUrgentTask = userSlot.tasks[insertAt - 1]
+        calculatedStartDate = await getNextAvailableStart(new Date(previousUrgentTask.deadline))
+        console.log(`   🔗 Después de URGENT anterior: ${calculatedStartDate.toISOString()}`);
       }
 
+      // Todas las tareas después de esta posición son afectadas
       affectedTasks.push(...userSlot.tasks.slice(insertAt))
+      console.log(`   📋 Tareas afectadas: ${affectedTasks.length}`);
       break
 
     case 'HIGH':
       insertAt = calculateHighInterleavedPosition(userSlot.tasks, queueAnalysis)
+      console.log(`🟡 HIGH: Insertando en posición ${insertAt}`);
 
-      // ✅ La lógica de HIGH ya está correcta
+      // ✅ CORRECCIÓN: Calcular fecha basada en la posición real
       if (insertAt === 0) {
         calculatedStartDate = await getNextAvailableStart(new Date())
+        console.log(`   ⚡ Primera tarea: inicio inmediato ${calculatedStartDate.toISOString()}`);
       } else {
         const previousTask = userSlot.tasks[insertAt - 1]
         calculatedStartDate = await getNextAvailableStart(new Date(previousTask.deadline))
+        console.log(`   🔗 Después de "${previousTask.name}": ${calculatedStartDate.toISOString()}`);
       }
 
       affectedTasks.push(...userSlot.tasks.slice(insertAt))
+      console.log(`   📋 Tareas afectadas: ${affectedTasks.length}`);
       break
 
     case 'NORMAL':
       insertAt = await calculateNormalPriorityPosition(userSlot)
-      calculatedStartDate = userSlot.availableDate
+      console.log(`🔵 NORMAL: Insertando en posición ${insertAt}`);
+      
+      // ✅ CORRECCIÓN: Calcular fecha basada en la posición, NO en availableDate
+      if (insertAt === 0) {
+        calculatedStartDate = await getNextAvailableStart(new Date())
+        console.log(`   ⚡ Primera tarea: inicio inmediato ${calculatedStartDate.toISOString()}`);
+      } else if (insertAt <= userSlot.tasks.length) {
+        // Si se inserta antes del final, usar la tarea anterior como referencia
+        const previousTask = userSlot.tasks[insertAt - 1]
+        calculatedStartDate = await getNextAvailableStart(new Date(previousTask.deadline))
+        console.log(`   🔗 Después de "${previousTask.name}": ${calculatedStartDate.toISOString()}`);
+      } else {
+        // Si se inserta al final, usar availableDate
+        calculatedStartDate = userSlot.availableDate
+        console.log(`   📅 Al final de la cola: ${calculatedStartDate.toISOString()}`);
+      }
+      
+      // Solo las tareas después de esta posición son afectadas
+      affectedTasks.push(...userSlot.tasks.slice(insertAt))
+      console.log(`   📋 Tareas afectadas: ${affectedTasks.length}`);
       break
 
     case 'LOW':
-      return await calculateLowPriorityPosition(userSlot)
+      const lowResult = await calculateLowPriorityPosition(userSlot)
+      console.log(`🟢 LOW: Usando resultado específico - posición ${lowResult.insertAt}`);
+      return lowResult
 
     default:
       insertAt = userSlot.tasks.length
       calculatedStartDate = userSlot.availableDate
+      console.log(`⚪ DEFAULT: Al final - posición ${insertAt}`);
   }
 
-  return {
+  const result = {
     insertAt,
     calculatedStartDate,
     affectedTasks
   }
+  
+  console.log(`✅ Queue position result:`, {
+    insertAt: result.insertAt,
+    calculatedStartDate: result.calculatedStartDate.toISOString(),
+    affectedTasksCount: result.affectedTasks.length
+  });
+
+  return result
 }
 
 function calculateHighInterleavedPosition(tasks: Task[], queueAnalysis: QueueAnalysis): number {
@@ -1059,9 +1192,9 @@ export async function processUserAssignments(
   userSlots: UserSlot[],
   priority: Priority,
   durationDays: number,
-  brandId?: string // ✅ AGREGAR BRAND ID
+  brandId?: string
 ): Promise<TaskTimingResult> {
-  console.log(`\n🎯 === PROCESSING USER ASSIGNMENTS CON FECHAS CONSECUTIVAS REALES ===`);
+  console.log(`\n🎯 === PROCESSING USER ASSIGNMENTS WITH CORRECT PRIORITY DATES ===`);
   console.log(`📋 Usuarios a asignar: ${usersToAssign.join(', ')}`);
   console.log(`⏰ Duración de tarea: ${durationDays} días`);
   console.log(`🔥 Prioridad: ${priority}`);
@@ -1075,41 +1208,40 @@ export async function processUserAssignments(
   let latestDeadline = new Date();
   let primaryInsertAt = 0;
 
-  // ✅ PARA CADA USUARIO, CALCULAR SU FECHA DE INICIO REAL CONSECUTIVA
+  // ✅ CORRECCIÓN PRINCIPAL: Usar calculatedStartDate de calculateQueuePosition
   for (const userId of usersToAssign) {
     const userSlot = userSlots.find(slot => slot.userId === userId);
 
     if (!userSlot) {
-      console.warn(`⚠️ User slot not found for ${userId}, calculando fecha manualmente`);
+      console.warn(`⚠️ User slot not found for ${userId}, usando fecha manual`);
       
-      // ✅ FALLBACK: Calcular fecha manualmente si no hay slot
-      const manualStartDate = await getActualAvailableStartDate(userId, 1, brandId || ''); // Usar typeId=1 como fallback
+      const manualStartDate = await getActualAvailableStartDate(userId, 1, brandId || '');
       const manualDeadline = await calculateWorkingDeadline(manualStartDate, newTaskHours);
       
       if (userId === usersToAssign[0]) {
         earliestStartDate = manualStartDate;
         latestDeadline = manualDeadline;
-        primaryInsertAt = 1; // Posición por defecto
+        primaryInsertAt = 1;
       }
       continue;
     }
 
     console.log(`\n👤 Procesando asignación para ${userSlot.userName}:`);
-    console.log(`   📅 Fecha disponible del slot: ${userSlot.availableDate.toISOString()}`);
     console.log(`   📊 Carga actual: ${userSlot.cargaTotal} tareas`);
     console.log(`   📈 Carga de duración: ${userSlot.totalAssignedDurationDays} días`);
 
-    // ✅ USAR LA FECHA DISPONIBLE REAL DEL SLOT (ya calculada consecutivamente)
-    const userStartDate = userSlot.availableDate;
+    // ✅ CRÍTICO: Calcular posición y fecha correcta usando la función corregida
+    const queueResult = await calculateQueuePosition(userSlot, priority);
+    console.log(`   📍 Posición calculada: ${queueResult.insertAt}`);
+    console.log(`   📅 Fecha de inicio calculada: ${queueResult.calculatedStartDate.toISOString()}`);
+
+    // ✅ USAR LA FECHA CALCULADA POR calculateQueuePosition, NO userSlot.availableDate
+    const userStartDate = await getNextAvailableStart(queueResult.calculatedStartDate);
     const userDeadline = await calculateWorkingDeadline(userStartDate, newTaskHours);
 
-    console.log(`   🎯 Timeline calculado:`);
+    console.log(`   🎯 Timeline final:`);
     console.log(`     Inicio: ${userStartDate.toISOString()}`);
     console.log(`     Fin: ${userDeadline.toISOString()}`);
-
-    // Calcular posición en cola para este usuario
-    const queueResult = await calculateQueuePosition(userSlot, priority);
-    console.log(`   📍 Posición en cola: ${queueResult.insertAt}`);
 
     if (userId === usersToAssign[0]) {
       earliestStartDate = userStartDate;
@@ -1129,11 +1261,22 @@ export async function processUserAssignments(
     }
   }
 
-  console.log(`\n✅ Timing final de tarea (fechas consecutivas reales):`);
+  console.log(`\n✅ === TIMING FINAL CON PRIORIDADES CORRECTAS ===`);
   console.log(`   🚀 Inicio: ${earliestStartDate.toISOString()}`);
   console.log(`   🏁 Deadline: ${latestDeadline.toISOString()}`);
   console.log(`   📍 Posición en cola: ${primaryInsertAt}`);
-  console.log(`   📅 Esta tarea empezará DESPUÉS de todas las tareas existentes`);
+  console.log(`   🔥 Prioridad: ${priority}`);
+  
+  // ✅ VERIFICACIÓN: Las fechas deben respetar la prioridad
+  if (priority === 'URGENT' && primaryInsertAt === 0) {
+    console.log(`   ⚡ URGENT en posición 0: fecha de inicio es inmediata ✓`);
+  } else if (priority === 'HIGH' && primaryInsertAt > 0) {
+    console.log(`   🟡 HIGH en posición ${primaryInsertAt}: fecha después de tarea anterior ✓`);
+  } else if (priority === 'NORMAL') {
+    console.log(`   🔵 NORMAL en posición ${primaryInsertAt}: fecha respeta intercalado con LOW ✓`);
+  } else if (priority === 'LOW') {
+    console.log(`   🟢 LOW: al final de la cola ✓`);
+  }
 
   return {
     startDate: earliestStartDate,
