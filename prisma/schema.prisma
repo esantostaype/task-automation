@@ -95,8 +95,7 @@ model Task {
   url String?
   lastSyncAt DateTime?
   syncStatus String @default("PENDING")
-  syncError String?  
-  queuePosition Int
+  syncError String?
   typeId Int
   categoryId Int
   brandId String

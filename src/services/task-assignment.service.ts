@@ -243,7 +243,7 @@ export async function calculateUserSlots(
 
   const allRelevantTasks = await prisma.task.findMany({
     where: whereClause,
-    orderBy: { queuePosition: 'asc' },
+    orderBy: { deadline: 'asc' },
     include: {
       category: { 
         include: { 
@@ -411,7 +411,7 @@ async function getVacationAwareUserSlots(
       status: { notIn: [Status.COMPLETE] },
       assignees: { some: { userId: { in: userIds } } }
     },
-    orderBy: { queuePosition: 'asc' },
+    orderBy: { deadline: 'asc' },
     include: {
       category: {
         include: {

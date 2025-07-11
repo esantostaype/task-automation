@@ -406,7 +406,7 @@ export const CreateTaskForm: FC = () => {
 
       setLoading(true);
 
-      const taskResponse = await axios.post("/api/tasks", payload);
+      const taskResponse = await axios.post("/api/tasks/v2", payload);
       const createdTask = taskResponse.data;
 
       setLoading(false);

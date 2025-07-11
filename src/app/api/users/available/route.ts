@@ -107,7 +107,7 @@ export async function GET(req: Request) {
           assignees: { some: { userId: user.id } },
           status: { notIn: ['COMPLETE'] }
         },
-        orderBy: { queuePosition: 'asc' },
+        orderBy: { deadline: 'asc' },
         include: { category: true }
       });
 

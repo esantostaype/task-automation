@@ -143,7 +143,7 @@ export async function shiftUserTasks(userId: string, newTaskId: string, newDeadl
         some: { userId: userId }
       }
     },
-    orderBy: { queuePosition: 'asc' },
+    orderBy: { deadline: 'asc' },
     include: { 
       category: {
         include: {
@@ -177,16 +177,12 @@ export async function shiftUserTasks(userId: string, newTaskId: string, newDeadl
     const newStartDate = await getNextAvailableStart(lastDeadline);
     const newDeadlineForTask = await calculateWorkingDeadline(newStartDate, taskHours);
 
-    console.log(`     - Antiguo: Start=${task.startDate.toISOString()}, Deadline=${task.deadline.toISOString()}, Pos=${task.queuePosition}`);
-    console.log(`     - Nuevo:   Start=${newStartDate.toISOString()}, Deadline=${newDeadlineForTask.toISOString()}, Pos=${newPosition}`);
-
     // Update the task in the local database
     const updatedPrismaTask = await prisma.task.update({
       where: { id: task.id },
       data: {
         startDate: newStartDate,
-        deadline: newDeadlineForTask,
-        queuePosition: newPosition,
+        deadline: newDeadlineForTask
       },
       include: {
         category: {

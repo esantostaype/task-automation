@@ -83,7 +83,6 @@ export interface Task {
   startDate: Date
   deadline: Date
   customDuration: number
-  queuePosition: number
   url?: string
   lastSyncAt?: Date
   syncStatus: string

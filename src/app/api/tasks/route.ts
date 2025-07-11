@@ -83,7 +83,6 @@ export async function GET(req: Request) {
         points: task.points,
         tags: task.tags,
         url: task.url,
-        queuePosition: task.queuePosition,
         lastSyncAt: task.lastSyncAt?.toISOString(),
         syncStatus: task.syncStatus,
         syncError: task.syncError,
@@ -322,7 +321,6 @@ const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
         priority,
         startDate: taskTiming.startDate,
         deadline: taskTiming.deadline,
-        queuePosition: taskTiming.insertAt,
         url: clickupTaskUrl,
         lastSyncAt: new Date(),
         syncStatus: 'SYNCED',
@@ -402,7 +400,7 @@ const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
           assignees: { some: { userId } },
           status: { notIn: ['COMPLETE'] }
         },
-        orderBy: { queuePosition: 'asc' },
+        orderBy: { deadline: 'asc' },
         include: { 
           category: {
             include: {
@@ -410,11 +408,6 @@ const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
             }
           }
         }
-      })
-
-      console.log(`  👤 Usuario ${userId} ahora tiene ${userTasks.length} tareas:`)
-      userTasks.forEach((t, i) => {
-        console.log(`    ${i + 1}. [${t.queuePosition}] "${t.name}": ${t.startDate.toISOString()} → ${t.deadline.toISOString()}`)
       })
     }
 
@@ -442,7 +435,6 @@ const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
       startDate: taskWithAssignees?.startDate.toISOString(),
       deadline: taskWithAssignees?.deadline.toISOString(),
       url: taskWithAssignees?.url,
-      queuePosition: taskWithAssignees?.queuePosition,
       createdAt: taskWithAssignees?.createdAt.toISOString(),
       category: {
         id: taskWithAssignees?.category.id,

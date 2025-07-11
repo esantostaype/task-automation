@@ -72,7 +72,6 @@ CREATE TABLE `Task` (
     `lastSyncAt` DATETIME(3) NULL,
     `syncStatus` VARCHAR(191) NOT NULL DEFAULT 'PENDING',
     `syncError` VARCHAR(191) NULL,
-    `queuePosition` INTEGER NOT NULL,
     `typeId` INTEGER NOT NULL,
     `categoryId` INTEGER NOT NULL,
     `brandId` VARCHAR(191) NOT NULL,
