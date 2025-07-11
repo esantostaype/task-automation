@@ -1,102 +1,163 @@
-import { useEffect, useState, useCallback } from 'react'
+// src/hooks/useTaskData.ts - VERSIÓN CON REACT QUERY
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
-import { toast } from 'react-toastify'
 import { TierInfo, TaskType, Brand, User } from '@/interfaces'
 
+// Query keys para React Query
+export const taskDataKeys = {
+  all: ['task-data'] as const,
+  types: () => [...taskDataKeys.all, 'types'] as const,
+  brands: () => [...taskDataKeys.all, 'brands'] as const,
+  users: () => [...taskDataKeys.all, 'users'] as const,
+  tiers: () => [...taskDataKeys.all, 'tiers'] as const,
+}
+
+// Funciones de fetching
+const fetchTypes = async (): Promise<TaskType[]> => {
+  const response = await axios.get('/api/types')
+  return response.data
+}
+
+const fetchBrands = async (): Promise<Brand[]> => {
+  const response = await axios.get('/api/brands')
+  return response.data.filter((brand: Brand) => brand.isActive)
+}
+
+const fetchUsers = async (): Promise<User[]> => {
+  const response = await axios.get('/api/users')
+  return response.data.filter((user: User) => user.active)
+}
+
+const fetchTiers = async (): Promise<TierInfo[]> => {
+  const response = await axios.get('/api/tiers')
+  return response.data
+}
+
 export const useTaskData = () => {
-  const [types, setTypes] = useState<TaskType[]>([])
-  const [brands, setBrands] = useState<Brand[]>([])
-  const [users, setUsers] = useState<User[]>([])
-  const [tiers, setTiers] = useState<TierInfo[]>([]) // ✅ NUEVO ESTADO
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
 
-  // ✅ NUEVA FUNCIÓN: fetchData extraída para poder reutilizarla
-  const fetchData = useCallback(async () => {
-    try {
-      setLoading(true)
-      
-      const [typesRes, brandsRes, usersRes, tiersRes] = await Promise.all([
-        axios.get('/api/types'),
-        axios.get('/api/brands'),
-        axios.get('/api/users'),
-        axios.get('/api/tiers')
-      ])
+  // Queries individuales
+  const {
+    data: types = [],
+    isLoading: typesLoading,
+    error: typesError
+  } = useQuery({
+    queryKey: taskDataKeys.types(),
+    queryFn: fetchTypes,
+    staleTime: 5 * 60 * 1000, // 5 minutos
+  })
 
-      console.log('📊 Datos obtenidos del servidor:')
-      console.log(`   - Types: ${typesRes.data.length}`)
-      console.log(`   - Brands: ${brandsRes.data.length}`)
-      console.log(`   - Users: ${usersRes.data.length}`)
+  const {
+    data: brands = [],
+    isLoading: brandsLoading,
+    error: brandsError
+  } = useQuery({
+    queryKey: taskDataKeys.brands(),
+    queryFn: fetchBrands,
+    staleTime: 5 * 60 * 1000,
+  })
 
-      setTypes(typesRes.data)
-      setBrands(brandsRes.data.filter((brand: Brand) => brand.isActive))
-      setUsers(usersRes.data.filter((user: User) => user.active))
-      setTiers(tiersRes.data)
-      
-    } catch (error) {
-      console.error('❌ Error al cargar datos:', error)
-      toast.error(`Error al cargar datos: ${error}`)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  const {
+    data: users = [],
+    isLoading: usersLoading,
+    error: usersError
+  } = useQuery({
+    queryKey: taskDataKeys.users(),
+    queryFn: fetchUsers,
+    staleTime: 5 * 60 * 1000,
+  })
 
-  // ✅ NUEVA FUNCIÓN: Solo actualizar types/categories
-  const refreshTypes = useCallback(async () => {
-    try {
-      console.log('🔄 Refrescando tipos, categorías y tiers...')
-      
-      const [typesRes, tiersRes] = await Promise.all([
-        axios.get('/api/types'),
-        axios.get('/api/tiers') // ✅ NUEVA LLAMADA
-      ])
-      
-      console.log(`📊 Types actualizados: ${typesRes.data.length}`)
-      console.log(`📊 Tiers actualizados: ${tiersRes.data.length}`)
-      
-      setTypes(typesRes.data)
-      setTiers(tiersRes.data) // ✅ NUEVO SET
-      
-      console.log('✅ Tipos, categorías y tiers refrescados exitosamente')
-    } catch (error) {
-      console.error('❌ Error al refrescar tipos:', error)
-      toast.error('Error al actualizar categorías')
-    }
-  }, [])
+  const {
+    data: tiers = [],
+    isLoading: tiersLoading,
+    error: tiersError
+  } = useQuery({
+    queryKey: taskDataKeys.tiers(),
+    queryFn: fetchTiers,
+    staleTime: 5 * 60 * 1000,
+  })
 
-  // ✅ NUEVA FUNCIÓN: Solo refrescar tiers
-  const refreshTiers = useCallback(async () => {
-    try {
-      console.log('🔄 Refrescando solo tiers...')
-      
-      const tiersRes = await axios.get('/api/tiers')
-      
-      console.log(`📊 Tiers actualizados: ${tiersRes.data.length}`)
-      setTiers(tiersRes.data)
-      
-      console.log('✅ Tiers refrescados exitosamente')
-    } catch (error) {
-      console.error('❌ Error al refrescar tiers:', error)
-      toast.error('Error al actualizar tiers')
-    }
-  }, [])
+  // Loading y error combinados
+  const loading = typesLoading || brandsLoading || usersLoading || tiersLoading
+  const error = typesError || brandsError || usersError || tiersError
 
-  const refreshData = useCallback(async () => {
+  // Funciones de refresh
+  const refreshData = () => {
     console.log('🔄 Refrescando todos los datos...')
-    await fetchData()
-  }, [fetchData])
+    queryClient.invalidateQueries({ queryKey: taskDataKeys.all })
+  }
 
-  useEffect(() => {
-    fetchData()
-  }, [fetchData])
+  const refreshTypes = () => {
+    console.log('🔄 Refrescando tipos y categorías...')
+    queryClient.invalidateQueries({ queryKey: taskDataKeys.types() })
+  }
 
-  return { 
-    types, 
-    brands, 
+  const refreshTiers = () => {
+    console.log('🔄 Refrescando tiers...')
+    queryClient.invalidateQueries({ queryKey: taskDataKeys.tiers() })
+    // También invalidar types porque las categorías dependen de los tiers
+    queryClient.invalidateQueries({ queryKey: taskDataKeys.types() })
+  }
+
+  const refreshBrands = () => {
+    console.log('🔄 Refrescando brands...')
+    queryClient.invalidateQueries({ queryKey: taskDataKeys.brands() })
+  }
+
+  const refreshUsers = () => {
+    console.log('🔄 Refrescando users...')
+    queryClient.invalidateQueries({ queryKey: taskDataKeys.users() })
+  }
+
+  // Log cuando se obtienen datos
+  if (types.length > 0 || brands.length > 0 || users.length > 0 || tiers.length > 0) {
+    console.log('📊 Datos obtenidos del servidor:')
+    console.log(`   - Types: ${types.length}`)
+    console.log(`   - Brands: ${brands.length}`)
+    console.log(`   - Users: ${users.length}`)
+    console.log(`   - Tiers: ${tiers.length}`)
+  }
+
+  return {
+    types,
+    brands,
     users,
-    tiers,           // ✅ NUEVO RETORNO
-    loading, 
+    tiers,
+    loading,
+    error,
     refreshData,
     refreshTypes,
-    refreshTiers     // ✅ NUEVA FUNCIÓN
+    refreshTiers,
+    refreshBrands,
+    refreshUsers,
+  }
+}
+
+// Hook para invalidar task data cache desde otros componentes
+export const useTaskDataInvalidation = () => {
+  const queryClient = useQueryClient()
+
+  return {
+    invalidateAll: () => {
+      console.log('🗑️ Invalidating all task data cache...')
+      queryClient.invalidateQueries({ queryKey: taskDataKeys.all })
+    },
+    invalidateTypes: () => {
+      console.log('🗑️ Invalidating types cache...')
+      queryClient.invalidateQueries({ queryKey: taskDataKeys.types() })
+    },
+    invalidateTiers: () => {
+      console.log('🗑️ Invalidating tiers cache...')
+      queryClient.invalidateQueries({ queryKey: taskDataKeys.tiers() })
+      queryClient.invalidateQueries({ queryKey: taskDataKeys.types() })
+    },
+    invalidateBrands: () => {
+      console.log('🗑️ Invalidating brands cache...')
+      queryClient.invalidateQueries({ queryKey: taskDataKeys.brands() })
+    },
+    invalidateUsers: () => {
+      console.log('🗑️ Invalidating users cache...')
+      queryClient.invalidateQueries({ queryKey: taskDataKeys.users() })
+    },
   }
 }

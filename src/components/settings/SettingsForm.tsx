@@ -29,6 +29,7 @@ import {
   useUpdateSettings,
   useResetSettings,
 } from "@/hooks/useSettings";
+import { useTaskDataInvalidation } from "@/hooks/useTaskData"; // ✅ NUEVO IMPORT
 import axios from "axios";
 import { toast } from "react-toastify";
 import { TableTh } from "../TableTh";
@@ -55,6 +56,9 @@ export const SettingsForm: React.FC = () => {
   const { data: settingsData, isLoading, error, refetch } = useSettings();
   const updateSettingsMutation = useUpdateSettings();
   const resetSettingsMutation = useResetSettings();
+  
+  // ✅ NUEVO: Hook para invalidar cache de task data
+  const { invalidateTiers, invalidateAll } = useTaskDataInvalidation();
 
   const [settingValues, setSettingValues] = useState<
     Record<string, SettingValue>
@@ -205,10 +209,14 @@ export const SettingsForm: React.FC = () => {
 
         await Promise.all(updatePromises);
 
-        // Recargar tiers
+        // Recargar tiers localmente
         const response = await axios.get("/api/tiers");
         setTiers(response.data);
         setTierChanges({});
+
+        // ✅ NUEVO: Invalidar cache de task data para que otros componentes se actualicen
+        console.log('🔄 Invalidating task data cache after tier changes...');
+        invalidateTiers();
 
         toast.success("Tier durations updated successfully");
       }
@@ -232,6 +240,10 @@ export const SettingsForm: React.FC = () => {
     ) {
       await resetSettingsMutation.mutateAsync();
       setTierChanges({});
+      
+      // ✅ NUEVO: Invalidar todo el cache después del reset
+      console.log('🔄 Invalidating all task data cache after settings reset...');
+      invalidateAll();
     }
   };
 
@@ -278,7 +290,7 @@ export const SettingsForm: React.FC = () => {
             }}
             color={hasChanged ? "warning" : "neutral"}
             size={size}
-            className="w-full"
+            className="w-24"
           />
         );
 
@@ -300,7 +312,7 @@ export const SettingsForm: React.FC = () => {
             }
             color={hasChanged ? "warning" : "neutral"}
             size={size}
-            className="w-full"
+            className="w-24"
           />
         );
     }
@@ -557,7 +569,7 @@ export const SettingsForm: React.FC = () => {
                               }}
                               color={hasChanged ? "warning" : "neutral"}
                               size="sm"
-                              className="w-24"
+                              className="w-18"
                             />
                           </div>
                         </TableTd>

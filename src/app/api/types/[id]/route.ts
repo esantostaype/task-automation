@@ -1,78 +1,12 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/utils/prisma'
 
-export async function GET() {
+export async function PATCH(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
   try {
-    const types = await prisma.taskType.findMany({
-      include: {
-        categories: {
-          include: {
-            tierList: true
-          }
-        }
-      }
-    })
-
-    return NextResponse.json(types)
-  } catch (error) {
-    console.error('Error fetching task types:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch task types' },
-      { status: 500 }
-    )
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const body = await request.json()
-    const { name } = body
-
-    // Validación básica
-    if (!name) {
-      return NextResponse.json(
-        { error: 'Name is required' },
-        { status: 400 }
-      )
-    }
-
-    // Crear el nuevo task type
-    const newTaskType = await prisma.taskType.create({
-      data: {
-        name: name.trim()
-      },
-      include: {
-        categories: {
-          include: {
-            tierList: true
-          }
-        }
-      }
-    })
-
-    return NextResponse.json(newTaskType, { status: 201 })
-  } catch (error) {
-    console.error('Error creating task type:', error)
-    
-    // Manejar error de duplicado (si name es único)
-    if (error instanceof Error && error.message.includes('Unique constraint')) {
-      return NextResponse.json(
-        { error: 'A task type with this name already exists' },
-        { status: 409 }
-      )
-    }
-
-    return NextResponse.json(
-      { error: 'Failed to create task type' },
-      { status: 500 }
-    )
-  }
-}
-
-export async function PATCH(request: Request) {
-  try {
-    const url = new URL(request.url)
-    const id = url.pathname.split('/').pop()
+    const id = params.id
     
     if (!id || isNaN(Number(id))) {
       return NextResponse.json(
@@ -138,10 +72,12 @@ export async function PATCH(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
+export async function DELETE(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
   try {
-    const url = new URL(request.url)
-    const id = url.pathname.split('/').pop()
+    const id = params.id
     
     if (!id || isNaN(Number(id))) {
       return NextResponse.json(

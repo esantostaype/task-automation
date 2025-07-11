@@ -1,4 +1,3 @@
-// src/app/api/categories/route.ts
 import { NextResponse } from 'next/server';
 import { prisma } from '@/utils/prisma';
 
@@ -8,33 +7,39 @@ export async function POST(req: Request) {
 
     // Validar campos requeridos
     if (!name || !tierId || !typeId) {
-      return NextResponse.json({
-        error: 'Faltan campos requeridos para crear la categoría.',
-        required: ['name', 'tierId', 'typeId']
-      }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Name, tierId, and typeId are required' },
+        { status: 400 }
+      );
     }
 
-    // Validar que el tierId exista
+    // Validar que el tier exista
     const existingTier = await prisma.tierList.findUnique({
       where: { id: tierId },
     });
 
     if (!existingTier) {
-      return NextResponse.json({ error: 'Tier (tierId) no encontrado.' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Tier not found' },
+        { status: 404 }
+      );
     }
 
-    // Validar que el typeId exista
+    // Validar que el type exista
     const existingType = await prisma.taskType.findUnique({
       where: { id: typeId },
     });
 
     if (!existingType) {
-      return NextResponse.json({ error: 'Tipo de tarea (typeId) no encontrado.' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Task type not found' },
+        { status: 404 }
+      );
     }
 
     const newCategory = await prisma.taskCategory.create({
       data: {
-        name,
+        name: name.trim(),
         tierId,
         typeId,
       },
@@ -44,15 +49,22 @@ export async function POST(req: Request) {
       }
     });
 
-    console.log(`✅ Nueva categoría creada: ${newCategory.name} (ID: ${newCategory.id})`);
-
     return NextResponse.json(newCategory, { status: 201 });
   } catch (error) {
-    console.error('❌ Error al crear la categoría:', error);
-    return NextResponse.json({
-      error: 'Error interno del servidor al crear la categoría',
-      details: error instanceof Error ? error.message : 'Error desconocido'
-    }, { status: 500 });
+    console.error('Error creating category:', error);
+    
+    // Manejar error de duplicado
+    if (error instanceof Error && error.message.includes('Unique constraint')) {
+      return NextResponse.json(
+        { error: 'A category with this name already exists' },
+        { status: 409 }
+      );
+    }
+
+    return NextResponse.json(
+      { error: 'Failed to create category' },
+      { status: 500 }
+    );
   }
 }
 
@@ -61,12 +73,16 @@ export async function GET() {
     const categories = await prisma.taskCategory.findMany({
       include: { 
         type: true,
-        tierList: true // Incluir TierList para acceder a duration y tier name
+        tierList: true
       }
     });
+    
     return NextResponse.json(categories);
   } catch (error) {
     console.error('Error fetching categories:', error);
-    return NextResponse.json({ error: 'Error al obtener categorías' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Failed to fetch categories' },
+      { status: 500 }
+    );
   }
 }
