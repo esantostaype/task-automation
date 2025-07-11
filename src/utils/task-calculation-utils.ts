@@ -129,66 +129,72 @@ export async function calculateWorkingDeadline(start: Date, hoursNeeded: number)
 }
 
 /**
- * ✅ CORREGIDO: Reorganiza tareas usando la nueva estructura tierList
+ * ✅ SIMPLIFICADO: Reorganiza tareas solo por fechas, SIN queuePosition
  */
-export async function shiftUserTasks(userId: string, newTaskId: string, newDeadline: Date, startPosition: number) {
-  console.log(`🔀 Iniciando reordenamiento de cola para el usuario ${userId} desde la posición ${startPosition}.`);
-  console.log(`   - Nueva tarea ID (para exclusión): ${newTaskId}, Deadline de la nueva tarea: ${newDeadline.toISOString()}`);
+export async function shiftUserTasks(userId: string, newTaskId: string, newDeadline: Date, startPosition?: number) {
+  console.log(`🔀 Reorganizando tareas por fechas para usuario ${userId} después de: ${newDeadline.toISOString()}`);
+  console.log(`   - Nueva tarea ID (para exclusión): ${newTaskId}`);
 
+  // ✅ OBTENER TAREAS ORDENADAS POR FECHA, NO POR queuePosition
   const tasksToShift = await prisma.task.findMany({
     where: {
       id: { not: newTaskId },
       status: { in: [Status.TO_DO, Status.IN_PROGRESS, Status.ON_APPROVAL] },
       assignees: {
         some: { userId: userId }
+      },
+      // ✅ Solo mover tareas que empiecen después del deadline de la nueva tarea
+      startDate: { 
+        gte: newDeadline 
       }
     },
-    orderBy: { deadline: 'asc' },
+    orderBy: { startDate: 'asc' }, // ✅ ORDENAR POR FECHA, NO POR queuePosition
     include: { 
       category: {
         include: {
-          tierList: true // ✅ INCLUIR tierList para acceder a duration
+          tierList: true
         }
       }
     }
   });
 
-  const filteredTasksToShift = tasksToShift.filter(t => t.queuePosition >= startPosition);
-  console.log(`   - Tareas existentes para el usuario ${userId} (filtradas por posición >= ${startPosition}): ${filteredTasksToShift.length}`);
-  filteredTasksToShift.forEach(t => console.log(`     - ID: ${t.id}, Nombre: "${t.name}", Posición Original: ${t.queuePosition}, StartDate: ${t.startDate.toISOString()}, Deadline: ${t.deadline.toISOString()}`));
-
-  if (filteredTasksToShift.length === 0) {
-    console.log("💨 No hay tareas para desplazar. Fin del reordenamiento.");
+  console.log(`   - Tareas que necesitan ser movidas: ${tasksToShift.length}`);
+  
+  if (tasksToShift.length === 0) {
+    console.log("💨 No hay tareas para reorganizar. Fin del reordenamiento.");
     return;
   }
 
+  // ✅ RECALCULAR FECHAS DE MANERA SECUENCIAL
   let lastDeadline = await getNextAvailableStart(newDeadline);
-  console.log(`   - La primera tarea desplazada comenzará después de: ${lastDeadline.toISOString()}`);
+  console.log(`   - Primera tarea reorganizada empezará desde: ${lastDeadline.toISOString()}`);
 
-  for (let i = 0; i < filteredTasksToShift.length; i++) {
-    const task = filteredTasksToShift[i];
-    const newPosition = startPosition + i + 1;
+  for (let i = 0; i < tasksToShift.length; i++) {
+    const task = tasksToShift[i];
 
-    console.log(`  -> Desplazando tarea "${task.name}" (ID: ${task.id}) a la posición ${newPosition}.`);
+    console.log(`  -> Reorganizando tarea "${task.name}" (ID: ${task.id})`);
 
-    // ✅ CORREGIDO: Usar la nueva estructura tierList.duration
     const effectiveDurationDays = (task as any).customDuration ?? task.category.tierList.duration;
     const taskHours = effectiveDurationDays * 8;
     const newStartDate = await getNextAvailableStart(lastDeadline);
     const newDeadlineForTask = await calculateWorkingDeadline(newStartDate, taskHours);
 
-    // Update the task in the local database
+    console.log(`     - Anterior: Start=${task.startDate.toISOString()}, Deadline=${task.deadline.toISOString()}`);
+    console.log(`     - Nuevo:    Start=${newStartDate.toISOString()}, Deadline=${newDeadlineForTask.toISOString()}`);
+
+    // ✅ ACTUALIZAR SOLO FECHAS, SIN queuePosition
     const updatedPrismaTask = await prisma.task.update({
       where: { id: task.id },
       data: {
         startDate: newStartDate,
-        deadline: newDeadlineForTask
+        deadline: newDeadlineForTask,
+        // ✅ NO actualizar queuePosition
       },
       include: {
         category: {
           include: {
             type: true,
-            tierList: true // ✅ INCLUIR tierList
+            tierList: true
           }
         },
         type: true,
@@ -197,26 +203,18 @@ export async function shiftUserTasks(userId: string, newTaskId: string, newDeadl
       }
     });
 
-    // Call updateTaskInClickUp to synchronize changes with ClickUp
-    // try {
-    //   await updateTaskInClickUp(updatedPrismaTask.id, updatedPrismaTask as unknown as Task);
-    //   console.log(`✅ Tarea ClickUp actualizada para el desplazamiento: ${updatedPrismaTask.name} (ID: ${updatedPrismaTask.id})`);
-    // } catch (clickUpUpdateError) {
-    //   console.error(`❌ Error al actualizar tarea ${updatedPrismaTask.id} en ClickUp durante el desplazamiento:`, clickUpUpdateError);
-    // }
-
-    // Emit Socket.IO event to update clients in real-time
+    // Emitir evento Socket.IO
     try {
       await emitTaskUpdateEvent(updatedPrismaTask);
-      console.log(`✅ Evento task_update emitido para tarea desplazada: ${updatedPrismaTask.id}`);
+      console.log(`✅ Evento task_update emitido para tarea reorganizada: ${updatedPrismaTask.id}`);
     } catch (socketEmitError) {
-      console.error(`⚠️ Error al emitir evento de socket para tarea desplazada ${updatedPrismaTask.id}:`, socketEmitError);
+      console.error(`⚠️ Error al emitir evento de socket para tarea reorganizada ${updatedPrismaTask.id}:`, socketEmitError);
     }
 
     lastDeadline = newDeadlineForTask;
   }
 
-  console.log(`✅ Reordenamiento de cola para el usuario ${userId} completado.`);
+  console.log(`✅ Reorganización por fechas para usuario ${userId} completada.`);
 }
 
 /**
@@ -228,7 +226,7 @@ export async function getTaskHours(taskId: string): Promise<number> {
     include: {
       category: {
         include: {
-          tierList: true // ✅ INCLUIR tierList para acceder a duration
+          tierList: true
         }
       },
       type: true,
@@ -243,7 +241,6 @@ export async function getTaskHours(taskId: string): Promise<number> {
   if (!task) throw new Error('Tarea no encontrada');
   if (!task.assignees.length) throw new Error('Tarea sin asignaciones');
 
-  // ✅ CORREGIDO: Usar tierList.duration en lugar de category.duration
   return task.customDuration !== null 
     ? task.customDuration * 8 
     : task.category.tierList.duration * 8;

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-// src/app/api/tasks/route.ts
+// src/app/api/tasks/route.ts - SIN queuePosition
 import { NextResponse } from 'next/server'
 import { prisma } from '@/utils/prisma'
 import axios from 'axios'
@@ -42,12 +42,12 @@ export async function GET(req: Request) {
       where,
       skip,
       take: limit,
-      orderBy: { startDate: 'asc' },
+      orderBy: { startDate: 'asc' }, // ✅ ORDENAR POR FECHA, NO POR queuePosition
       include: {
         category: {
           include: {
             type: true,
-            tierList: true // IMPORTANTE: Incluir tierList
+            tierList: true
           }
         },
         type: true,
@@ -83,6 +83,7 @@ export async function GET(req: Request) {
         points: task.points,
         tags: task.tags,
         url: task.url,
+        // ✅ NO incluir queuePosition
         lastSyncAt: task.lastSyncAt?.toISOString(),
         syncStatus: task.syncStatus,
         syncError: task.syncError,
@@ -91,8 +92,8 @@ export async function GET(req: Request) {
         category: {
           id: task.category.id,
           name: task.category.name,
-          duration: task.category.tierList.duration, // Acceder a través de tierList
-          tier: task.category.tierList.name, // El nombre del tier
+          duration: task.category.tierList.duration,
+          tier: task.category.tierList.name,
           type: {
             id: task.category.type.id,
             name: task.category.type.name
@@ -160,7 +161,7 @@ export async function POST(req: Request) {
       }, { status: 400 })
     }
 
-    console.log(`🚀 === CREANDO TAREA "${name}" CON LÓGICA DE VACACIONES ===`)
+    console.log(`🚀 === CREANDO TAREA "${name}" SIN queuePosition ===`)
     console.log(`📋 Parámetros:`)
     console.log(`   - Priority: ${priority}`)
     console.log(`   - Duration: ${durationDays} días`)
@@ -174,7 +175,7 @@ export async function POST(req: Request) {
         where: { id: categoryId },
         include: { 
           type: true,
-          tierList: true // IMPORTANTE: Incluir tierList
+          tierList: true
         }
       }),
       prisma.brand.findUnique({
@@ -245,7 +246,7 @@ export async function POST(req: Request) {
       userSlotsForProcessing = await calculateUserSlots(validUsers, typeId, durationDays)
 
     } else {
-      console.log('🤖 Iniciando asignación automática con lógica de vacaciones...')
+      console.log('🤖 Iniciando asignación automática...')
 
       const bestUser = await getBestUserWithCache(typeId, brandId, priority, durationDays)
 
@@ -279,15 +280,15 @@ export async function POST(req: Request) {
       }
     })
 
+    // ✅ PROCESAR SIN queuePosition
     const taskTiming = await processUserAssignments(usersToAssign, userSlotsForProcessing, priority, durationDays)
 
-    console.log('🎯 === FINAL TASK TIMING BEFORE CLICKUP CREATION ===');
-    console.log(`📅 Calculated start date: ${taskTiming.startDate.toISOString()}`);
-    console.log(`📅 Calculated deadline: ${taskTiming.deadline.toISOString()}`);
-    console.log(`📍 Queue position: ${taskTiming.insertAt}`);
-    console.log(`👥 Assigned users: ${usersToAssign.join(', ')}`);
-    console.log(`⏰ Duration: ${durationDays} days`);
-    console.log(`🔥 Priority: ${priority}`);
+    console.log('🎯 === FECHAS FINALES SIN queuePosition ===');
+    console.log(`📅 Fecha de inicio calculada: ${taskTiming.startDate.toISOString()}`);
+    console.log(`📅 Deadline calculado: ${taskTiming.deadline.toISOString()}`);
+    console.log(`👥 Usuarios asignados: ${usersToAssign.join(', ')}`);
+    console.log(`⏰ Duración: ${durationDays} días`);
+    console.log(`🔥 Prioridad: ${priority}`);
 
     const categoryForClickUp = {
       ...category,
@@ -304,12 +305,14 @@ export async function POST(req: Request) {
       teamId: brand.teamId ?? ''
     }
 
-    console.log('📤 Creando tarea en ClickUp...')
-     const clickupTaskId = `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
+    console.log('📤 Creando tarea local (ClickUp deshabilitado)...')
+    // ✅ Para desarrollo local, crear ID temporal en lugar de llamar ClickUp
+    const clickupTaskId = `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
 
-    console.log(`✅ Tarea creada en ClickUp: ${clickupTaskId}`)
+    console.log(`✅ Tarea local creada: ${clickupTaskId}`)
 
+    // ✅ CREAR TAREA SIN queuePosition
     const task = await prisma.task.create({
       data: {
         id: clickupTaskId,
@@ -321,16 +324,17 @@ const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
         priority,
         startDate: taskTiming.startDate,
         deadline: taskTiming.deadline,
+        // ✅ NO incluir queuePosition
         url: clickupTaskUrl,
         lastSyncAt: new Date(),
         syncStatus: 'SYNCED',
-        customDuration: durationDays !== category.tierList.duration ? durationDays : null // Comparar con tierList.duration
+        customDuration: durationDays !== category.tierList.duration ? durationDays : null
       },
       include: {
         category: {
           include: {
             type: true,
-            tierList: true // Incluir tierList
+            tierList: true
           }
         },
         type: true,
@@ -358,13 +362,14 @@ const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
 
     console.log(`✅ Asignaciones creadas para ${usersToAssign.length} usuarios`)
 
-    console.log('🔄 Iniciando recálculo de fechas de tareas existentes...')
+    // ✅ REORGANIZAR TAREAS EXISTENTES POR FECHAS, SIN queuePosition
+    console.log('🔄 Iniciando reorganización de fechas de tareas existentes...')
     for (const userId of usersToAssign) {
       try {
-        await shiftUserTasks(userId, task.id, taskTiming.deadline, taskTiming.insertAt)
-        console.log(`✅ Fechas recalculadas para usuario ${userId}`)
+        await shiftUserTasks(userId, task.id, taskTiming.deadline)
+        console.log(`✅ Fechas reorganizadas para usuario ${userId}`)
       } catch (shiftError) {
-        console.error(`❌ Error recalculando fechas para usuario ${userId}:`, shiftError)
+        console.error(`❌ Error reorganizando fechas para usuario ${userId}:`, shiftError)
       }
     }
 
@@ -374,7 +379,7 @@ const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
         category: {
           include: {
             type: true,
-            tierList: true // Incluir tierList
+            tierList: true
           }
         },
         type: true,
@@ -393,14 +398,14 @@ const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
       }
     })
 
-    console.log('🔍 DEBUG - Estado DESPUÉS de crear tarea:')
+    console.log('🔍 DEBUG - Estado DESPUÉS de crear tarea SIN queuePosition:')
     for (const userId of usersToAssign) {
       const userTasks = await prisma.task.findMany({
         where: {
           assignees: { some: { userId } },
           status: { notIn: ['COMPLETE'] }
         },
-        orderBy: { deadline: 'asc' },
+        orderBy: { startDate: 'asc' }, // ✅ ORDENAR POR FECHA
         include: { 
           category: {
             include: {
@@ -408,6 +413,11 @@ const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
             }
           }
         }
+      })
+
+      console.log(`  👤 Usuario ${userId} ahora tiene ${userTasks.length} tareas:`)
+      userTasks.forEach((t, i) => {
+        console.log(`    ${i + 1}. "${t.name}": ${t.startDate.toISOString()} → ${t.deadline.toISOString()}`)
       })
     }
 
@@ -424,7 +434,7 @@ const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
     invalidateAllCache()
     console.log('🗑️ Cache invalidado después de crear tarea')
 
-    console.log(`🎉 === TAREA "${name}" CREADA EXITOSAMENTE ===`)
+    console.log(`🎉 === TAREA "${name}" CREADA SIN queuePosition EXITOSAMENTE ===`)
 
     return NextResponse.json({
       id: taskWithAssignees?.id,
@@ -435,12 +445,13 @@ const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
       startDate: taskWithAssignees?.startDate.toISOString(),
       deadline: taskWithAssignees?.deadline.toISOString(),
       url: taskWithAssignees?.url,
+      // ✅ NO incluir queuePosition
       createdAt: taskWithAssignees?.createdAt.toISOString(),
       category: {
         id: taskWithAssignees?.category.id,
         name: taskWithAssignees?.category.name,
-        duration: taskWithAssignees?.category.tierList.duration, // Desde tierList
-        tier: taskWithAssignees?.category.tierList.name, // Desde tierList
+        duration: taskWithAssignees?.category.tierList.duration,
+        tier: taskWithAssignees?.category.tierList.name,
         type: {
           id: taskWithAssignees?.category.type.id,
           name: taskWithAssignees?.category.type.name

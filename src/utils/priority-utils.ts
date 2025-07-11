@@ -1,126 +1,137 @@
-// utils/priority-utils.ts
+// utils/priority-utils.ts - SIMPLIFICADO SIN queuePosition
 import { Task, Priority } from '@prisma/client';
 
 /**
- * Devuelve la posición en la cola donde debe insertarse una nueva tarea
- * según su prioridad y el estado actual de la cola del usuario.
- * 
- * Reglas de prioridad:
- * - URGENT: Siempre al inicio (posición 0)
- * - HIGH: Al inicio si la primera tarea es tier C, B, A, o S; después de la primera si es tier D o E
- * - NORMAL: Después de otras tareas NORMAL, pero antes de LOW (máximo 5 NORMAL antes de cada LOW)
- * - LOW: Al final, pero permite hasta 4 tareas LOW consecutivas
+ * ✅ SIMPLIFICADO: Determina dónde insertar una tarea basado solo en prioridad y fechas
+ * Ya no necesitamos calcular posiciones de cola específicas, solo ordenamiento por fechas
  */
-export function determineQueueInsertPosition(
-  queue: (Task & { category: { tierList: { name: string } } })[],  // ✅ CORREGIDO
-  priority: Priority
-): number {
-  console.log(`🎯 Determinando posición para prioridad: ${priority}, cola actual: ${queue.length} tareas`);
+export function shouldInsertBefore(
+  newTaskPriority: Priority,
+  existingTaskPriority: Priority,
+  newTaskStartDate: Date,
+  existingTaskStartDate: Date
+): boolean {
+  console.log(`🎯 Comparando prioridades: nueva(${newTaskPriority}) vs existente(${existingTaskPriority})`);
 
-  if (priority === 'URGENT') {
-    console.log(`  -> URGENT: Insertando en posición 0`);
-    return 0;
+  // ✅ LÓGICA SIMPLIFICADA DE PRIORIDADES
+  const priorityValues = {
+    'URGENT': 4,
+    'HIGH': 3,
+    'NORMAL': 2,
+    'LOW': 1
+  };
+
+  const newPriorityValue = priorityValues[newTaskPriority];
+  const existingPriorityValue = priorityValues[existingTaskPriority];
+
+  // Si la nueva tarea tiene mayor prioridad, va antes
+  if (newPriorityValue > existingPriorityValue) {
+    console.log(`  -> Nueva tarea tiene mayor prioridad, insertando antes`);
+    return true;
   }
 
-  if (priority === 'HIGH') {
-    if (queue.length === 0) {
-      console.log(`  -> HIGH: Cola vacía, insertando en posición 0`);
-      return 0;
-    }
-
-    const firstTask = queue[0];
-    const firstTaskTier = firstTask.category?.tierList?.name; // ✅ CORREGIDO
-    
-    console.log(`  -> HIGH: Primera tarea tiene tier "${firstTaskTier}"`);
-
-    if (firstTaskTier && ['C', 'B', 'A', 'S'].includes(firstTaskTier)) {
-      console.log(`  -> HIGH: Tier alto detectado, insertando en posición 0`);
-      return 0;
-    }
-    
-    if (firstTaskTier && ['D', 'E'].includes(firstTaskTier)) {
-      console.log(`  -> HIGH: Tier bajo detectado, insertando en posición 1`);
-      return 1;
-    }
-
-    console.log(`  -> HIGH: Fallback, insertando en posición 0`);
-    return 0;
+  // Si tienen la misma prioridad, ordenar por fecha
+  if (newPriorityValue === existingPriorityValue) {
+    const shouldInsert = newTaskStartDate < existingTaskStartDate;
+    console.log(`  -> Misma prioridad, ordenando por fecha: ${shouldInsert ? 'antes' : 'después'}`);
+    return shouldInsert;
   }
 
-  // LOW: Insertar al final, pero con límite de tareas LOW consecutivas
-  if (priority === 'LOW') {
-    // Contar tareas LOW consecutivas al final
-    let consecutiveLowCount = 0;
-    for (let i = queue.length - 1; i >= 0; i--) {
-      if (queue[i].priority === 'LOW') {
-        consecutiveLowCount++;
-      } else {
-        break;
-      }
-    }
-
-    console.log(`  -> LOW: ${consecutiveLowCount} tareas LOW consecutivas al final`);
-
-    // Si hay menos de 4 tareas LOW consecutivas, insertar al final
-    if (consecutiveLowCount < 4) {
-      console.log(`  -> LOW: Insertando al final en posición ${queue.length}`);
-      return queue.length;
-    }
-
-    // Si ya hay 4 o más, insertar antes del grupo de LOW
-    const insertPosition = queue.length - consecutiveLowCount;
-    console.log(`  -> LOW: Límite alcanzado, insertando en posición ${insertPosition}`);
-    return insertPosition;
-  }
-
-  // NORMAL: Lógica más compleja
-  if (priority === 'NORMAL') {
-    let potentialInsertIndex = queue.length; // Por defecto al final
-
-    for (let i = 0; i < queue.length; i++) {
-      const currentTask = queue[i];
-
-      if (currentTask.priority === 'LOW') {
-        // Contar cuántas tareas NORMAL hay antes de esta LOW
-        let normalTasksBeforeThisLow = 0;
-        for (let j = 0; j < i; j++) {
-          if (queue[j].priority === 'NORMAL') {
-            normalTasksBeforeThisLow++;
-          }
-        }
-
-        console.log(`  -> NORMAL: Encontrada LOW en posición ${i}, ${normalTasksBeforeThisLow} NORMAL antes`);
-
-        // Si hay menos de 5 tareas NORMAL antes de esta LOW, insertar aquí
-        if (normalTasksBeforeThisLow < 5) {
-          potentialInsertIndex = i;
-          break;
-        }
-        
-        // Si ya hay 5 o más, continuar después de esta LOW
-        potentialInsertIndex = i + 1;
-      } else if (currentTask.priority === 'NORMAL') {
-        // Para mantener el orden, insertar después de otras tareas NORMAL
-        potentialInsertIndex = i + 1;
-      }
-      // Para HIGH y URGENT, no cambiar la posición (mantenemos potentialInsertIndex)
-    }
-
-    console.log(`  -> NORMAL: Insertando en posición ${potentialInsertIndex}`);
-    return potentialInsertIndex;
-  }
-
-  // Fallback: insertar al final
-  console.log(`  -> Fallback: Insertando al final en posición ${queue.length}`);
-  return queue.length;
+  // Si la nueva tarea tiene menor prioridad, va después
+  console.log(`  -> Nueva tarea tiene menor prioridad, insertando después`);
+  return false;
 }
 
 /**
- * Función auxiliar para depurar la cola de tareas
+ * ✅ FUNCIÓN SIMPLIFICADA: Ordenar tareas por prioridad y fecha
  */
-export function debugQueue(queue: (Task & { category: { tierList: { name: string } } })[]): void { // ✅ CORREGIDO
-  console.log('📋 Estado actual de la cola:');
-  queue.forEach((task, index) => {
-    console.log(`  ${index}: "${task.name}" - ${task.priority} (Tier: ${task.category.tierList.name})`); // ✅ CORREGIDO
+export function sortTasksByPriorityAndDate(
+  tasks: (Task & { category: { tierList: { name: string } } })[]
+): (Task & { category: { tierList: { name: string } } })[] {
+  console.log(`📋 Ordenando ${tasks.length} tareas por prioridad y fecha`);
+
+  const priorityValues = {
+    'URGENT': 4,
+    'HIGH': 3,
+    'NORMAL': 2,
+    'LOW': 1
+  };
+
+  return tasks.sort((a, b) => {
+    const aPriorityValue = priorityValues[a.priority];
+    const bPriorityValue = priorityValues[b.priority];
+
+    // Primero ordenar por prioridad (mayor a menor)
+    if (aPriorityValue !== bPriorityValue) {
+      return bPriorityValue - aPriorityValue;
+    }
+
+    // Si tienen la misma prioridad, ordenar por fecha de inicio (menor a mayor)
+    return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
   });
+}
+
+/**
+ * ✅ FUNCIÓN SIMPLIFICADA: Debug de tareas ordenadas
+ */
+export function debugTaskOrder(tasks: (Task & { category: { tierList: { name: string } } })[]): void {
+  console.log('📋 Orden actual de tareas:');
+  tasks.forEach((task, index) => {
+    const startDate = new Date(task.startDate).toISOString().split('T')[0];
+    const deadline = new Date(task.deadline).toISOString().split('T')[0];
+    
+    console.log(`  ${index + 1}. "${task.name}"`);
+    console.log(`     - Prioridad: ${task.priority}`);
+    console.log(`     - Fechas: ${startDate} → ${deadline}`);
+    console.log(`     - Tier: ${task.category.tierList.name}`);
+  });
+}
+
+/**
+ * ✅ FUNCIÓN DE UTILIDAD: Obtener siguiente fecha disponible para prioridad
+ */
+export function getInsertionDateForPriority(
+  priority: Priority,
+  userTasks: (Task & { category: { tierList: { name: string } } })[],
+  earliestPossibleDate: Date
+): Date {
+  console.log(`🎯 Calculando fecha de inserción para prioridad ${priority}`);
+
+  // Para tareas URGENT, usar la fecha más temprana posible
+  if (priority === 'URGENT') {
+    console.log(`  -> URGENT: usando fecha más temprana: ${earliestPossibleDate.toISOString()}`);
+    return earliestPossibleDate;
+  }
+
+  // Para otras prioridades, encontrar el lugar apropiado en la secuencia
+  const sortedTasks = sortTasksByPriorityAndDate(userTasks);
+  
+  for (let i = 0; i < sortedTasks.length; i++) {
+    const currentTask = sortedTasks[i];
+    const shouldInsert = shouldInsertBefore(
+      priority,
+      currentTask.priority,
+      earliestPossibleDate,
+      new Date(currentTask.startDate)
+    );
+
+    if (shouldInsert) {
+      // Insertar antes de esta tarea
+      const insertDate = new Date(currentTask.startDate);
+      console.log(`  -> Insertando antes de "${currentTask.name}" en: ${insertDate.toISOString()}`);
+      return insertDate;
+    }
+  }
+
+  // Si no encontramos lugar antes de ninguna tarea, insertar al final
+  if (sortedTasks.length > 0) {
+    const lastTask = sortedTasks[sortedTasks.length - 1];
+    const afterLastTask = new Date(lastTask.deadline);
+    console.log(`  -> Insertando después de la última tarea: ${afterLastTask.toISOString()}`);
+    return afterLastTask;
+  }
+
+  // Si no hay tareas, usar la fecha más temprana
+  console.log(`  -> No hay tareas, usando fecha más temprana: ${earliestPossibleDate.toISOString()}`);
+  return earliestPossibleDate;
 }

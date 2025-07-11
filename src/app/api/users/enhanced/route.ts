@@ -130,7 +130,7 @@ export async function GET(req: Request) {
           assignees: { some: { userId: user.id } },
           status: { notIn: ['COMPLETE'] }
         },
-        orderBy: { queuePosition: 'asc' },
+        orderBy: { startDate: 'asc' },
         include: {
           category: {
             include: {
