@@ -295,7 +295,7 @@ export async function POST(req: Request) {
       type: {
         ...category.type,
         categories: []
-      },
+      },  
       duration: category.tierList.duration,
       tier: category.tierList.name
     }

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Task } from '@/interfaces';
 import { emitTaskUpdateEvent, updateTaskInClickUp } from '@/services/clickup.service';
@@ -201,12 +202,12 @@ export async function shiftUserTasks(userId: string, newTaskId: string, newDeadl
     });
 
     // Call updateTaskInClickUp to synchronize changes with ClickUp
-    try {
-      await updateTaskInClickUp(updatedPrismaTask.id, updatedPrismaTask as unknown as Task);
-      console.log(`✅ Tarea ClickUp actualizada para el desplazamiento: ${updatedPrismaTask.name} (ID: ${updatedPrismaTask.id})`);
-    } catch (clickUpUpdateError) {
-      console.error(`❌ Error al actualizar tarea ${updatedPrismaTask.id} en ClickUp durante el desplazamiento:`, clickUpUpdateError);
-    }
+    // try {
+    //   await updateTaskInClickUp(updatedPrismaTask.id, updatedPrismaTask as unknown as Task);
+    //   console.log(`✅ Tarea ClickUp actualizada para el desplazamiento: ${updatedPrismaTask.name} (ID: ${updatedPrismaTask.id})`);
+    // } catch (clickUpUpdateError) {
+    //   console.error(`❌ Error al actualizar tarea ${updatedPrismaTask.id} en ClickUp durante el desplazamiento:`, clickUpUpdateError);
+    // }
 
     // Emit Socket.IO event to update clients in real-time
     try {
