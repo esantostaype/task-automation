@@ -4,9 +4,9 @@
 /* eslint-disable prefer-const */
 import { prisma } from '@/utils/prisma';
 import { Priority, Status } from '@prisma/client';
-import { UserSlot, UserWithRoles, Task, QueueCalculationResult, TaskTimingResult, UserVacation, VacationAwareUserSlot } from '@/interfaces';
+import { UserSlot, UserWithRoles, Task, TaskTimingResult, UserVacation, VacationAwareUserSlot } from '@/interfaces';
 import { getNextAvailableStart, calculateWorkingDeadline } from '@/utils/task-calculation-utils';
-import { TASK_ASSIGNMENT_THRESHOLDS, CACHE_KEYS, WORK_HOURS } from '@/config';
+import { TASK_ASSIGNMENT_THRESHOLDS, CACHE_KEYS } from '@/config';
 import { getFromCache, setInCache } from '@/utils/cache';
 import usHolidays from '@/data/usHolidays.json'
 

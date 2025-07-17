@@ -1,138 +1,188 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-// src/app/api/tasks/route.ts - SIN queuePosition
+// src/app/api/tasks/route.ts - CORREGIDO CON LÓGICA DE VACACIONES
+
 import { NextResponse } from 'next/server'
 import { prisma } from '@/utils/prisma'
 import axios from 'axios'
 import { Status, Priority } from '@prisma/client'
 import {
   calculateUserSlots,
-  processUserAssignments,
   getBestUserWithCache
 } from '@/services/task-assignment.service'
 import { createTaskInClickUp } from '@/services/clickup.service'
-import { TaskCreationParams, UserSlot, UserWithRoles, ClickUpBrand, TaskWhereInput } from '@/interfaces'
-import { shiftUserTasks } from '@/utils/task-calculation-utils'
+import { TaskCreationParams, UserSlot, UserWithRoles, ClickUpBrand, TaskWhereInput, UserVacation } from '@/interfaces'
+import { 
+  calculatePriorityInsertion, 
+  shiftTasksAfterInsertion 
+} from '@/services/priority-insertion.service'
+import { getNextAvailableStart, calculateWorkingDeadline } from '@/utils/task-calculation-utils'
 import { invalidateAllCache } from '@/utils/cache'
 import { API_CONFIG } from '@/config'
 
 const CLICKUP_TOKEN = process.env.CLICKUP_API_TOKEN
 
-export async function GET(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url)
+// ✅ NUEVA FUNCIÓN: Calcular fecha de inicio considerando vacaciones
+async function getNextAvailableStartAfterVacations(
+  baseDate: Date,
+  vacations: UserVacation[],
+  taskDurationDays: number = 0
+): Promise<Date> {
+  let availableDate = await getNextAvailableStart(baseDate);
 
-    const brandId = searchParams.get('brandId')
-    const status = searchParams.get('status')
-    const priority = searchParams.get('priority')
+  const sortedVacations = vacations.sort((a, b) =>
+    new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
+  );
 
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '10')
-    const skip = (page - 1) * limit
+  let adjusted = true;
+  const maxIterations = 10;
+  let iterations = 0;
 
-    const where: TaskWhereInput = {}
-    if (brandId) where.brandId = brandId
-    if (status && Object.values(Status).includes(status as Status)) {
-      where.status = status as Status
-    }
-    if (priority && Object.values(Priority).includes(priority as Priority)) {
-      where.priority = priority as Priority
-    }
+  console.log(`🏖️ Verificando ${sortedVacations.length} vacaciones para fecha base: ${baseDate.toISOString()}`);
 
-    const tasks = await prisma.task.findMany({
-      where,
-      skip,
-      take: limit,
-      orderBy: { startDate: 'asc' }, // ✅ ORDENAR POR FECHA, NO POR queuePosition
-      include: {
-        category: {
-          include: {
-            type: true,
-            tierList: true
-          }
-        },
-        type: true,
-        brand: true,
-        assignees: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true
-              }
-            }
-          }
-        }
+  while (adjusted && iterations < maxIterations) {
+    adjusted = false;
+    iterations++;
+
+    const taskHours = taskDurationDays * 8;
+    const potentialTaskEnd = taskDurationDays > 0
+      ? await calculateWorkingDeadline(availableDate, taskHours)
+      : availableDate;
+
+    console.log(`   🔍 Iteración ${iterations}: Verificando ${availableDate.toISOString()} → ${potentialTaskEnd.toISOString()}`);
+
+    for (const vacation of sortedVacations) {
+      const vacStart = new Date(vacation.startDate);
+      const vacEnd = new Date(vacation.endDate);
+
+      const hasConflict = availableDate <= vacEnd && potentialTaskEnd >= vacStart;
+
+      if (hasConflict) {
+        console.log(`   ❌ CONFLICTO DETECTADO:`);
+        console.log(`      Tarea: ${availableDate.toISOString()} → ${potentialTaskEnd.toISOString()}`);
+        console.log(`      Vacación: ${vacStart.toISOString()} → ${vacEnd.toISOString()}`);
+        
+        const dayAfterVacation = new Date(vacEnd);
+        dayAfterVacation.setUTCDate(dayAfterVacation.getUTCDate() + 1);
+        const newAvailableDate = await getNextAvailableStart(dayAfterVacation);
+
+        console.log(`   🔄 Moviendo tarea a: ${newAvailableDate.toISOString()}`);
+        
+        availableDate = newAvailableDate;
+        adjusted = true;
+        break;
       }
-    })
-
-    const totalTasks = await prisma.task.count({ where })
-
-    console.log(`📋 Tareas obtenidas: ${tasks.length} de ${totalTasks} total`)
-
-    return NextResponse.json({
-      data: tasks.map(task => ({
-        id: task.id,
-        name: task.name,
-        description: task.description,
-        status: task.status,
-        priority: task.priority,
-        startDate: task.startDate.toISOString(),
-        deadline: task.deadline.toISOString(),
-        timeEstimate: task.timeEstimate,
-        points: task.points,
-        tags: task.tags,
-        url: task.url,
-        // ✅ NO incluir queuePosition
-        lastSyncAt: task.lastSyncAt?.toISOString(),
-        syncStatus: task.syncStatus,
-        syncError: task.syncError,
-        createdAt: task.createdAt.toISOString(),
-        updatedAt: task.updatedAt.toISOString(),
-        category: {
-          id: task.category.id,
-          name: task.category.name,
-          duration: task.category.tierList.duration,
-          tier: task.category.tierList.name,
-          type: {
-            id: task.category.type.id,
-            name: task.category.type.name
-          }
-        },
-        type: {
-          id: task.type.id,
-          name: task.type.name
-        },
-        brand: {
-          id: task.brand.id,
-          name: task.brand.name,
-          description: task.brand.description
-        },
-        assignees: task.assignees.map(assignment => ({
-          userId: assignment.userId,
-          user: {
-            id: assignment.user.id,
-            name: assignment.user.name,
-            email: assignment.user.email
-          }
-        }))
-      })),
-      pagination: {
-        total: totalTasks,
-        page,
-        limit,
-        totalPages: Math.ceil(totalTasks / limit),
-        hasNextPage: page < Math.ceil(totalTasks / limit),
-        hasPrevPage: page > 1
-      }
-    })
-  } catch (error) {
-    console.error('❌ Error fetching tasks:', error)
-    return NextResponse.json({
-      error: 'Error interno del servidor',
-      details: error instanceof Error ? error.message : 'Error desconocido'
-    }, { status: 500 })
+    }
   }
+
+  console.log(`   ✅ Fecha final después de vacaciones: ${availableDate.toISOString()}`);
+  return availableDate;
+}
+
+// ✅ NUEVA FUNCIÓN: Calcular timing con vacaciones para prioridades
+async function calculatePriorityInsertionWithVacations(
+  userId: string,
+  priority: Priority,
+  durationDays: number
+): Promise<{
+  startDate: Date;
+  deadline: Date;
+  affectedTasks: any[];
+  insertionReason: string;
+  vacationAdjustment?: {
+    originalDate: Date;
+    adjustedDate: Date;
+    conflictingVacations: string[];
+  };
+}> {
+  console.log(`\n🏖️ === CALCULANDO INSERCIÓN CON VACACIONES ===`);
+  console.log(`👤 Usuario: ${userId}, Prioridad: ${priority}, Duración: ${durationDays} días`);
+
+  // 1. Obtener vacaciones del usuario
+  const userWithVacations = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      vacations: {
+        where: { endDate: { gte: new Date() } }
+      }
+    }
+  });
+
+  const upcomingVacations: UserVacation[] = userWithVacations?.vacations?.map(v => ({
+    id: v.id,
+    userId: v.userId,
+    startDate: new Date(v.startDate),
+    endDate: new Date(v.endDate)
+  })) || [];
+
+  console.log(`🏖️ Vacaciones próximas: ${upcomingVacations.length}`);
+  upcomingVacations.forEach(vacation => {
+    const days = Math.ceil((vacation.endDate.getTime() - vacation.startDate.getTime()) / (1000 * 60 * 60 * 24));
+    console.log(`   📅 ${vacation.startDate.toISOString().split('T')[0]} → ${vacation.endDate.toISOString().split('T')[0]} (${days} días)`);
+  });
+
+  // 2. Calcular inserción básica según prioridad (sin vacaciones)
+  const basicInsertion = await calculatePriorityInsertion(userId, priority, durationDays);
+
+  console.log(`📋 Inserción básica calculada:`);
+  console.log(`   Start: ${basicInsertion.startDate.toISOString()}`);
+  console.log(`   End: ${basicInsertion.deadline.toISOString()}`);
+  console.log(`   Razón: ${basicInsertion.insertionReason}`);
+
+  // 3. Verificar si hay conflictos con vacaciones
+  if (upcomingVacations.length === 0) {
+    console.log(`✅ Sin vacaciones, usando fechas básicas`);
+    return basicInsertion;
+  }
+
+  // 4. Ajustar fecha de inicio considerando vacaciones
+  const originalStartDate = basicInsertion.startDate;
+  const adjustedStartDate = await getNextAvailableStartAfterVacations(
+    originalStartDate,
+    upcomingVacations,
+    durationDays
+  );
+
+  // 5. Recalcular deadline con la nueva fecha de inicio
+  const taskHours = durationDays * 8;
+  const adjustedDeadline = await calculateWorkingDeadline(adjustedStartDate, taskHours);
+
+  // 6. Determinar si hubo ajuste por vacaciones
+  const wasAdjusted = adjustedStartDate.getTime() !== originalStartDate.getTime();
+  
+  let vacationAdjustment;
+  if (wasAdjusted) {
+    const conflictingVacations = upcomingVacations
+      .filter(vacation => {
+        const vacStart = new Date(vacation.startDate);
+        const vacEnd = new Date(vacation.endDate);
+        return originalStartDate <= vacEnd && basicInsertion.deadline >= vacStart;
+      })
+      .map(vacation => 
+        `${vacation.startDate.toISOString().split('T')[0]} → ${vacation.endDate.toISOString().split('T')[0]}`
+      );
+
+    vacationAdjustment = {
+      originalDate: originalStartDate,
+      adjustedDate: adjustedStartDate,
+      conflictingVacations
+    };
+
+    console.log(`🏖️ === AJUSTE POR VACACIONES ===`);
+    console.log(`📅 Fecha original: ${originalStartDate.toISOString()}`);
+    console.log(`📅 Fecha ajustada: ${adjustedStartDate.toISOString()}`);
+    console.log(`🏖️ Vacaciones en conflicto: ${conflictingVacations.join(', ')}`);
+  }
+
+  return {
+    startDate: adjustedStartDate,
+    deadline: adjustedDeadline,
+    affectedTasks: basicInsertion.affectedTasks,
+    insertionReason: wasAdjusted 
+      ? `${basicInsertion.insertionReason} (ajustado por vacaciones)`
+      : basicInsertion.insertionReason,
+    vacationAdjustment
+  };
 }
 
 export async function POST(req: Request) {
@@ -161,7 +211,7 @@ export async function POST(req: Request) {
       }, { status: 400 })
     }
 
-    console.log(`🚀 === CREANDO TAREA "${name}" SIN queuePosition ===`)
+    console.log(`🚀 === CREANDO TAREA "${name}" CON VACACIONES ===`)
     console.log(`📋 Parámetros:`)
     console.log(`   - Priority: ${priority}`)
     console.log(`   - Duration: ${durationDays} días`)
@@ -195,12 +245,12 @@ export async function POST(req: Request) {
     console.log(`✅ Brand: ${brand.name}`)
 
     let usersToAssign: string[] = []
-    let userSlotsForProcessing: UserSlot[] = []
 
     if (assignedUserIds && assignedUserIds.length > 0) {
       usersToAssign = assignedUserIds
       console.log('👤 Asignación manual de usuarios:', usersToAssign)
 
+      // Validar usuarios
       const specificUsersPromises = usersToAssign.map(userId =>
         prisma.user.findUnique({
           where: { id: userId },
@@ -233,17 +283,8 @@ export async function POST(req: Request) {
         }, { status: 400 })
       }
 
-      if (validUsers.length !== usersToAssign.length) {
-        const invalidUsers = usersToAssign.filter(id =>
-          !validUsers.some(user => user.id === id)
-        )
-        console.warn(`⚠️ Usuarios no válidos ignorados: ${invalidUsers.join(', ')}`)
-      }
-
       usersToAssign = validUsers.map(user => user.id)
       console.log(`✅ Usuarios válidos para asignación manual: ${usersToAssign.length}`)
-
-      userSlotsForProcessing = await calculateUserSlots(validUsers, typeId, durationDays)
 
     } else {
       console.log('🤖 Iniciando asignación automática...')
@@ -258,7 +299,6 @@ export async function POST(req: Request) {
       }
 
       usersToAssign = [bestUser.userId]
-      userSlotsForProcessing = [bestUser]
       console.log('✅ Usuario seleccionado automáticamente:', {
         name: bestUser.userName,
         carga: bestUser.cargaTotal,
@@ -267,35 +307,65 @@ export async function POST(req: Request) {
       })
     }
 
-    console.log('🔍 DEBUG - Estados de usuarios ANTES de asignar:')
-    userSlotsForProcessing.forEach(slot => {
-      if (usersToAssign.includes(slot.userId)) {
-        console.log(`  👤 ${slot.userName}:`)
-        console.log(`     - Carga actual: ${slot.cargaTotal} tareas`)
-        console.log(`     - Disponible desde: ${slot.availableDate.toISOString()}`)
-        console.log(`     - Es especialista: ${slot.isSpecialist}`)
-        if (slot.tasks.length > 0) {
-          console.log(`     - Última tarea termina: ${slot.tasks[slot.tasks.length - 1].deadline}`)
-        }
+    // ✅ NUEVA LÓGICA: Calcular fechas CON VACACIONES para cada usuario
+    console.log(`\n🏖️ === APLICANDO PRIORIDADES Y VACACIONES ===`)
+    
+    const insertionResults = []
+    
+    for (const userId of usersToAssign) {
+      console.log(`\n👤 Calculando para usuario: ${userId}`)
+      
+      const userDuration = durationDays / usersToAssign.length
+      
+      // ✅ USAR FUNCIÓN CON VACACIONES
+      const insertionResult = await calculatePriorityInsertionWithVacations(
+        userId, 
+        priority, 
+        userDuration
+      )
+      
+      insertionResults.push({
+        userId,
+        ...insertionResult
+      })
+      
+      console.log(`✅ Resultado para ${userId}:`)
+      console.log(`   - Start: ${insertionResult.startDate.toISOString()}`)
+      console.log(`   - Deadline: ${insertionResult.deadline.toISOString()}`)
+      console.log(`   - Razón: ${insertionResult.insertionReason}`)
+      if (insertionResult.vacationAdjustment) {
+        console.log(`   - 🏖️ Ajustado por vacaciones: ${insertionResult.vacationAdjustment.conflictingVacations.join(', ')}`)
       }
-    })
+    }
 
-    // ✅ PROCESAR SIN queuePosition
-    const taskTiming = await processUserAssignments(usersToAssign, userSlotsForProcessing, priority, durationDays)
+    // Para múltiples usuarios, usar las fechas más conservadoras
+    const finalInsertion = insertionResults.reduce((latest, current) => 
+      current.startDate > latest.startDate ? current : latest
+    )
 
-    console.log('🎯 === FECHAS FINALES SIN queuePosition ===');
-    console.log(`📅 Fecha de inicio calculada: ${taskTiming.startDate.toISOString()}`);
-    console.log(`📅 Deadline calculado: ${taskTiming.deadline.toISOString()}`);
-    console.log(`👥 Usuarios asignados: ${usersToAssign.join(', ')}`);
-    console.log(`⏰ Duración: ${durationDays} días`);
-    console.log(`🔥 Prioridad: ${priority}`);
+    console.log(`\n🎯 === FECHAS FINALES CON VACACIONES ===`)
+    console.log(`📅 Fecha de inicio: ${finalInsertion.startDate.toISOString()}`)
+    console.log(`📅 Deadline: ${finalInsertion.deadline.toISOString()}`)
+    console.log(`💭 Razón: ${finalInsertion.insertionReason}`)
+    
+    // ✅ MOSTRAR INFORMACIÓN DE AJUSTES POR VACACIONES
+    const vacationAdjustments = insertionResults.filter(r => r.vacationAdjustment)
+    if (vacationAdjustments.length > 0) {
+      console.log(`\n🏖️ === AJUSTES POR VACACIONES ===`)
+      vacationAdjustments.forEach(adj => {
+        console.log(`👤 Usuario: ${adj.userId}`)
+        console.log(`   📅 Original: ${adj.vacationAdjustment!.originalDate.toISOString()}`)
+        console.log(`   📅 Ajustado: ${adj.vacationAdjustment!.adjustedDate.toISOString()}`)
+        console.log(`   🏖️ Vacaciones: ${adj.vacationAdjustment!.conflictingVacations.join(', ')}`)
+      })
+    }
 
     const categoryForClickUp = {
       ...category,
       type: {
         ...category.type,
         categories: []
-      },  
+      },
       duration: category.tierList.duration,
       tier: category.tierList.name
     }
@@ -305,14 +375,15 @@ export async function POST(req: Request) {
       teamId: brand.teamId ?? ''
     }
 
-    console.log('📤 Creando tarea local (ClickUp deshabilitado)...')
-    // ✅ Para desarrollo local, crear ID temporal en lugar de llamar ClickUp
-    const clickupTaskId = `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    const clickupTaskUrl = `https://local-dev.com/task/${clickupTaskId}`
+    console.log('📤 Creando tarea...')
+    
+    // Para desarrollo, usar ID temporal
+    const clickupTaskId = `vacation-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    const clickupTaskUrl = `https://vacation-dev.com/task/${clickupTaskId}`
 
-    console.log(`✅ Tarea local creada: ${clickupTaskId}`)
+    console.log(`✅ Tarea temporal creada: ${clickupTaskId}`)
 
-    // ✅ CREAR TAREA SIN queuePosition
+    // ✅ CREAR TAREA CON FECHAS QUE CONSIDERAN VACACIONES
     const task = await prisma.task.create({
       data: {
         id: clickupTaskId,
@@ -322,9 +393,8 @@ export async function POST(req: Request) {
         categoryId: categoryId,
         brandId: brandId,
         priority,
-        startDate: taskTiming.startDate,
-        deadline: taskTiming.deadline,
-        // ✅ NO incluir queuePosition
+        startDate: finalInsertion.startDate,  // ✅ Fecha ajustada por vacaciones
+        deadline: finalInsertion.deadline,    // ✅ Deadline ajustado por vacaciones
         url: clickupTaskUrl,
         lastSyncAt: new Date(),
         syncStatus: 'SYNCED',
@@ -353,6 +423,7 @@ export async function POST(req: Request) {
       },
     })
 
+    // Crear asignaciones
     await prisma.taskAssignment.createMany({
       data: usersToAssign.map(userId => ({
         userId: userId,
@@ -362,17 +433,18 @@ export async function POST(req: Request) {
 
     console.log(`✅ Asignaciones creadas para ${usersToAssign.length} usuarios`)
 
-    // ✅ REORGANIZAR TAREAS EXISTENTES POR FECHAS, SIN queuePosition
-    console.log('🔄 Iniciando reorganización de fechas de tareas existentes...')
-    for (const userId of usersToAssign) {
-      try {
-        await shiftUserTasks(userId, task.id, taskTiming.deadline)
-        console.log(`✅ Fechas reorganizadas para usuario ${userId}`)
-      } catch (shiftError) {
-        console.error(`❌ Error reorganizando fechas para usuario ${userId}:`, shiftError)
+    // Aplicar recálculo de tareas afectadas
+    console.log('🔄 Aplicando recálculo de tareas afectadas...')
+    
+    for (const result of insertionResults) {
+      if (result.affectedTasks.length > 0) {
+        console.log(`   📊 Recalculando ${result.affectedTasks.length} tareas afectadas para usuario ${result.userId}`)
+        await shiftTasksAfterInsertion(result.affectedTasks, result.deadline)
+        console.log(`   ✅ Recálculo completado para usuario ${result.userId}`)
       }
     }
 
+    // Obtener tarea completa
     const taskWithAssignees = await prisma.task.findUnique({
       where: { id: task.id },
       include: {
@@ -398,29 +470,6 @@ export async function POST(req: Request) {
       }
     })
 
-    console.log('🔍 DEBUG - Estado DESPUÉS de crear tarea SIN queuePosition:')
-    for (const userId of usersToAssign) {
-      const userTasks = await prisma.task.findMany({
-        where: {
-          assignees: { some: { userId } },
-          status: { notIn: ['COMPLETE'] }
-        },
-        orderBy: { startDate: 'asc' }, // ✅ ORDENAR POR FECHA
-        include: { 
-          category: {
-            include: {
-              tierList: true
-            }
-          }
-        }
-      })
-
-      console.log(`  👤 Usuario ${userId} ahora tiene ${userTasks.length} tareas:`)
-      userTasks.forEach((t, i) => {
-        console.log(`    ${i + 1}. "${t.name}": ${t.startDate.toISOString()} → ${t.deadline.toISOString()}`)
-      })
-    }
-
     try {
       await axios.post(API_CONFIG.SOCKET_EMITTER_URL, {
         eventName: 'task_update',
@@ -434,7 +483,7 @@ export async function POST(req: Request) {
     invalidateAllCache()
     console.log('🗑️ Cache invalidado después de crear tarea')
 
-    console.log(`🎉 === TAREA "${name}" CREADA SIN queuePosition EXITOSAMENTE ===`)
+    console.log(`🎉 === TAREA "${name}" CREADA CON VACACIONES EXITOSAMENTE ===`)
 
     return NextResponse.json({
       id: taskWithAssignees?.id,
@@ -445,7 +494,6 @@ export async function POST(req: Request) {
       startDate: taskWithAssignees?.startDate.toISOString(),
       deadline: taskWithAssignees?.deadline.toISOString(),
       url: taskWithAssignees?.url,
-      // ✅ NO incluir queuePosition
       createdAt: taskWithAssignees?.createdAt.toISOString(),
       category: {
         id: taskWithAssignees?.category.id,
@@ -468,18 +516,26 @@ export async function POST(req: Request) {
           name: assignment.user.name,
           email: assignment.user.email
         }
-      })) || []
+      })) || [],
+      vacationInfo: {
+        hadVacationConflicts: vacationAdjustments.length > 0,
+        adjustments: vacationAdjustments.map(adj => ({
+          userId: adj.userId,
+          originalStartDate: adj.vacationAdjustment!.originalDate.toISOString(),
+          adjustedStartDate: adj.vacationAdjustment!.adjustedDate.toISOString(),
+          conflictingVacations: adj.vacationAdjustment!.conflictingVacations
+        }))
+      },
+      priorityDetails: {
+        insertionReason: finalInsertion.insertionReason,
+        affectedTasksCount: finalInsertion.affectedTasks.length,
+        appliedPriorityRules: true,
+        appliedVacationLogic: true
+      }
     })
 
   } catch (error) {
     console.error('❌ Error general al crear tarea:', error)
-
-    if (error instanceof Error && error.message.includes('ClickUp')) {
-      return NextResponse.json({
-        error: 'Error al crear tarea en ClickUp',
-        details: error.message
-      }, { status: 500 })
-    }
 
     return NextResponse.json({
       error: 'Error interno del servidor',
