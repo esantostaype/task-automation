@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-// src/app/api/tasks/route.ts - ACTUALIZADO CON PRIORIDADES EN PARALELO + VACACIONES
+// src/app/api/tasks/parallel/route.ts - ACTUALIZADO CON PRIORIDADES EN PARALELO + VACACIONES + MOVIMIENTO LOW
 
 import { NextResponse } from 'next/server'
 import { prisma } from '@/utils/prisma'
@@ -13,7 +13,7 @@ import {
 import { createTaskInClickUp } from '@/services/clickup.service'
 import { TaskCreationParams, UserSlot, UserWithRoles, ClickUpBrand, TaskWhereInput, UserVacation } from '@/interfaces'
 import { 
-  calculateParallelPriorityInsertion  // ✅ NUEVA FUNCIÓN QUE NO EMPUJA FECHAS
+  calculateParallelPriorityInsertion  // ✅ NUEVA FUNCIÓN QUE NO EMPUJA FECHAS + MUEVE LOW
 } from '@/services/parallel-priority-insertion.service'
 import { getNextAvailableStart, calculateWorkingDeadline } from '@/utils/task-calculation-utils'
 import { invalidateAllCache } from '@/utils/cache'
@@ -94,8 +94,9 @@ async function calculatePriorityInsertionWithVacations(
     adjustedDate: Date;
     conflictingVacations: string[];
   };
+  tasksToMove?: { taskId: string; newStartDate: Date; newDeadline: Date }[]; // ✅ NUEVO: Para NORMAL
 }> {
-  console.log(`\n🏖️ === CALCULANDO INSERCIÓN CON VACACIONES (PRIORIDADES EN PARALELO) ===`);
+  console.log(`\n🏖️ === CALCULANDO INSERCIÓN CON VACACIONES (PRIORIDADES EN PARALELO + LOW MOVEMENT) ===`);
   console.log(`👤 Usuario: ${userId}, Prioridad: ${priority}, Duración: ${durationDays} días`);
 
   // 1. Obtener vacaciones del usuario
@@ -121,24 +122,25 @@ async function calculatePriorityInsertionWithVacations(
     console.log(`   📅 ${vacation.startDate.toISOString().split('T')[0]} → ${vacation.endDate.toISOString().split('T')[0]} (${days} días)`);
   });
 
-  // 2. Calcular inserción básica según prioridad EN PARALELO (sin vacaciones)
+  // 2. Calcular inserción básica según prioridad EN PARALELO (sin vacaciones) + INCLUYE MOVIMIENTO DE LOW
   const basicInsertion = await calculateParallelPriorityInsertion(userId, priority, durationDays);
 
-  console.log(`📋 Inserción básica calculada (EN PARALELO):`);
+  console.log(`📋 Inserción básica calculada (EN PARALELO + LOW MOVEMENT):`);
   console.log(`   Start: ${basicInsertion.startDate.toISOString()}`);
   console.log(`   End: ${basicInsertion.deadline.toISOString()}`);
   console.log(`   Razón: ${basicInsertion.insertionReason}`);
-  console.log(`   Tareas afectadas: NINGUNA (prioridades en paralelo)`);
+  console.log(`   Tareas LOW a mover: ${basicInsertion.tasksToMove?.length || 0}`);
 
   // 3. Verificar si hay conflictos con vacaciones
   if (upcomingVacations.length === 0) {
-    console.log(`✅ Sin vacaciones, usando fechas básicas`);
+    console.log(`✅ Sin vacaciones, usando fechas básicas con movimiento LOW`);
     return {
       startDate: basicInsertion.startDate,
       deadline: basicInsertion.deadline,
       affectedTasks: [], // ✅ SIEMPRE vacío con prioridades en paralelo
       insertionReason: basicInsertion.insertionReason,
-      noTasksAffected: true
+      noTasksAffected: basicInsertion.noTasksAffected,
+      tasksToMove: basicInsertion.tasksToMove // ✅ INCLUIR TAREAS LOW A MOVER
     };
   }
 
@@ -181,6 +183,47 @@ async function calculatePriorityInsertionWithVacations(
     console.log(`🏖️ Vacaciones en conflicto: ${conflictingVacations.join(', ')}`);
   }
 
+  // ✅ RECALCULAR TAREAS LOW A MOVER CON NUEVA FECHA AJUSTADA POR VACACIONES
+  let adjustedTasksToMove = basicInsertion.tasksToMove;
+  if (wasAdjusted && basicInsertion.tasksToMove && basicInsertion.tasksToMove.length > 0) {
+    console.log(`🔄 Recalculando ${basicInsertion.tasksToMove.length} tareas LOW con fecha ajustada por vacaciones`);
+    
+    let currentDate = adjustedDeadline; // Empezar después de la nueva fecha ajustada
+    adjustedTasksToMove = [];
+    
+    for (const originalTaskMove of basicInsertion.tasksToMove) {
+      // Obtener duración de la tarea LOW
+      const lowTask = await prisma.task.findUnique({
+        where: { id: originalTaskMove.taskId },
+        include: {
+          category: {
+            include: {
+              tierList: true
+            }
+          }
+        }
+      });
+      
+      if (lowTask) {
+        const lowDuration = lowTask.customDuration ?? lowTask.category.tierList.duration;
+        const lowHours = lowDuration * 8;
+        
+        const lowStartDate = await getNextAvailableStart(currentDate);
+        const lowDeadline = await calculateWorkingDeadline(lowStartDate, lowHours);
+        
+        adjustedTasksToMove.push({
+          taskId: originalTaskMove.taskId,
+          newStartDate: lowStartDate,
+          newDeadline: lowDeadline
+        });
+        
+        console.log(`     📋 LOW ajustada por vacaciones: ${lowStartDate.toISOString()} → ${lowDeadline.toISOString()}`);
+        
+        currentDate = lowDeadline;
+      }
+    }
+  }
+
   return {
     startDate: adjustedStartDate,
     deadline: adjustedDeadline,
@@ -188,8 +231,9 @@ async function calculatePriorityInsertionWithVacations(
     insertionReason: wasAdjusted 
       ? `${basicInsertion.insertionReason} (ajustado por vacaciones)`
       : basicInsertion.insertionReason,
-    noTasksAffected: true,
-    vacationAdjustment
+    noTasksAffected: basicInsertion.noTasksAffected,
+    vacationAdjustment,
+    tasksToMove: adjustedTasksToMove // ✅ INCLUIR TAREAS LOW AJUSTADAS
   };
 }
 
@@ -219,7 +263,7 @@ export async function POST(req: Request) {
       }, { status: 400 })
     }
 
-    console.log(`🚀 === CREANDO TAREA "${name}" CON PRIORIDADES EN PARALELO + VACACIONES ===`)
+    console.log(`🚀 === CREANDO TAREA "${name}" CON PRIORIDADES EN PARALELO + VACACIONES + LOW MOVEMENT ===`)
     console.log(`📋 Parámetros:`)
     console.log(`   - Priority: ${priority}`)
     console.log(`   - Duration: ${durationDays} días`)
@@ -229,6 +273,7 @@ export async function POST(req: Request) {
     console.log(`   - Users: ${assignedUserIds || 'AUTO-ASSIGNMENT'}`)
     console.log(`   ✅ Nueva lógica: NO empuja fechas de tareas existentes`)
     console.log(`   🏖️ Considera vacaciones automáticamente`)
+    console.log(`   🔄 Mueve tareas LOW del mismo día al final (solo para NORMAL)`)
 
     const [category, brand] = await Promise.all([
       prisma.taskCategory.findUnique({
@@ -317,10 +362,11 @@ export async function POST(req: Request) {
       })
     }
 
-    // ✅ NUEVA LÓGICA: PRIORIDADES EN PARALELO + VACACIONES
-    console.log(`\n🎯 === APLICANDO PRIORIDADES EN PARALELO + VACACIONES ===`)
-    console.log(`✅ Las tareas existentes NO se verán afectadas`)
+    // ✅ NUEVA LÓGICA: PRIORIDADES EN PARALELO + VACACIONES + MOVIMIENTO LOW
+    console.log(`\n🎯 === APLICANDO PRIORIDADES EN PARALELO + VACACIONES + LOW MOVEMENT ===`)
+    console.log(`✅ Las tareas existentes NO se verán afectadas (excepto LOW del mismo día)`)
     console.log(`🏖️ Se considerarán vacaciones automáticamente`)
+    console.log(`📋 Se moverán tareas LOW del mismo día al final si es NORMAL`)
     
     const insertionResults = []
     const tasksToMoveAfterCreation: { taskId: string; newStartDate: Date; newDeadline: Date }[] = []
@@ -330,7 +376,7 @@ export async function POST(req: Request) {
       
       const userDuration = durationDays / usersToAssign.length
       
-      // ✅ USAR FUNCIÓN CON VACACIONES (ADAPTADA PARA PRIORIDADES EN PARALELO)
+      // ✅ USAR FUNCIÓN CON VACACIONES Y MOVIMIENTO DE LOW (ADAPTADA PARA PRIORIDADES EN PARALELO)
       const insertionResult = await calculatePriorityInsertionWithVacations(
         userId, 
         priority, 
@@ -342,11 +388,19 @@ export async function POST(req: Request) {
         ...insertionResult
       })
       
+      // ✅ RECOPILAR TAREAS LOW QUE DEBEN SER MOVIDAS
+      if (insertionResult.tasksToMove && insertionResult.tasksToMove.length > 0) {
+        tasksToMoveAfterCreation.push(...insertionResult.tasksToMove)
+        console.log(`   🔄 ${insertionResult.tasksToMove.length} tareas LOW del día serán movidas`)
+      }
+      
       console.log(`✅ Resultado para ${userId}:`)
       console.log(`   - Start: ${insertionResult.startDate.toISOString()}`)
       console.log(`   - Deadline: ${insertionResult.deadline.toISOString()}`)
       console.log(`   - Razón: ${insertionResult.insertionReason}`)
+      console.log(`   - Tareas LOW a mover: ${insertionResult.tasksToMove?.length || 0}`)
       console.log(`   - Tareas afectadas: NINGUNA (prioridades en paralelo)`)
+      
       if (insertionResult.vacationAdjustment) {
         console.log(`   - 🏖️ Ajustado por vacaciones: ${insertionResult.vacationAdjustment.conflictingVacations.join(', ')}`)
       }
@@ -357,16 +411,16 @@ export async function POST(req: Request) {
       current.startDate > latest.startDate ? current : latest
     )
 
-    console.log(`\n🎯 === FECHAS FINALES (PRIORIDADES EN PARALELO + VACACIONES) ===`)
+    console.log(`\n🎯 === FECHAS FINALES (PRIORIDADES EN PARALELO + VACACIONES + LOW MOVEMENT) ===`)
     console.log(`📅 Fecha de inicio: ${finalInsertion.startDate.toISOString()}`)
     console.log(`📅 Deadline: ${finalInsertion.deadline.toISOString()}`)
     console.log(`💭 Razón: ${finalInsertion.insertionReason}`)
     
-    const hasAffectedTasks = insertionResults.some(r => !r.noTasksAffected) || tasksToMoveAfterCreation.length > 0
+    const hasAffectedTasks = tasksToMoveAfterCreation.length > 0
     if (hasAffectedTasks) {
-      console.log(`🔄 ${tasksToMoveAfterCreation.length} tareas LOW del mismo día fueron movidas al final`)
+      console.log(`🔄 ${tasksToMoveAfterCreation.length} tareas LOW del mismo día serán movidas al final`)
     } else {
-      console.log(`✅ NINGUNA tarea existente fue afectada`)
+      console.log(`✅ NINGUNA tarea existente será afectada`)
     }
     
     // ✅ MOSTRAR INFORMACIÓN DE AJUSTES POR VACACIONES
@@ -399,8 +453,8 @@ export async function POST(req: Request) {
     console.log('📤 Creando tarea...')
     
     // Para desarrollo, usar ID temporal
-    const clickupTaskId = `parallel-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    const clickupTaskUrl = `https://parallel-vacation-dev.com/task/${clickupTaskId}`
+    const clickupTaskId = `parallel-vacation-low-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    const clickupTaskUrl = `https://parallel-vacation-low-dev.com/task/${clickupTaskId}`
 
     console.log(`✅ Tarea temporal creada: ${clickupTaskId}`)
 
@@ -454,30 +508,36 @@ export async function POST(req: Request) {
 
     console.log(`✅ Asignaciones creadas para ${usersToAssign.length} usuarios`)
 
-    // ✅ MOVER TAREAS LOW DEL MISMO DÍA (SOLO PARA NORMAL)
-    if (tasksToMoveAfterCreation.length > 0) {
-      console.log(`\n🔄 === MOVIENDO TAREAS LOW DEL MISMO DÍA AL FINAL ===`)
+    // ✅ EJECUTAR MOVIMIENTO DE TAREAS LOW DEL MISMO DÍA (SOLO PARA NORMAL)
+    if (tasksToMoveAfterCreation.length > 0 && priority === 'NORMAL') {
+      console.log(`\n🔄 === EJECUTANDO MOVIMIENTO DE TAREAS LOW DEL MISMO DÍA ===`)
       console.log(`📋 Moviendo ${tasksToMoveAfterCreation.length} tareas LOW después de la nueva NORMAL`)
       
       for (const taskMove of tasksToMoveAfterCreation) {
-        await prisma.task.update({
-          where: { id: taskMove.taskId },
-          data: {
-            startDate: taskMove.newStartDate,
-            deadline: taskMove.newDeadline
-          }
-        })
-        
-        console.log(`   ✅ Tarea ${taskMove.taskId} movida: ${taskMove.newStartDate.toISOString()} → ${taskMove.newDeadline.toISOString()}`)
+        try {
+          await prisma.task.update({
+            where: { id: taskMove.taskId },
+            data: {
+              startDate: taskMove.newStartDate,
+              deadline: taskMove.newDeadline
+            }
+          })
+          
+          console.log(`   ✅ Tarea ${taskMove.taskId} movida: ${taskMove.newStartDate.toISOString()} → ${taskMove.newDeadline.toISOString()}`)
+        } catch (moveError) {
+          console.error(`   ❌ Error moviendo tarea ${taskMove.taskId}:`, moveError)
+        }
       }
       
       console.log(`✅ Todas las tareas LOW del mismo día han sido reposicionadas`)
+    } else if (tasksToMoveAfterCreation.length > 0) {
+      console.log(`⚠️ Tareas LOW identificadas para mover, pero prioridad no es NORMAL (${priority})`)
     }
 
     // ✅ COMPORTAMIENTO ESPECÍFICO POR PRIORIDAD
     console.log(`\n🎉 === VENTAJAS DEL NUEVO SISTEMA ===`)
     console.log(`✅ HIGH/URGENT: NO afectan tareas existentes (van en paralelo)`)
-    console.log(`✅ NORMAL: Fechas consecutivas, solo mueve LOW del mismo día al final`)
+    console.log(`✅ NORMAL: Fechas consecutivas, mueve LOW del mismo día al final`)
     console.log(`✅ LOW: Solo cambian el mismo día, después son fijas`)
     console.log(`✅ No se requieren notificaciones para HIGH/URGENT`)
     console.log(`✅ Compromisos estables para la mayoría de tareas`)
@@ -488,12 +548,7 @@ export async function POST(req: Request) {
       console.log(`📋 ${tasksToMoveAfterCreation.length} tareas LOW reposicionadas para mantener orden consecutivo`)
     }
     
-    // 🚫 CÓDIGO ELIMINADO: Ya no se hace recálculo masivo
-    // for (const result of insertionResults) {
-    //   if (result.affectedTasks.length > 0) {
-    //     await shiftTasksAfterInsertion(result.affectedTasks, result.deadline)
-    //   }
-    // }console.log(`✅ No se requieren notificaciones de cambios de deadline`)
+    console.log(`✅ No se requieren notificaciones de cambios de deadline`)
     console.log(`✅ Los solicitantes pueden confiar en sus fechas prometidas`)
     console.log(`✅ La nueva lógica de prioridades en paralelo evita el caos`)
 
@@ -536,7 +591,7 @@ export async function POST(req: Request) {
     invalidateAllCache()
     console.log('🗑️ Cache invalidado después de crear tarea')
 
-    console.log(`🎉 === TAREA "${name}" CREADA CON PRIORIDADES EN PARALELO + VACACIONES ===`)
+    console.log(`🎉 === TAREA "${name}" CREADA CON PRIORIDADES EN PARALELO + VACACIONES + LOW MOVEMENT ===`)
 
     return NextResponse.json({
       id: taskWithAssignees?.id,
@@ -601,7 +656,8 @@ export async function POST(req: Request) {
         predictableScheduling: true,
         vacationAware: true,
         holidayAware: true,
-        parallelPriorities: true
+        parallelPriorities: true,
+        lowTaskMovement: true // ✅ NUEVO
       }
     })
 

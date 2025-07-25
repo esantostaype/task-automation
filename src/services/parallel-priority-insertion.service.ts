@@ -334,7 +334,7 @@ async function handleNormalParallel(
   userTasks: TaskForParallelInsertion[], 
   durationDays: number
 ): Promise<ParallelInsertionResult> {
-  console.log('🔵 NORMAL: Comportamiento actual mantenido');
+  console.log('🔵 NORMAL: Comportamiento actual + mover LOW del mismo día');
   
   if (userTasks.length === 0) {
     const newStartDate = await getNextAvailableStart(new Date());
@@ -349,15 +349,37 @@ async function handleNormalParallel(
     };
   }
   
-  // Lógica de intercalado con LOW (sin cambios)
+  // ✅ NUEVA LÓGICA: Identificar tareas LOW creadas HOY que deben ser movidas
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+  
+  const lowTasksToday = userTasks.filter(task => {
+    if (task.priority !== 'LOW') return false;
+    const taskCreatedAt = new Date(task.createdAt);
+    return taskCreatedAt >= todayStart && taskCreatedAt < todayEnd;
+  });
+  
+  console.log(`   📊 Tareas LOW de hoy que pueden ser movidas: ${lowTasksToday.length}`);
+  
+  // ✅ CALCULAR POSICIÓN SIN LAS LOW DEL DÍA (temporalmente las excluimos)
+  const tasksWithoutTodaysLow = userTasks.filter(task => {
+    if (task.priority !== 'LOW') return true;
+    const taskCreatedAt = new Date(task.createdAt);
+    return taskCreatedAt < todayStart; // Solo LOW de días anteriores
+  });
+  
+  console.log(`   📊 Tareas sin LOW de hoy: ${tasksWithoutTodaysLow.length}`);
+  
+  // ✅ LÓGICA DE INTERCALADO EXISTENTE (sin las LOW de hoy)
   let insertAfterIndex = -1;
   let insertionReason = '';
   
-  for (let i = userTasks.length - 1; i >= 0; i--) {
-    const task = userTasks[i];
+  for (let i = tasksWithoutTodaysLow.length - 1; i >= 0; i--) {
+    const task = tasksWithoutTodaysLow[i];
     
     if (task.priority === 'LOW') {
-      const normalsBefore = userTasks.slice(0, i)
+      const normalsBefore = tasksWithoutTodaysLow.slice(0, i)
         .filter(t => t.priority === 'NORMAL').length;
       
       if (normalsBefore < 5) {
@@ -369,25 +391,56 @@ async function handleNormalParallel(
   }
   
   if (insertAfterIndex === -1) {
-    insertAfterIndex = userTasks.length - 1;
-    insertionReason = 'NORMAL: Al final de la cola';
+    insertAfterIndex = tasksWithoutTodaysLow.length - 1;
+    insertionReason = 'NORMAL: Al final de la cola (sin LOW de hoy)';
   }
   
+  // ✅ CALCULAR FECHA DE LA NUEVA TAREA NORMAL
   const insertAfterDate = insertAfterIndex >= 0 ? 
-    userTasks[insertAfterIndex].deadline : new Date();
+    tasksWithoutTodaysLow[insertAfterIndex].deadline : new Date();
   
   const newStartDate = await getNextAvailableStart(insertAfterDate);
   const taskHours = durationDays * 8;
   const newDeadline = await calculateWorkingDeadline(newStartDate, taskHours);
   
-  console.log(`   📅 Fecha calculada: ${newStartDate.toISOString()} → ${newDeadline.toISOString()}`);
-  console.log(`   ✅ NO se afectan tareas existentes`);
+  // ✅ PREPARAR MOVIMIENTO DE TAREAS LOW DEL MISMO DÍA
+  const tasksToMove: { taskId: string; newStartDate: Date; newDeadline: Date }[] = [];
+  
+  if (lowTasksToday.length > 0) {
+    console.log(`   🔄 Preparando movimiento de ${lowTasksToday.length} tareas LOW al final`);
+    
+    let currentDate = newDeadline; // Empezar después de la nueva NORMAL
+    
+    for (const lowTask of lowTasksToday) {
+      const lowDuration = lowTask.customDuration ?? lowTask.category.tierList.duration;
+      const lowHours = lowDuration * 8;
+      
+      const lowStartDate = await getNextAvailableStart(currentDate);
+      const lowDeadline = await calculateWorkingDeadline(lowStartDate, lowHours);
+      
+      tasksToMove.push({
+        taskId: lowTask.id,
+        newStartDate: lowStartDate,
+        newDeadline: lowDeadline
+      });
+      
+      console.log(`     📋 LOW "${lowTask.name}" será movida a: ${lowStartDate.toISOString()} → ${lowDeadline.toISOString()}`);
+      
+      currentDate = lowDeadline;
+    }
+    
+    insertionReason += ` (${lowTasksToday.length} LOW del día movidas al final)`;
+  }
+  
+  console.log(`   📅 Fecha calculada para NORMAL: ${newStartDate.toISOString()} → ${newDeadline.toISOString()}`);
+  console.log(`   ✅ Tareas LOW del día serán reposicionadas: ${tasksToMove.length}`);
   
   return {
     startDate: newStartDate,
     deadline: newDeadline,
     insertionReason,
-    noTasksAffected: true
+    noTasksAffected: tasksToMove.length === 0,
+    tasksToMove: tasksToMove.length > 0 ? tasksToMove : undefined
   };
 }
 
@@ -449,11 +502,11 @@ export async function calculateParallelPriorityInsertion(
   priority: Priority,
   durationDays: number
 ): Promise<ParallelInsertionResult> {
-  console.log(`\n🎯 === CÁLCULO DE INSERCIÓN EN PARALELO + VACACIONES ===`);
+  console.log(`\n🎯 === CÁLCULO DE INSERCIÓN EN PARALELO + VACACIONES + LOW MOVEMENT ===`);
   console.log(`👤 Usuario: ${userId}`);
   console.log(`🔥 Prioridad: ${priority}`);
   console.log(`⏱️ Duración: ${durationDays} días`);
-  console.log(`✅ NO se afectarán tareas existentes`);
+  console.log(`✅ NO se afectarán tareas existentes (excepto LOW del mismo día para NORMAL)`);
   console.log(`🏖️ SE considerarán vacaciones del usuario`);
   console.log(`📅 NUEVA LÓGICA: LOW solo intercala con tareas del mismo día`);
   console.log(`🔒 LOW de días anteriores se comportan como NORMAL (fechas fijas)`);
@@ -494,13 +547,13 @@ export async function calculateParallelPriorityInsertion(
   
   const lowTasksToday = userTasks.filter(task => {
     if (task.priority !== 'LOW') return false;
-    const taskCreatedAt = new Date(task.createdAt); // ✅ USAR CAMPO DIRECTO
+    const taskCreatedAt = new Date(task.createdAt);
     return taskCreatedAt >= todayStart && taskCreatedAt < todayEnd;
   });
   
   const lowTasksPrevious = userTasks.filter(task => {
     if (task.priority !== 'LOW') return false;
-    const taskCreatedAt = new Date(task.createdAt); // ✅ USAR CAMPO DIRECTO
+    const taskCreatedAt = new Date(task.createdAt);
     return taskCreatedAt < todayStart;
   });
   
@@ -533,7 +586,7 @@ export async function calculateParallelPriorityInsertion(
       result = await handleHighParallel(userTasks, durationDays);
       break;
     case 'NORMAL':
-      result = await handleNormalParallel(userTasks, durationDays);
+      result = await handleNormalParallel(userTasks, durationDays); // ✅ INCLUYE LÓGICA DE MOVER LOW
       break;
     case 'LOW':
       result = await handleLowParallel(userTasks, durationDays);
@@ -547,6 +600,14 @@ export async function calculateParallelPriorityInsertion(
   console.log(`📅 Fin: ${result.deadline.toISOString()}`);
   console.log(`💭 Razón: ${result.insertionReason}`);
   
+  // ✅ MOSTRAR TAREAS QUE SERÁN MOVIDAS
+  if (result.tasksToMove && result.tasksToMove.length > 0) {
+    console.log(`\n🔄 === TAREAS LOW QUE SERÁN MOVIDAS ===`);
+    result.tasksToMove.forEach(task => {
+      console.log(`   📋 ${task.taskId}: ${task.newStartDate.toISOString()} → ${task.newDeadline.toISOString()}`);
+    });
+  }
+  
   // ✅ APLICAR LÓGICA DE VACACIONES
   const finalResult = await applyVacationLogic(userId, result, durationDays);
   
@@ -554,7 +615,7 @@ export async function calculateParallelPriorityInsertion(
   console.log(`📅 Inicio: ${finalResult.startDate.toISOString()}`);
   console.log(`📅 Fin: ${finalResult.deadline.toISOString()}`);
   console.log(`💭 Razón: ${finalResult.insertionReason}`);
-  console.log(`✅ Tareas afectadas: NINGUNA`);
+  console.log(`✅ Tareas afectadas: ${finalResult.tasksToMove?.length || 0} LOW del mismo día`);
   console.log(`🏖️ Vacaciones consideradas: SÍ`);
   
   if (finalResult.vacationAdjustment) {
