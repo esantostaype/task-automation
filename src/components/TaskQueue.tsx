@@ -49,7 +49,6 @@ interface Task {
   priority: string;
   startDate: string; // ISO string
   deadline: string; // ISO string
-  queuePosition: number;
   category: TaskCategory;
   type: TaskType;
   brand: Brand;
@@ -224,9 +223,6 @@ export const TaskQueue = () => {
                   </Typography>
                   <Typography level="body-sm">
                     **Deadline:** {formatDate(task.deadline)}
-                  </Typography>
-                  <Typography level="body-sm">
-                    **Posición en cola:** {task.queuePosition}
                   </Typography>
                   {task.assignees.length > 1 && (
                     <Typography level="body-sm">

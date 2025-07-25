@@ -144,7 +144,6 @@ export async function GET(req: Request, { params }: RouteParams) {
           id: localTask.brand.id,
           name: localTask.brand.name
         },
-        queuePosition: localTask.queuePosition,
         url: localTask.url,
         createdAt: localTask.createdAt.toISOString(),
         updatedAt: localTask.updatedAt.toISOString()
@@ -248,12 +247,6 @@ export async function POST(req: Request, { params }: RouteParams) {
       }, { status: 404 });
     }
 
-    // Obtener la posición máxima actual para el queue
-    const maxPosition = await prisma.task.aggregate({
-      _max: { queuePosition: true }
-    });
-    const nextPosition = (maxPosition._max.queuePosition || 0) + 1;
-
     // Generar ID único para la tarea
     const newTaskId = clickupTask.id; 
 
@@ -271,7 +264,6 @@ export async function POST(req: Request, { params }: RouteParams) {
         points: clickupTask.points,
         tags: clickupTask.tags?.map((t: any) => t.name).join(', ') || null,
         url: clickupTask.url,
-        queuePosition: nextPosition,
         typeId: categoryId ? (await prisma.taskCategory.findUnique({ where: { id: categoryId }, include: { type: true } }))?.typeId || 1 : 1,
         categoryId: categoryId || 1,
         brandId: brandId,
