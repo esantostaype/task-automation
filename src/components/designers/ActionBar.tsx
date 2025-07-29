@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import React from 'react';
 import { Button } from '@mui/joy';
 import { SearchBar } from './SearchBar';
@@ -64,7 +65,7 @@ export const ActionBar: React.FC<ActionBarProps> = ({
           Sync ({selectedCount})
         </Button>
 
-        <Button
+        {/* <Button
           variant="soft"
           size="sm"
           startDecorator={<HugeiconsIcon icon={RefreshIcon} size={16} />}
@@ -73,7 +74,7 @@ export const ActionBar: React.FC<ActionBarProps> = ({
           loading={loading}
         >
           Refresh
-        </Button>
+        </Button> */}
       </div>
     </div>
   );

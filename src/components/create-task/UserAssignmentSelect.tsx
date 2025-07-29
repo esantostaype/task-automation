@@ -1,7 +1,7 @@
 /* eslint-disable react/no-unescaped-entities */
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Select, Option, Chip, FormLabel, Button, Alert } from "@mui/joy";
 import { User } from "@/interfaces";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -19,6 +19,7 @@ import { useEnhancedUsers } from "@/hooks";
 interface UserAssignmentSelectProps {
   users: User[]; // Fallback users
   values: string[];
+  info?: { categoryId: string; brandId: string }
   onChange: (value: string[]) => void;
   suggestedUser?: User | null;
   fetchingSuggestion: boolean;
@@ -36,6 +37,7 @@ interface UserAssignmentSelectProps {
 export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
   users,
   values,
+  info,
   onChange,
   suggestedUser,
   fetchingSuggestion,
@@ -50,6 +52,12 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
 }) => {
   // State for vacation warnings
   const [vacationWarnings, setVacationWarnings] = useState<string[]>([]);
+  
+  // ✅ NUEVO: Ref para trackear la última sugerencia aplicada
+  const lastAppliedSuggestionRef = useRef<string | null>(null);
+  
+  // ✅ NUEVO: Ref para trackear si estamos en proceso de cambio de categoría
+  const categoryChangeInProgressRef = useRef(false);
 
   // Enhanced users hook
   const {
@@ -57,11 +65,9 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
     smartSuggestion,
     totalAvailable,
     loading: loadingEnhanced,
-    error: enhancedError,
     hasRequiredParams,
     getUserById,
     getVacationWarning,
-    message,
   } = useEnhancedUsers({
     typeId,
     brandId,
@@ -75,6 +81,75 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
   
   // Determine loading state
   const isLoading = loading || loadingEnhanced || fetchingSuggestion;
+
+  // ✅ NUEVO: Detectar cuando se limpia la selección (indicativo de cambio de categoría)
+  useEffect(() => {
+    if (values.length === 0 && !fetchingSuggestion) {
+      console.log('🔄 Detected category change - selection cleared');
+      categoryChangeInProgressRef.current = true;
+      lastAppliedSuggestionRef.current = null;
+      
+      // Reset flag after a short delay to allow new suggestions to be applied
+      const timeout = setTimeout(() => {
+        categoryChangeInProgressRef.current = false;
+      }, 200);
+      
+      return () => clearTimeout(timeout);
+    }
+  }, [values.length, fetchingSuggestion]);
+
+  // ✅ MEJORADO: Auto-select suggested user cuando aparece sugerencia
+  useEffect(() => {
+    // No aplicar si estamos en proceso de búsqueda
+    if (fetchingSuggestion) {
+      return;
+    }
+
+    // No aplicar si no hay sugerencia
+    if (!suggestedUser?.id) {
+      return;
+    }
+
+    // No aplicar si ya está seleccionado
+    if (values.includes(suggestedUser.id)) {
+      lastAppliedSuggestionRef.current = suggestedUser.id;
+      return;
+    }
+
+    // No aplicar si ya aplicamos esta misma sugerencia antes
+    if (lastAppliedSuggestionRef.current === suggestedUser.id) {
+      return;
+    }
+
+    // ✅ CONDICIÓN PRINCIPAL: Solo aplicar automáticamente si:
+    // 1. No hay selección actual (values.length === 0) O
+    // 2. Estamos en proceso de cambio de categoría Y no hay cambios manuales
+    const shouldAutoApply = (
+      values.length === 0 || 
+      (categoryChangeInProgressRef.current && !userHasManuallyChanged)
+    );
+
+    if (!shouldAutoApply) {
+      return;
+    }
+
+    // ✅ APLICAR CON PROTECCIÓN CONTRA LOOPS
+    console.log(`🤖 Auto-selecting suggested user: ${suggestedUser.name}`);
+    
+    // Usar requestAnimationFrame para evitar loops sincrónicos
+    requestAnimationFrame(() => {
+      onChange([suggestedUser.id]);
+      lastAppliedSuggestionRef.current = suggestedUser.id;
+      categoryChangeInProgressRef.current = false;
+    });
+    
+  }, [
+    suggestedUser?.id, // ✅ Solo el ID para evitar re-renders innecesarios
+    fetchingSuggestion, 
+    userHasManuallyChanged, 
+    values.length, // ✅ Solo la longitud, no el array completo
+    onChange
+  ]);
 
   // Update vacation warnings when selected users change
   useEffect(() => {
@@ -111,13 +186,6 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
     );
   };
 
-  // Auto-select suggested user when suggestion appears
-  useEffect(() => {
-    if (suggestedUser && !fetchingSuggestion && values.length === 0 && !userHasManuallyChanged) {
-      onChange([suggestedUser.id]);
-    }
-  }, [suggestedUser, fetchingSuggestion, userHasManuallyChanged]);
-
   // Regular suggestion info - only show if user has manually selected someone different
   const shouldShowRegularSuggestion = () => {
     return (
@@ -125,6 +193,7 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
       !fetchingSuggestion && 
       values.length > 0 && // User has selected someone
       !values.includes(suggestedUser.id) && // But not the suggested user
+      userHasManuallyChanged && // ✅ NUEVO: Solo mostrar si usuario ha hecho cambios manuales
       (!smartSuggestion || totalAvailable > 0) // Don't show if smart suggestion is more relevant
     );
   };
@@ -156,8 +225,8 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
   // Get status color for chips and options
   const getStatusColor = (status?: string) => {
     switch (status) {
-      case 'available': return 'success';
-      case 'suggested': return 'primary';
+      case 'available': return 'primary';
+      case 'suggested': return 'success';
       case 'on_vacation': return 'warning';
       case 'overloaded': return 'danger';
       default: return 'neutral';
@@ -203,6 +272,7 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
               className="mt-2"
               onClick={() => {
                 onChange([smartSuggestion.userId]);
+                lastAppliedSuggestionRef.current = smartSuggestion.userId;
                 if (onApplySuggestion) onApplySuggestion();
               }}
               startDecorator={<HugeiconsIcon icon={Brain02Icon} size={16} />}
@@ -229,7 +299,8 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
                   color="success"
                   onClick={() => {
                     onChange([suggestedUser.id]);
-                    onApplySuggestion();
+                    lastAppliedSuggestionRef.current = suggestedUser.id;
+                    if (onApplySuggestion) onApplySuggestion();
                   }}
                   startDecorator={
                     <HugeiconsIcon
@@ -270,7 +341,7 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
         key={values.join(",")}
         onChange={(_, val) => onChange(val as string[])}
         placeholder={getPlaceholder()}
-        disabled={isLoading}
+        disabled={isLoading || !info?.categoryId || !info?.brandId}
         color={touched && error ? "danger" : "neutral"}
         renderValue={(selected) => {
           if (selected.length === 0) {
@@ -297,7 +368,7 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
                 return user ? (
                   <Chip
                     key={user.id}
-                    color={isSuggested ? "primary" : getStatusColor(userStatus?.status)}
+                    color={isSuggested ? "success" : getStatusColor(userStatus?.status)}
                     variant="soft"
                   >
                     {user.name}
@@ -332,8 +403,8 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
                   <div className="flex items-center gap-1 text-xs">
                     {/* Status badge */}
                     <span className={`px-2 py-1 rounded text-xs ${
-                      userStatus?.status === 'suggested' ? 'bg-blue-900 text-blue-300' :
-                      userStatus?.status === 'available' ? 'bg-green-900 text-green-300' :
+                      userStatus?.status === 'suggested' ? 'bg-green-900 text-green-300' :
+                      userStatus?.status === 'available' ? 'bg-accent-900 text-accent-300' :
                       userStatus?.status === 'on_vacation' ? 'bg-yellow-900 text-yellow-300' :
                       userStatus?.status === 'overloaded' ? 'bg-red-900 text-red-300' :
                       'bg-gray-900 text-gray-300'
@@ -354,30 +425,6 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
 
       {/* Error display */}
       {touched && error && <TextFieldError label={error} />}
-      
-      {/* Enhanced users API error */}
-      {enhancedError && (
-        <div className="text-sm text-red-400 mt-2">
-          Failed to load enhanced analysis: {enhancedError}
-        </div>
-      )}
-
-      {/* Status message */}
-      {isUsingEnhancedUsers && message && (
-        <div className="text-xs text-gray-500 mt-2">
-          {message}
-        </div>
-      )}
-
-      {/* Debug info for development */}
-      {process.env.NODE_ENV === 'development' && isUsingEnhancedUsers && (
-        <div className="text-xs text-gray-500 mt-2 border-t border-gray-700 pt-2">
-          <div>Debug: Enhanced analysis active</div>
-          {smartSuggestion && (
-            <div>Smart suggestion: {smartSuggestion.reason}</div>
-          )}
-        </div>
-      )}
     </div>
   );
 };

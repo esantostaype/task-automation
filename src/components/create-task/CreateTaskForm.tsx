@@ -7,6 +7,7 @@ import React, {
   FC,
   Dispatch,
   SetStateAction,
+  useRef,
 } from "react";
 import axios from "axios";
 import { Formik, Form, useFormikContext } from "formik";
@@ -76,6 +77,9 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
   const { values, setFieldValue } = useFormikContext<ExtendedFormValues>();
 
   const [durationManuallyEdited, setDurationManuallyEdited] = useState(false);
+  
+  // ✅ NUEVO: Flag para evitar aplicaciones simultáneas
+  const applyingChangesRef = useRef(false);
 
   // Obtener el typeId para cualquier caso (nueva categoría o existente)
   const getCurrentTypeId = () => {
@@ -96,45 +100,58 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
 
   const currentTypeId = getCurrentTypeId();
 
-  // Efecto para aplicar duración inmediatamente cuando se selecciona categoría existente
+  // ✅ OPTIMIZADO: Efecto para aplicar duración de categoría existente
   useEffect(() => {
-  if (!isNewCategory && values.categoryId && !durationManuallyEdited) {
-    console.log(
-      "🔍 Detectado cambio a categoría existente, aplicando duración automáticamente..."
-    );
+    // Evitar aplicar durante resets o cambios simultáneos
+    if (applyingChangesRef.current || resetCategory || isSubmitting) {
+      return;
+    }
 
-    const selectedCategory = allCategories.find(
-      (cat) => cat.id.toString() === values.categoryId
-    );
+    if (!isNewCategory && values.categoryId && !durationManuallyEdited) {
+      console.log("🔍 Applying duration for existing category...");
 
-    // ✅ CAMBIO: Acceder a duration a través de tierList
-    if (selectedCategory && selectedCategory.tierList?.duration) {
-      console.log(
-        `✅ Aplicando duración de categoría existente: ${selectedCategory.tierList.duration} días`
+      const selectedCategory = allCategories.find(
+        (cat) => cat.id.toString() === values.categoryId
       );
-      setFieldValue("durationDays", selectedCategory.tierList.duration.toString());
-    } else if (selectedCategory) {
-      console.warn('⚠️ Categoría seleccionada no tiene tierList o duration:', selectedCategory);
-    }
-  }
-}, [
-  values.categoryId,
-  isNewCategory,
-  allCategories,
-  setFieldValue,
-  durationManuallyEdited,
-]);
 
-  // Detectar cambios manuales en duración
+      if (selectedCategory?.tierList?.duration) {
+        const newDuration = selectedCategory.tierList.duration.toString();
+        
+        // Solo aplicar si es diferente al valor actual
+        if (values.durationDays !== newDuration) {
+          console.log(`✅ Setting duration: ${newDuration} days`);
+          
+          applyingChangesRef.current = true;
+          setFieldValue("durationDays", newDuration);
+          
+          // Reset flag después de aplicar
+          requestAnimationFrame(() => {
+            applyingChangesRef.current = false;
+          });
+        }
+      }
+    }
+  }, [
+    values.categoryId,
+    isNewCategory,
+    allCategories,
+    setFieldValue,
+    durationManuallyEdited,
+    resetCategory,
+    isSubmitting
+  ]);
+
+  // Detectar cambios manuales en duración con debounce
   useEffect(() => {
-    const currentDuration = values.durationDays as string;
-    if (currentDuration && !fetchingSuggestion) {
-      const timeout = setTimeout(() => {
-        setDurationManuallyEdited(true);
-      }, 500);
-
-      return () => clearTimeout(timeout);
+    if (applyingChangesRef.current || !values.durationDays) {
+      return;
     }
+
+    const timeout = setTimeout(() => {
+      setDurationManuallyEdited(true);
+    }, 500);
+
+    return () => clearTimeout(timeout);
   }, [values.durationDays]);
 
   // Resetear cuando cambia categoría o tipo
@@ -161,25 +178,43 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
     }
   }, [forceSuggestionUpdate, hookForceSuggestionUpdate]);
 
+  // ✅ OPTIMIZADO: Reset de categoría con protección
   useEffect(() => {
-    if (resetCategory) {
+    if (!resetCategory) return;
+
+    console.log("🔄 Resetting category...");
+    
+    applyingChangesRef.current = true;
+    
+    // Aplicar todos los resets de una vez
+    Promise.resolve().then(() => {
       setFieldValue("categoryId", "");
       setFieldValue("isNewCategory", false);
       setFieldValue("newCategoryName", "");
       setFieldValue("newCategoryTier", null);
+      setFieldValue("assignedUserIds", []);
+      setFieldValue("durationDays", "");
+    }).then(() => {
       setResetCategory(false);
       setUserHasManuallyChanged(false);
       setDurationManuallyEdited(false);
-    }
+      setSuggestedAssignment(null);
+      
+      requestAnimationFrame(() => {
+        applyingChangesRef.current = false;
+      });
+    });
   }, [
     resetCategory,
     setFieldValue,
     setResetCategory,
     setUserHasManuallyChanged,
+    setSuggestedAssignment
   ]);
 
+  // ✅ OPTIMIZADO: Manejo de sugerencias con protección contra loops
   useEffect(() => {
-    if (isSubmitting) {
+    if (isSubmitting || applyingChangesRef.current) {
       return;
     }
 
@@ -196,37 +231,24 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
         `🔄 Suggestion changed from ${values.assignedUserIds[0]} to ${suggestedAssignment.userId}`
       );
       setSuggestionChanged(true);
-
-      // Reset the flag after a short delay
       setTimeout(() => setSuggestionChanged(false), 4000);
     }
 
     setSuggestedAssignment(suggestedAssignment);
 
-    if (suggestedAssignment) {
-      console.log(`🤖 Applying user suggestion: ${suggestedAssignment.userId}`);
-
-      if (!userHasManuallyChanged) {
-        if (
-          values.assignedUserIds.length === 0 ||
-          values.assignedUserIds[0] !== suggestedAssignment.userId
-        ) {
-          console.log(
-            `🤖 Aplicando sugerencia de usuario: ${suggestedAssignment.userId}`
-          );
-          setFieldValue("assignedUserIds", [suggestedAssignment.userId]);
-        }
-      } else {
-        console.log(
-          "👤 Usuario ha hecho cambios manuales, manteniendo selección actual"
-        );
-      }
+    // ✅ NUEVA LÓGICA: Solo aplicar sugerencia si no hay cambios manuales Y no estamos aplicando otros cambios
+    if (suggestedAssignment && !userHasManuallyChanged && !applyingChangesRef.current) {
+      console.log(`🤖 New suggestion available: ${suggestedAssignment.userId}`);
+      
+      // No aplicar automáticamente aquí - dejar que UserAssignmentSelect lo maneje
+      // Esto evita el conflicto de múltiples componentes aplicando el mismo cambio
     } else if (
       !fetchingSuggestion &&
       !userHasManuallyChanged &&
-      values.assignedUserIds.length > 0
+      values.assignedUserIds.length > 0 &&
+      !suggestedAssignment
     ) {
-      console.log("🗑️ Limpiando asignación porque no hay sugerencia");
+      console.log("🗑️ Clearing assignment - no suggestion available");
       setFieldValue("assignedUserIds", []);
     }
   }, [
@@ -235,7 +257,7 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
     setFieldValue,
     setSuggestedAssignment,
     setFetchingSuggestion,
-    values.assignedUserIds,
+    values.assignedUserIds.length, // ✅ Solo la longitud para evitar loops
     userHasManuallyChanged,
     isSubmitting,
     setSuggestionChanged,
@@ -518,32 +540,40 @@ export const CreateTaskForm: FC = () => {
               `📋 Category change: (value: ${value}, isNew: ${isNew}, newCategoryName: ${newCategoryName})`
             );
 
-            setFieldValue("categoryId", value || "");
-            setFieldValue("isNewCategory", isNew || false);
-            setFieldValue("newCategoryName", newCategoryName || "");
+            // ✅ OPTIMIZADO: Aplicar todos los cambios de una vez usando batch
+            const applyChanges = () => {
+              setFieldValue("categoryId", value || "");
+              setFieldValue("isNewCategory", isNew || false);
+              setFieldValue("newCategoryName", newCategoryName || "");
 
-            if (isNew) {
-              setFieldValue("durationDays", "");
-              setFieldValue("assignedUserIds", []);
-              setFieldValue("newCategoryTier", null);
-              setSuggestedAssignment(null);
+              if (isNew) {
+                // Para nueva categoría: limpiar duración, asignaciones y tier
+                setFieldValue("durationDays", "");
+                setFieldValue("assignedUserIds", []);
+                setFieldValue("newCategoryTier", null);
+                setSuggestedAssignment(null);
 
-              if (
-                values.durationDays &&
-                parseFloat(values.durationDays as string) > 0
-              ) {
-                console.log(
-                  "🔄 Triggering suggestion for new category with existing duration"
-                );
-                setTriggerSuggestion((prev) => prev + 1);
+                // ✅ Si ya hay duración, triggear sugerencia después de limpiar
+                if (values.durationDays && parseFloat(values.durationDays as string) > 0) {
+                  setTimeout(() => {
+                    console.log("🔄 Triggering suggestion for new category with existing duration");
+                    setTriggerSuggestion((prev) => prev + 1);
+                  }, 100);
+                }
+              } else {
+                // Para categoría existente: solo limpiar asignaciones y tier
+                setFieldValue("assignedUserIds", []);
+                setFieldValue("newCategoryTier", null);
+                setSuggestedAssignment(null);
               }
-            } else {
-              setFieldValue("assignedUserIds", []);
-              setSuggestedAssignment(null);
-              setFieldValue("newCategoryTier", null);
-            }
-            setUserHasManuallyChanged(false);
-            setSuggestionChanged(false);
+
+              // ✅ Resetear flags después de aplicar cambios
+              setUserHasManuallyChanged(false);
+              setSuggestionChanged(false);
+            };
+
+            // ✅ Aplicar cambios de forma asíncrona para evitar loops
+            requestAnimationFrame(applyChanges);
           };
 
           // ✅ Calculate current typeId for UserAssignmentSelect
@@ -698,6 +728,7 @@ export const CreateTaskForm: FC = () => {
                     ? parseFloat(values.durationDays as string)
                     : undefined
                 }
+                info={{ categoryId: values.categoryId, brandId: values.brandId }}
               />
 
               <Button

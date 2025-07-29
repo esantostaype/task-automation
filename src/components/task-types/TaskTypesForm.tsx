@@ -3,7 +3,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 import React, { useState, useEffect } from "react";
-import { Button, Input, IconButton, LinearProgress, Alert, FormLabel } from "@mui/joy";
+import {
+  Button,
+  Input,
+  IconButton,
+  LinearProgress,
+  Alert,
+  FormLabel,
+} from "@mui/joy";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Add01Icon,
@@ -14,6 +21,7 @@ import { useTaskDataInvalidation } from "@/hooks/useTaskData";
 import axios from "axios";
 import { toast } from "react-toastify";
 import { TableTd, TableTh } from "@/components";
+import { useConfirmationStore } from "@/stores/confirmationStore";
 
 interface TaskType {
   id: number;
@@ -22,6 +30,21 @@ interface TaskType {
   color?: string;
   categories: any[];
 }
+
+// Agregar este componente dentro del archivo, antes del componente principal:
+const TaskTypeSkeleton: React.FC = () => (
+  <tr className="border-t border-white/5 animate-pulse">
+    <TableTd>
+      <div className="h-3 bg-white/10 rounded w-32"></div>
+    </TableTd>
+    <TableTd>
+      <div className="h-3 bg-white/5 rounded w-20"></div>
+    </TableTd>
+    <TableTd>
+      <div className="size-8 bg-white/10 rounded"></div>
+    </TableTd>
+  </tr>
+);
 
 export const TaskTypesForm: React.FC = () => {
   const { invalidateAll } = useTaskDataInvalidation();
@@ -33,6 +56,7 @@ export const TaskTypesForm: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<number | null>(null);
+  const { openConfirmation } = useConfirmationStore();
 
   // Cargar types
   useEffect(() => {
@@ -74,11 +98,9 @@ export const TaskTypesForm: React.FC = () => {
       });
 
       // Actualizar localmente
-      setTypes(prev => 
-        prev.map(type => 
-          type.id === editingId 
-            ? { ...type, name: editingName.trim() }
-            : type
+      setTypes((prev) =>
+        prev.map((type) =>
+          type.id === editingId ? { ...type, name: editingName.trim() } : type
         )
       );
 
@@ -104,13 +126,14 @@ export const TaskTypesForm: React.FC = () => {
         name: newTypeName.trim(),
       });
 
-      setTypes(prev => [...prev, response.data]);
+      setTypes((prev) => [...prev, response.data]);
       setNewTypeName("");
       invalidateAll();
       toast.success("Task type created successfully");
     } catch (error: any) {
       console.error("Error creating type:", error);
-      const errorMessage = error.response?.data?.error || "Error creating task type";
+      const errorMessage =
+        error.response?.data?.error || "Error creating task type";
       toast.error(errorMessage);
     } finally {
       setSaving(false);
@@ -118,25 +141,43 @@ export const TaskTypesForm: React.FC = () => {
   };
 
   // Eliminar type
-  const deleteType = async (typeId: number) => {
-    if (!window.confirm("Are you sure you want to delete this task type?")) {
-      return;
-    }
-
+  const deleteType = async (typeId: number, typeName: string) => {
     try {
       setDeleting(typeId);
       await axios.delete(`/api/types/${typeId}`);
 
-      setTypes(prev => prev.filter(type => type.id !== typeId));
+      setTypes((prev) => prev.filter((type) => type.id !== typeId));
       invalidateAll();
       toast.success("Task type deleted successfully");
     } catch (error: any) {
       console.error("Error deleting type:", error);
-      const errorMessage = error.response?.data?.error || "Error deleting task type";
+      const errorMessage =
+        error.response?.data?.error || "Error deleting task type";
       toast.error(errorMessage);
     } finally {
       setDeleting(null);
     }
+  };
+
+  // Nueva función para confirmar eliminación:
+  const confirmDelete = (type: TaskType) => {
+    const categoriesCount = type.categories?.length || 0;
+    const hasCategories = categoriesCount > 0;
+
+    openConfirmation({
+      title: "Delete Task Type",
+      description: `Are you sure you want to delete the task type "${
+        type.name
+      }"?${
+        hasCategories
+          ? ` This will also delete ${categoriesCount} categories and may affect existing tasks.`
+          : " This action cannot be undone."
+      }`,
+      type: "danger",
+      confirmText: "Delete Task Type",
+      cancelText: "Cancel",
+      onConfirm: () => deleteType(type.id, type.name),
+    });
   };
 
   // Handle key press
@@ -150,13 +191,13 @@ export const TaskTypesForm: React.FC = () => {
     } else if (e.key === "Escape") {
       cancelEditing();
     }
-  }
+  };
 
   return (
     <div className="p-8">
       {/* Existing Types Table */}
-      {types.length > 0 && (
-        <div className="mb-6">          
+      {loading || types.length > 0 ? (
+        <div className="mb-6">
           <div className="border border-white/10 rounded-lg overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-white/5">
@@ -173,57 +214,65 @@ export const TaskTypesForm: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {types.map((type) => (
-                  <tr key={type.id} className="border-t border-white/5">
-                    <TableTd>
-                      {editingId === type.id ? (
-                        <Input
-                          value={editingName}
-                          onChange={(e) => setEditingName(e.target.value)}
-                          onKeyDown={handleKeyPress}
-                          onBlur={saveEdit}
-                          autoFocus
-                          size="sm"
-                          className="w-full"
-                        />
-                      ) : (
-                        <span
-                          onClick={() => startEditing(type)}
-                          className="cursor-pointer hover:text-accent transition-colors w-[10rem]"
-                          title="Click to edit"
-                        >
-                          {type.name}
-                        </span>
-                      )}
-                    </TableTd>
-                    <TableTd>
-                      <div>
-                        <span className="text-sm text-gray-500">
-                          {type.categories?.length || 0} categories
-                        </span>
-                      </div>
-                    </TableTd>
-                    <TableTd>
-                      <div>
-                        <IconButton
-                          size="sm"
-                          color="danger"
-                          variant="soft"
-                          onClick={() => deleteType(type.id)}
-                          loading={deleting === type.id}
-                          disabled={editingId === type.id}
-                        >
-                          <HugeiconsIcon icon={Delete02Icon} size={16} />
-                        </IconButton>
-                      </div>
-                    </TableTd>
-                  </tr>
-                ))}
+                {loading ? (
+                  <>
+                    <TaskTypeSkeleton />
+                    <TaskTypeSkeleton />
+                  </>
+                ) : (
+                  // Datos reales
+                  types.map((type) => (
+                    <tr key={type.id} className="border-t border-white/5">
+                      <TableTd>
+                        {editingId === type.id ? (
+                          <Input
+                            value={editingName}
+                            onChange={(e) => setEditingName(e.target.value)}
+                            onKeyDown={handleKeyPress}
+                            onBlur={saveEdit}
+                            autoFocus
+                            size="sm"
+                            className="w-full"
+                          />
+                        ) : (
+                          <span
+                            onClick={() => startEditing(type)}
+                            className="cursor-pointer hover:text-accent transition-colors w-[10rem]"
+                            title="Click to edit"
+                          >
+                            {type.name}
+                          </span>
+                        )}
+                      </TableTd>
+                      <TableTd>
+                        <div>
+                          <span className="text-sm text-gray-500">
+                            {type.categories?.length || 0} categories
+                          </span>
+                        </div>
+                      </TableTd>
+                      <TableTd>
+                        <div>
+                          <IconButton
+                            size="sm"
+                            color="danger"
+                            variant="soft"
+                            onClick={() => confirmDelete(type)}
+                            loading={deleting === type.id}
+                            disabled={editingId === type.id}
+                          >
+                            <HugeiconsIcon icon={Delete02Icon} size={16} />
+                          </IconButton>
+                        </div>
+                      </TableTd>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Add New Type */}
       <div>
@@ -236,12 +285,14 @@ export const TaskTypesForm: React.FC = () => {
             onKeyDown={handleKeyPress}
             size="md"
             className="flex-1"
-            disabled={saving || editingId !== null}
+            disabled={loading || saving || editingId !== null} // ✅ Agregar loading
           />
           <Button
             startDecorator={<HugeiconsIcon icon={Add01Icon} size={16} />}
             onClick={addNewType}
-            disabled={!newTypeName.trim() || saving || editingId !== null}
+            disabled={
+              loading || !newTypeName.trim() || saving || editingId !== null
+            } // ✅ Agregar loading
             loading={saving && !editingId}
             color="primary"
           >
@@ -253,7 +304,8 @@ export const TaskTypesForm: React.FC = () => {
       {/* Instructions */}
       <div className="mt-6 pt-4 border-t border-white/10">
         <p className="text-sm text-gray-500 text-center">
-          Click on a task type name to edit it • Press Enter to save • Press Escape to cancel
+          Click on a task type name to edit it • Press Enter to save • Press
+          Escape to cancel
         </p>
       </div>
     </div>

@@ -2,6 +2,7 @@ import { Inter } from 'next/font/google'
 import './globals.css'
 import { Providers } from './providers'
 import { CreateTaskForm, GlobalModal, Header } from '@/components'
+import { GlobalConfirmation } from '@/components/Confirmation'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -23,6 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <CreateTaskForm />
           </main>
           <GlobalModal />
+          <GlobalConfirmation />
         </Providers>
       </body>
     </html>
