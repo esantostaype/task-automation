@@ -4,7 +4,7 @@ import React from 'react'
 import { useFormikContext } from 'formik'
 import { FormLabel, Input } from '@mui/joy'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { DateTimeIcon, RefreshIcon } from '@hugeicons/core-free-icons'
+import { DateTimeIcon } from '@hugeicons/core-free-icons'
 import { FormValues } from '@/interfaces'
 import { formatDaysToReadable } from '@/utils/duration-utils'
 import { TextFieldError, TextFieldHelp } from '@/components'
@@ -34,15 +34,12 @@ export const DurationField: React.FC<DurationFieldProps> = ({
   onDurationComplete,
   allCategories = [],
   onDurationChange, // ✅ NUEVO
-  suggestionChanged = false, // ✅ NUEVO
-  suggestedUser = null // ✅ NUEVO
 }) => {
   const { values, setFieldValue } = useFormikContext<ExtendedFormValues>()
   
   const [localInputValue, setLocalInputValue] = React.useState('')
   const [hasManualEdit, setHasManualEdit] = React.useState(false)
   // ✅ NUEVO: Estado para mostrar indicador de cambio de sugerencia
-  const [showSuggestionChangeIndicator, setShowSuggestionChangeIndicator] = React.useState(false)
   
   const numberOfAssignees = values.assignedUserIds.length
   const originalDuration = parseFloat(localInputValue) || 0
@@ -53,19 +50,8 @@ export const DurationField: React.FC<DurationFieldProps> = ({
     if (!hasManualEdit && values.durationDays !== localInputValue) {
       setLocalInputValue(values.durationDays as string || '')
     }
-  }, [values.durationDays, hasManualEdit])
+  }, [values.durationDays, hasManualEdit, localInputValue])
 
-  // ✅ NUEVO: Efecto para mostrar indicador de cambio de sugerencia
-  React.useEffect(() => {
-    if (suggestionChanged && suggestedUser) {
-      setShowSuggestionChangeIndicator(true)
-      const timer = setTimeout(() => {
-        setShowSuggestionChangeIndicator(false)
-      }, 3000) // Mostrar por 3 segundos
-      
-      return () => clearTimeout(timer)
-    }
-  }, [suggestionChanged, suggestedUser])
 
   // Determinar la fuente de la duración
   const getDurationSource = () => {
@@ -166,7 +152,6 @@ export const DurationField: React.FC<DurationFieldProps> = ({
   // Resetear estado manual cuando cambia la categoría
   React.useEffect(() => {
     setHasManualEdit(false)
-    setShowSuggestionChangeIndicator(false)
   }, [values.categoryId, values.isNewCategory])
 
   return (
@@ -182,19 +167,6 @@ export const DurationField: React.FC<DurationFieldProps> = ({
         {statusIndicator && (
           <span style={{ color: statusIndicator.color, marginLeft: '4px' }}>
             {statusIndicator.text}
-          </span>
-        )}
-        {/* ✅ NUEVO: Indicador de cambio de sugerencia */}
-        {showSuggestionChangeIndicator && suggestedUser && (
-          <span style={{ 
-            color: 'var(--joy-palette-success-500)', 
-            marginLeft: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '2px'
-          }}>
-            <HugeiconsIcon icon={RefreshIcon} size={12} strokeWidth={2} />
-            Suggestion updated!
           </span>
         )}
       </FormLabel>
@@ -215,25 +187,10 @@ export const DurationField: React.FC<DurationFieldProps> = ({
         }}
       />
 
-      {/* ✅ NUEVO: Información sobre cambio de sugerencia */}
-      {showSuggestionChangeIndicator && suggestedUser && (
-        <div style={{
-          fontSize: '0.75rem',
-          color: 'var(--joy-palette-success-500)',
-          marginTop: '0.25rem',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px'
-        }}>
-          <HugeiconsIcon icon={RefreshIcon} size={14} strokeWidth={1.5} />
-          Suggestion changed to: <strong>{suggestedUser.name}</strong>
-        </div>
-      )}
-
       {/* Mostrar información de duración efectiva */}
       {numberOfAssignees > 1 && originalDuration > 0 && (
         <TextFieldHelp>
-          Effective duration per user: {formatDaysToReadable(effectiveDuration)}
+          Effective duration per user: <strong>{formatDaysToReadable(effectiveDuration)}</strong>
           <br />
           ({numberOfAssignees} users working in parallel)
         </TextFieldHelp>

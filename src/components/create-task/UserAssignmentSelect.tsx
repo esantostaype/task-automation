@@ -54,11 +54,8 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
   // Enhanced users hook
   const {
     allUsers,
-    overloadedUsers,
     smartSuggestion,
-    totalCompatible,
     totalAvailable,
-    totalOnVacation,
     loading: loadingEnhanced,
     error: enhancedError,
     hasRequiredParams,
@@ -114,26 +111,53 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
     );
   };
 
-  // Regular suggestion info
+  // Auto-select suggested user when suggestion appears
+  useEffect(() => {
+    if (suggestedUser && !fetchingSuggestion && values.length === 0 && !userHasManuallyChanged) {
+      onChange([suggestedUser.id]);
+    }
+  }, [suggestedUser, fetchingSuggestion, userHasManuallyChanged]);
+
+  // Regular suggestion info - only show if user has manually selected someone different
   const shouldShowRegularSuggestion = () => {
     return (
       suggestedUser && 
       !fetchingSuggestion && 
-      !values.includes(suggestedUser.id) &&
+      values.length > 0 && // User has selected someone
+      !values.includes(suggestedUser.id) && // But not the suggested user
       (!smartSuggestion || totalAvailable > 0) // Don't show if smart suggestion is more relevant
     );
   };
 
+  // Check if user is suggested
+  const isUserSuggested = (userId: string) => {
+    const isRegularSuggested = suggestedUser?.id === userId;
+    const isSmartSuggested = smartSuggestion?.userId === userId;
+    return isRegularSuggested || isSmartSuggested;
+  };
+
   // Get user status info for display
   const getUserStatusInfo = (userId: string) => {
-    if (!isUsingEnhancedUsers) return null;
-    return getUserById(userId);
+    if (!isUsingEnhancedUsers) {
+      // For fallback users, check if suggested
+      return isUserSuggested(userId) ? { status: 'suggested' } : null;
+    }
+    
+    const userInfo = getUserById(userId);
+    
+    // If user is suggested, override status
+    if (isUserSuggested(userId)) {
+      return { ...userInfo, status: 'suggested' };
+    }
+    
+    return userInfo;
   };
 
   // Get status color for chips and options
   const getStatusColor = (status?: string) => {
     switch (status) {
       case 'available': return 'success';
+      case 'suggested': return 'primary';
       case 'on_vacation': return 'warning';
       case 'overloaded': return 'danger';
       default: return 'neutral';
@@ -143,6 +167,7 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
   // Get status icon
   const getStatusIcon = (status?: string) => {
     switch (status) {
+      case 'suggested': return SparklesIcon;
       case 'on_vacation': return Calendar04Icon;
       case 'overloaded': return Clock03Icon;
       default: return UserCheck01Icon;
@@ -154,11 +179,6 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
       <FormLabel>
         <HugeiconsIcon icon={UserCheck01Icon} size={20} strokeWidth={1.5} />
         Assignee
-        {isUsingEnhancedUsers && (
-          <span className="text-xs text-gray-400 ml-2">
-            ({totalAvailable} available, {totalOnVacation} on vacation of {totalCompatible} total)
-          </span>
-        )}
       </FormLabel>
 
       {/* Smart Suggestion Alert */}
@@ -195,21 +215,18 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
 
       {/* Regular Suggestion */}
       {shouldShowRegularSuggestion() && suggestedUser && (
-        <div className="mb-3 p-3 bg-accent/20 border border-accent/30 rounded-lg">
+        <div className="mb-3 p-3 bg-green-500/10 rounded-lg">
           <div>
             <div className="flex items-center gap-2 justify-between">
               <span className="text-sm text-accent-200">
                 Suggested: <strong>{suggestedUser.name}</strong>
-                {isUsingEnhancedUsers && (
-                  <span className="text-xs text-green-400 ml-2">✓ Available now</span>
-                )}
               </span>
 
               {onApplySuggestion && (
                 <Button
                   size="sm"
                   variant="soft"
-                  color="primary"
+                  color="success"
                   onClick={() => {
                     onChange([suggestedUser.id]);
                     onApplySuggestion();
@@ -226,11 +243,6 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
                 </Button>
               )}
             </div>
-            {userHasManuallyChanged && (
-              <p className="text-xs text-gray-400 mt-2">
-                You've made manual changes. Click "Apply" to use the suggestion.
-              </p>
-            )}
           </div>
         </div>
       )}
@@ -244,25 +256,13 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
               variant="soft" 
               color="warning" 
               startDecorator={<HugeiconsIcon icon={Calendar04Icon} size={20} />}
+              sx={{ alignItems: 'flex-start' }}
             >
-              <div className="text-sm">{warning}</div>
+              <div className="text-xs">{warning}</div>
             </Alert>
           ))}
         </div>
       )}
-
-      {/* Availability Summary */}
-      {isUsingEnhancedUsers && totalCompatible > 0 && (
-        <div className="mb-3 text-sm text-gray-400">
-          <div className="flex items-center gap-4">
-            <span className="text-green-400">✓ {totalAvailable} available</span>
-            <span className="text-yellow-400">🏖️ {totalOnVacation} on vacation</span>
-            <span className="text-red-400">📈 {overloadedUsers.length} overloaded</span>
-          </div>
-        </div>
-      )}
-
-      {/* Main Select */}
       <Select
         name="assignedUserIds"
         multiple
@@ -292,19 +292,15 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
               {orderedSelected.map((selectedId) => {
                 const user = usersToShow.find((u) => u.id === selectedId.value);
                 const userStatus = getUserStatusInfo(user?.id || '');
-                const isSuggested = suggestedUser?.id === user?.id;
-                const isSmartSuggested = smartSuggestion?.userId === user?.id;
+                const isSuggested = isUserSuggested(user?.id || '');
 
                 return user ? (
                   <Chip
                     key={user.id}
-                    color={isSuggested || isSmartSuggested ? "primary" : getStatusColor(userStatus?.status)}
+                    color={isSuggested ? "primary" : getStatusColor(userStatus?.status)}
                     variant="soft"
                   >
                     {user.name}
-                    {userStatus?.isSpecialist && <span className="text-xs ml-1">⭐</span>}
-                    {userStatus?.status === 'on_vacation' && <span className="text-xs ml-1">🏖️</span>}
-                    {userStatus?.status === 'overloaded' && <span className="text-xs ml-1">📈</span>}
                   </Chip>
                 ) : null;
               })}
@@ -323,8 +319,6 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
         ) : (
           usersToShow.map((user) => {
             const userStatus = getUserStatusInfo(user.id);
-            const isSuggested = suggestedUser?.id === user.id;
-            const isSmartSuggested = smartSuggestion?.userId === user.id;
             const StatusIcon = getStatusIcon(userStatus?.status);
 
             return (
@@ -333,46 +327,23 @@ export const UserAssignmentSelect: React.FC<UserAssignmentSelectProps> = ({
                   <div className="flex items-center gap-2">
                     <HugeiconsIcon icon={StatusIcon} size={16} />
                     <span>{user.name}</span>
-                    {userStatus?.isSpecialist && (
-                      <span className="text-xs text-yellow-400">⭐ Specialist</span>
-                    )}
                   </div>
                   
                   <div className="flex items-center gap-1 text-xs">
                     {/* Status badge */}
                     <span className={`px-2 py-1 rounded text-xs ${
+                      userStatus?.status === 'suggested' ? 'bg-blue-900 text-blue-300' :
                       userStatus?.status === 'available' ? 'bg-green-900 text-green-300' :
                       userStatus?.status === 'on_vacation' ? 'bg-yellow-900 text-yellow-300' :
                       userStatus?.status === 'overloaded' ? 'bg-red-900 text-red-300' :
                       'bg-gray-900 text-gray-300'
                     }`}>
-                      {userStatus?.status === 'available' ? 'Available' :
+                      {userStatus?.status === 'suggested' ? 'Suggested' :
+                       userStatus?.status === 'available' ? 'Available' :
                        userStatus?.status === 'on_vacation' ? 'On Vacation' :
                        userStatus?.status === 'overloaded' ? 'Overloaded' :
                        'Unknown'}
                     </span>
-
-                    {/* Available from date */}
-                    {userStatus && (
-                      <span className="text-gray-400">
-                        from {userStatus.availableFrom}
-                      </span>
-                    )}
-
-                    {/* Suggestion indicators */}
-                    {isSuggested && (
-                      <span className="text-blue-400 flex items-center gap-1">
-                        <HugeiconsIcon icon={SparklesIcon} size={14} />
-                        Suggested
-                      </span>
-                    )}
-                    
-                    {isSmartSuggested && (
-                      <span className="text-purple-400 flex items-center gap-1">
-                        <HugeiconsIcon icon={Brain02Icon} size={14} />
-                        Smart Pick
-                      </span>
-                    )}
                   </div>
                 </div>
               </Option>
