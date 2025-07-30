@@ -29,7 +29,7 @@ export const DesignersHeader: React.FC<DesignersHeaderProps> = (props) => {
           Designers
         </h1>
         <ActionBar {...props} />
-      </div>     
+      </div>
     </div>
   )
 }

@@ -125,7 +125,7 @@ export const TasksList: React.FC<TasksListProps> = ({
   return (
     <div className="space-y-6">
       {/* Tasks Grid */}
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(350px,1fr))] gap-6">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
         {filteredTasks.map((task) => (
           <TaskCard
             key={task.clickupId}
