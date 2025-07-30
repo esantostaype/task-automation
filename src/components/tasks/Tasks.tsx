@@ -1,18 +1,13 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import {
   Button,
-  Input,
   Select,
   Option,
-  FormLabel,
-  Alert,
-  LinearProgress,
-  Checkbox,
   FormControl,
-  Chip,
+  Checkbox,
   IconButton,
   Tooltip,
 } from "@mui/joy";
@@ -21,13 +16,17 @@ import {
   RefreshIcon,
   DatabaseSync01Icon,
   TaskIcon,
-  FilterIcon,
-  SearchListIcon,
 } from "@hugeicons/core-free-icons";
 import { TasksList } from "./TaskList";
 import { useTaskDataInvalidation } from "@/hooks/useTaskData";
-import axios from "axios";
 import { toast } from "react-toastify";
+import {
+  useClickUpTasks,
+  useCategories,
+  useTaskBrands,
+  useSyncTasks,
+  useRefreshTasks,
+} from "@/hooks/queries/useTasks";
 
 interface Task {
   clickupId: string;
@@ -61,23 +60,6 @@ interface Task {
   canSync: boolean;
 }
 
-interface Category {
-  id: number;
-  name: string;
-  type: {
-    name: string;
-  };
-  tierList: {
-    name: string;
-  };
-}
-
-interface Brand {
-  id: string;
-  name: string;
-  isActive: boolean;
-}
-
 interface SyncStatistics {
   totalClickUpTasks: number;
   existingInLocal: number;
@@ -88,18 +70,10 @@ interface SyncStatistics {
 export const TasksSync: React.FC = () => {
   const { invalidateAll } = useTaskDataInvalidation();
 
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [brands, setBrands] = useState<Brand[]>([]);
+  // State
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
-
-  const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-
-  const [statistics, setStatistics] = useState<SyncStatistics | null>(null);
 
   // Filtros
   const [filters, setFilters] = useState({
@@ -111,50 +85,117 @@ export const TasksSync: React.FC = () => {
     search: "",
   });
 
-  // Cargar datos iniciales
-  useEffect(() => {
-    loadTasksAndCategories();
-  }, []);
+  // Queries
+  const {
+    data: tasksData,
+    isLoading: loadingTasks,
+    error: tasksError,
+  } = useClickUpTasks();
 
-  const loadTasksAndCategories = async () => {
-    try {
-      setLoading(true);
-      const [tasksRes, categoriesRes, brandsRes] = await Promise.all([
-        axios.get("/api/sync/clickup-tasks"),
-        axios.get("/api/categories"),
-        axios.get("/api/brands"), // Asumiendo que tienes este endpoint
-      ]);
+  const {
+    data: categories = [],
+    isLoading: loadingCategories,
+    error: categoriesError,
+  } = useCategories();
 
-      setTasks(tasksRes.data.clickupTasks || []);
-      setCategories(categoriesRes.data || []);
-      setBrands(brandsRes.data?.filter((b: Brand) => b.isActive) || []);
-      setStatistics(tasksRes.data.statistics);
+  const {
+    data: brands = [],
+    isLoading: loadingBrands,
+    error: brandsError,
+  } = useTaskBrands();
 
-      console.log(
-        `✅ Cargadas ${
-          tasksRes.data.clickupTasks?.length || 0
-        } tareas de ClickUp`
-      );
-    } catch (error) {
-      console.error("Error loading tasks:", error);
-      toast.error("Error loading tasks from ClickUp");
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Mutations
+  const { mutate: syncTasks, isPending: syncing } = useSyncTasks({
+    onSuccess: (data) => {
+      const createdCount = data.createdTasks?.length || 0;
+      toast.success(`${createdCount} tasks synced successfully`);
 
-  const refreshTasks = async () => {
-    try {
-      setRefreshing(true);
-      await loadTasksAndCategories();
+      if (data.errors?.length > 0) {
+        console.warn("Sync errors:", data.errors);
+        toast.warning("Some tasks had errors. Check console for details.");
+      }
+
+      setSelectedTasks(new Set());
+      invalidateAll();
+    },
+    onError: (error: any) => {
+      console.error("Error syncing tasks:", error);
+      const errorMessage = error.response?.data?.error || "Error syncing tasks";
+      toast.error(errorMessage);
+    },
+  });
+
+  const { mutate: refreshTasks, isPending: refreshing } = useRefreshTasks({
+    onSuccess: () => {
       toast.success("Tasks refreshed successfully");
-    } catch (error) {
+    },
+    onError: () => {
       toast.error("Error refreshing tasks");
-    } finally {
-      setRefreshing(false);
-    }
-  };
+    },
+  });
 
+  // Computed values
+  const tasks = tasksData?.clickupTasks || [];
+  const statistics = tasksData?.statistics;
+  const loading = loadingTasks || loadingCategories || loadingBrands;
+
+  // Filtrar tareas
+  const filteredTasks = useMemo(() => {
+    return tasks.filter((task) => {
+      // Filtro de búsqueda
+      if (
+        filters.search &&
+        !task.name.toLowerCase().includes(filters.search.toLowerCase())
+      ) {
+        return false;
+      }
+
+      // Otros filtros
+      if (filters.status && task.status !== filters.status) return false;
+      if (filters.priority && task.priority !== filters.priority) return false;
+      if (filters.space && task.space.id !== filters.space) return false;
+      if (
+        filters.assignee &&
+        !task.assignees.some((a) => a.id === filters.assignee)
+      )
+        return false;
+      if (filters.syncStatus === "synced" && !task.existsInLocal) return false;
+      if (filters.syncStatus === "available" && task.existsInLocal) return false;
+
+      return true;
+    });
+  }, [tasks, filters]);
+
+  // Extraer valores únicos para filtros
+  const uniqueStatuses = useMemo(
+    () => [...new Set(tasks.map((t) => t.status))],
+    [tasks]
+  );
+  const uniquePriorities = useMemo(
+    () => [...new Set(tasks.map((t) => t.priority))],
+    [tasks]
+  );
+  const uniqueSpaces = useMemo(
+    () => [
+      ...new Set(tasks.map((t) => ({ id: t.space.id, name: t.space.name }))),
+    ],
+    [tasks]
+  );
+
+  const availableTasksCount = useMemo(
+    () => filteredTasks.filter((t) => t.canSync).length,
+    [filteredTasks]
+  );
+
+  const selectedAvailableCount = useMemo(
+    () =>
+      Array.from(selectedTasks).filter(
+        (id) => filteredTasks.find((t) => t.clickupId === id)?.canSync
+      ).length,
+    [selectedTasks, filteredTasks]
+  );
+
+  // Event handlers
   const handleTaskSelect = (taskId: string, selected: boolean) => {
     const newSelection = new Set(selectedTasks);
     if (selected) {
@@ -174,7 +215,7 @@ export const TasksSync: React.FC = () => {
     }
   };
 
-  const handleSyncSelected = async () => {
+  const handleSyncSelected = () => {
     if (selectedTasks.size === 0) {
       toast.warning("Please select tasks to sync");
       return;
@@ -185,41 +226,15 @@ export const TasksSync: React.FC = () => {
       return;
     }
 
-    try {
-      setSyncing(true);
+    syncTasks({
+      taskIds: Array.from(selectedTasks),
+      categoryId: selectedCategory,
+      brandId: selectedBrand,
+    });
+  };
 
-      const response = await axios.post("/api/sync/clickup-tasks", {
-        taskIds: Array.from(selectedTasks),
-        categoryId: selectedCategory,
-        brandId: selectedBrand,
-      });
-
-      // Actualizar estado local
-      setTasks((prev) =>
-        prev.map((task) =>
-          selectedTasks.has(task.clickupId)
-            ? { ...task, existsInLocal: true, canSync: false }
-            : task
-        )
-      );
-
-      setSelectedTasks(new Set());
-      invalidateAll();
-
-      toast.success(
-        `${response.data.createdTasks?.length || 0} tasks synced successfully`
-      );
-
-      if (response.data.errors?.length > 0) {
-        console.warn("Sync errors:", response.data.errors);
-      }
-    } catch (error: any) {
-      console.error("Error syncing tasks:", error);
-      const errorMessage = error.response?.data?.error || "Error syncing tasks";
-      toast.error(errorMessage);
-    } finally {
-      setSyncing(false);
-    }
+  const handleRefresh = () => {
+    refreshTasks();
   };
 
   const handleTaskEdit = (taskId: string) => {
@@ -229,42 +244,37 @@ export const TasksSync: React.FC = () => {
     }
   };
 
-  // Filtrar tareas
-  const filteredTasks = tasks.filter((task) => {
-    // Filtro de búsqueda
-    if (
-      filters.search &&
-      !task.name.toLowerCase().includes(filters.search.toLowerCase())
-    ) {
-      return false;
-    }
-
-    // Otros filtros
-    if (filters.status && task.status !== filters.status) return false;
-    if (filters.priority && task.priority !== filters.priority) return false;
-    if (filters.space && task.space.id !== filters.space) return false;
-    if (
-      filters.assignee &&
-      !task.assignees.some((a) => a.id === filters.assignee)
-    )
-      return false;
-    if (filters.syncStatus === "synced" && !task.existsInLocal) return false;
-    if (filters.syncStatus === "available" && task.existsInLocal) return false;
-
-    return true;
-  });
-
-  // Extraer valores únicos para filtros
-  const uniqueStatuses = [...new Set(tasks.map((t) => t.status))];
-  const uniquePriorities = [...new Set(tasks.map((t) => t.priority))];
-  const uniqueSpaces = [
-    ...new Set(tasks.map((t) => ({ id: t.space.id, name: t.space.name }))),
-  ];
-
-  const availableTasksCount = filteredTasks.filter((t) => t.canSync).length;
-  const selectedAvailableCount = Array.from(selectedTasks).filter(
-    (id) => filteredTasks.find((t) => t.clickupId === id)?.canSync
-  ).length;
+  // Error handling
+  if (tasksError || categoriesError || brandsError) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center">
+        <div className="text-center">
+          <HugeiconsIcon
+            icon={TaskIcon}
+            size={48}
+            className="mx-auto mb-4 text-red-400"
+          />
+          <h3 className="text-2xl font-medium mb-2 text-red-400">
+            Error Loading Data
+          </h3>
+          <p className="text-gray-400 mb-4">
+            {tasksError?.message ||
+              categoriesError?.message ||
+              brandsError?.message ||
+              "Unknown error occurred"}
+          </p>
+          <Button
+            variant="soft"
+            color="primary"
+            onClick={handleRefresh}
+            startDecorator={<HugeiconsIcon icon={RefreshIcon} size={16} />}
+          >
+            Try Again
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -289,8 +299,10 @@ export const TasksSync: React.FC = () => {
                 label="Select Available"
                 size="sm"
                 sx={{ alignItems: "center" }}
+                disabled={loading}
               />
             </div>
+            
             <FormControl className="flex-1 max-w-xs">
               <Select
                 placeholder="Select brand..."
@@ -299,6 +311,7 @@ export const TasksSync: React.FC = () => {
                 required
                 size="sm"
                 sx={{ width: 200 }}
+                disabled={loadingBrands}
               >
                 <Option value={null}>Select Brand</Option>
                 {brands.map((brand) => (
@@ -316,6 +329,7 @@ export const TasksSync: React.FC = () => {
                 onChange={(_, value) => setSelectedCategory(value)}
                 size="sm"
                 sx={{ width: 200 }}
+                disabled={loadingCategories}
               >
                 <Option value={null}>Select Category</Option>
                 {categories.map((category) => (
@@ -332,19 +346,21 @@ export const TasksSync: React.FC = () => {
                 <HugeiconsIcon icon={DatabaseSync01Icon} size={16} />
               }
               onClick={handleSyncSelected}
-              disabled={!selectedBrand || selectedTasks.size === 0}
+              disabled={!selectedBrand || selectedTasks.size === 0 || syncing}
               loading={syncing}
               color="primary"
               size="sm"
             >
               Sync ({selectedTasks.size})
             </Button>
+            
             <Tooltip title="Refresh tasks from ClickUp">
               <IconButton
                 size="sm"
                 variant="soft"
-                onClick={refreshTasks}
+                onClick={handleRefresh}
                 loading={refreshing}
+                disabled={refreshing}
               >
                 <HugeiconsIcon icon={RefreshIcon} size={16} />
               </IconButton>
@@ -352,7 +368,9 @@ export const TasksSync: React.FC = () => {
           </div>
         </div>
       </div>
+      
       <div className="p-6 flex-1 flex flex-col">
+
         {/* Tasks List */}
         <TasksList
           tasks={filteredTasks}

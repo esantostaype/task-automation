@@ -2,7 +2,7 @@ import React from "react";
 import { UserCard } from "./UserCard";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { SearchListIcon } from "@hugeicons/core-free-icons";
-import { LinearProgress } from "@mui/joy";
+import { DesignerCardSkeleton } from "./DesignerCardSkeleton";
 
 interface User {
   clickupId: string;
@@ -33,14 +33,12 @@ export const UsersList: React.FC<UsersListProps> = ({
 }) => {
   if (loading) {
     return (
-      <div className="h-full flex items-center justify-center relative max-w-5xl mx-auto">
-        <div className="w-full">
-          <div className="flex items-center gap-2 mb-4">
-            <HugeiconsIcon icon={SearchListIcon} size={24} />
-            <p>Getting ClickUp users...</p>
-          </div>
-          <LinearProgress />
-        </div>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4">
+        {/* Render 3 skeleton cards */}
+        <DesignerCardSkeleton />
+        <DesignerCardSkeleton />
+        <DesignerCardSkeleton />
+        <DesignerCardSkeleton />
       </div>
     );
   }

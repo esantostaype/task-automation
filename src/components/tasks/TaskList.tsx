@@ -2,7 +2,7 @@ import React from "react";
 import { TaskCard } from "./TaskCard";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { TaskIcon } from "@hugeicons/core-free-icons";
-import { LinearProgress } from "@mui/joy";
+import { TaskCardSkeleton } from "./TaskCardSkeleton";
 
 interface Task {
   clickupId: string;
@@ -59,19 +59,6 @@ export const TasksList: React.FC<TasksListProps> = ({
   loading = false,
   filters = {},
 }) => {
-  // Filtrar tareas según los filtros aplicados
-  const filteredTasks = tasks.filter(task => {
-    if (filters.status && task.status !== filters.status) return false;
-    if (filters.priority && task.priority !== filters.priority) return false;
-    if (filters.space && task.space.id !== filters.space) return false;
-    if (filters.assignee && !task.assignees.some(a => a.id === filters.assignee)) return false;
-    if (filters.syncStatus) {
-      if (filters.syncStatus === 'synced' && !task.existsInLocal) return false;
-      if (filters.syncStatus === 'available' && task.existsInLocal) return false;
-    }
-    return true;
-  });
-
   // Función para mapear status a columnas
   const mapStatusToColumn = (status: string): string => {
     const statusLower = status.toLowerCase();
@@ -111,6 +98,47 @@ export const TasksList: React.FC<TasksListProps> = ({
     });
   };
 
+  // Renderizar skeletons durante la carga
+  if (loading) {
+    const columnOrder = ['TO DO', 'IN PROGRESS'];
+    
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100dvh-11.375rem)]">
+          {columnOrder.map((column) => (
+            <div key={column} className="flex flex-col overflow-y-auto relative pr-2">
+              {/* Column Header */}
+              <div className="sticky top-0 pb-2 bg-background flex items-center justify-between z-20">
+                <h2 className="font-semibold text-lg">{column}</h2>
+                <div className="bg-accent/20 text-accent text-xs size-6 rounded-full animate-pulse">
+                </div>
+              </div>
+              
+              {/* Skeleton Tasks - 2 per column */}
+              <div className="flex-1 space-y-4">
+                <TaskCardSkeleton />
+                <TaskCardSkeleton />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Filtrar tareas según los filtros aplicados
+  const filteredTasks = tasks.filter(task => {
+    if (filters.status && task.status !== filters.status) return false;
+    if (filters.priority && task.priority !== filters.priority) return false;
+    if (filters.space && task.space.id !== filters.space) return false;
+    if (filters.assignee && !task.assignees.some(a => a.id === filters.assignee)) return false;
+    if (filters.syncStatus) {
+      if (filters.syncStatus === 'synced' && !task.existsInLocal) return false;
+      if (filters.syncStatus === 'available' && task.existsInLocal) return false;
+    }
+    return true;
+  });
+
   // Agrupar tareas por columnas
   const groupedTasks = filteredTasks.reduce((acc, task) => {
     const column = mapStatusToColumn(task.status);
@@ -127,22 +155,8 @@ export const TasksList: React.FC<TasksListProps> = ({
   });
 
   // Definir el orden de las columnas
-  const columnOrder = ['TO DO', 'IN PROGRESS', 'DONE'];
+  const columnOrder = ['TO DO', 'IN PROGRESS'];
   const orderedColumns = columnOrder.filter(column => groupedTasks[column]?.length > 0);
-
-  if (loading) {
-    return (
-      <div className="h-full flex items-center justify-center relative max-w-7xl mx-auto">
-        <div className="w-full">
-          <div className="flex items-center gap-2 mb-4">
-            <HugeiconsIcon icon={TaskIcon} size={24} />
-            <p>Getting ClickUp tasks...</p>
-          </div>
-          <LinearProgress />
-        </div>
-      </div>
-    );
-  }
 
   if (tasks.length === 0) {
     return (
@@ -180,23 +194,26 @@ export const TasksList: React.FC<TasksListProps> = ({
     );
   }
 
+  // Si no hay columnas ordenadas, mostrar todas las columnas con placeholders
+  const displayColumns = orderedColumns.length > 0 ? orderedColumns : ['TO DO', 'IN PROGRESS', 'DONE'];
+
   return (
     <div className="space-y-6">
       {/* Kanban Board */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100dvh-11.375rem)]">
-        {orderedColumns.map((column) => (
-          <div key={column} className="flex flex-col overflow-y-auto relative pr-2">
+      <div className="flex align-baseline gap-6 h-[calc(100dvh-11.375rem)]">
+        {displayColumns.map((column) => (
+          <div key={column} className="flex flex-[0_0_360px] flex-col overflow-y-auto relative pr-2">
             {/* Column Header */}
             <div className="sticky top-0 pb-2 bg-background flex items-center justify-between z-20">
               <h2 className="font-semibold text-lg">{column}</h2>
               <span className="bg-accent/20 text-accent text-xs px-2 py-1 rounded-full">
-                {groupedTasks[column].length}
+                {groupedTasks[column]?.length || 0}
               </span>
             </div>
             
             {/* Tasks Column */}
             <div className="flex-1 space-y-4">
-              {groupedTasks[column].map((task) => (
+              {groupedTasks[column]?.map((task) => (
                 <TaskCard
                   key={task.clickupId}
                   task={task}
@@ -205,7 +222,12 @@ export const TasksList: React.FC<TasksListProps> = ({
                   onEdit={() => onTaskEdit(task.clickupId)}
                   showSelection={!task.existsInLocal}
                 />
-              ))}
+              )) || (
+                // Mostrar mensaje cuando no hay tareas en esta columna
+                <div className="text-center text-gray-500 text-sm py-8">
+                  No {column.toLowerCase()} tasks
+                </div>
+              )}
             </div>
           </div>
         ))}
