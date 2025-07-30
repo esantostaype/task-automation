@@ -72,6 +72,64 @@ export const TasksList: React.FC<TasksListProps> = ({
     return true;
   });
 
+  // Función para mapear status a columnas
+  const mapStatusToColumn = (status: string): string => {
+    const statusLower = status.toLowerCase();
+    
+    if (statusLower.includes('to do') || statusLower.includes('todo') || 
+        statusLower.includes('open') || statusLower.includes('backlog') ||
+        statusLower.includes('new') || statusLower.includes('pending')) {
+      return 'TO DO';
+    }
+    
+    if (statusLower.includes('in progress') || statusLower.includes('in-progress') ||
+        statusLower.includes('progress') || statusLower.includes('active') ||
+        statusLower.includes('working') || statusLower.includes('development')) {
+      return 'IN PROGRESS';
+    }
+    
+    if (statusLower.includes('done') || statusLower.includes('complete') ||
+        statusLower.includes('finished') || statusLower.includes('closed') ||
+        statusLower.includes('resolved') || statusLower.includes('delivered')) {
+      return 'DONE';
+    }
+    
+    // Por defecto, manejar otros status como TO DO
+    return 'TO DO';
+  };
+
+  // Función para ordenar tareas por fecha de vencimiento
+  const sortTasksByDueDate = (tasks: Task[]): Task[] => {
+    return tasks.sort((a, b) => {
+      // Las tareas sin fecha van al final
+      if (!a.dueDate && !b.dueDate) return 0;
+      if (!a.dueDate) return 1;
+      if (!b.dueDate) return -1;
+      
+      // Ordenar por fecha (más próximas primero)
+      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+    });
+  };
+
+  // Agrupar tareas por columnas
+  const groupedTasks = filteredTasks.reduce((acc, task) => {
+    const column = mapStatusToColumn(task.status);
+    if (!acc[column]) {
+      acc[column] = [];
+    }
+    acc[column].push(task);
+    return acc;
+  }, {} as Record<string, Task[]>);
+
+  // Ordenar tareas dentro de cada columna
+  Object.keys(groupedTasks).forEach(column => {
+    groupedTasks[column] = sortTasksByDueDate(groupedTasks[column]);
+  });
+
+  // Definir el orden de las columnas
+  const columnOrder = ['TO DO', 'IN PROGRESS', 'DONE'];
+  const orderedColumns = columnOrder.filter(column => groupedTasks[column]?.length > 0);
+
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center relative max-w-7xl mx-auto">
@@ -124,17 +182,32 @@ export const TasksList: React.FC<TasksListProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Tasks Grid */}
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
-        {filteredTasks.map((task) => (
-          <TaskCard
-            key={task.clickupId}
-            task={task}
-            isSelected={selectedTasks.has(task.clickupId)}
-            onSelect={(selected: boolean) => onTaskSelect(task.clickupId, selected)}
-            onEdit={() => onTaskEdit(task.clickupId)}
-            showSelection={!task.existsInLocal}
-          />
+      {/* Kanban Board */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100dvh-11.375rem)]">
+        {orderedColumns.map((column) => (
+          <div key={column} className="flex flex-col overflow-y-auto relative pr-2">
+            {/* Column Header */}
+            <div className="sticky top-0 pb-2 bg-background flex items-center justify-between z-20">
+              <h2 className="font-semibold text-lg">{column}</h2>
+              <span className="bg-accent/20 text-accent text-xs px-2 py-1 rounded-full">
+                {groupedTasks[column].length}
+              </span>
+            </div>
+            
+            {/* Tasks Column */}
+            <div className="flex-1 space-y-4">
+              {groupedTasks[column].map((task) => (
+                <TaskCard
+                  key={task.clickupId}
+                  task={task}
+                  isSelected={selectedTasks.has(task.clickupId)}
+                  onSelect={(selected: boolean) => onTaskSelect(task.clickupId, selected)}
+                  onEdit={() => onTaskEdit(task.clickupId)}
+                  showSelection={!task.existsInLocal}
+                />
+              ))}
+            </div>
+          </div>
         ))}
       </div>
 

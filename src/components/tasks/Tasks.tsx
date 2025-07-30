@@ -267,7 +267,7 @@ export const TasksSync: React.FC = () => {
   ).length;
 
   return (
-    <>
+    <div className="flex flex-col h-full">
       <div className="sticky top-16 bg-background/70 backdrop-blur-lg z-50">
         <div className="p-4 flex items-center justify-between border-b border-b-white/10">
           <h1 className="flex items-center gap-2 text-2xl font-medium">
@@ -352,7 +352,7 @@ export const TasksSync: React.FC = () => {
           </div>
         </div>
       </div>
-      <div className="p-6 space-y-6">
+      <div className="p-6 flex-1 flex flex-col">
         {/* Tasks List */}
         <TasksList
           tasks={filteredTasks}
@@ -363,6 +363,6 @@ export const TasksSync: React.FC = () => {
           filters={filters}
         />
       </div>
-    </>
+    </div>
   );
 };
