@@ -1,135 +1,247 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // src/app/login/page.tsx
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Button, Input, FormControl, FormLabel, Alert, Card, Typography, Box } from '@mui/joy';
-import { HugeiconsIcon } from '@hugeicons/react';
-import { UserIcon, LockPasswordIcon, Login01Icon } from '@hugeicons/core-free-icons';
+import React, { useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Button,
+  Input,
+  FormControl,
+  FormLabel,
+  Alert,
+  Card,
+  Typography,
+  Box,
+  CssVarsProvider,
+} from "@mui/joy";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  UserIcon,
+  LockPasswordIcon,
+  Login01Icon,
+} from "@hugeicons/core-free-icons";
+import { dynamicTheme } from "@/themes/dynamicTheme";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("esantos@inszoneins.com"); // Pre-llenar para testing
+  const [password, setPassword] = useState("Ersa#123!"); // Pre-llenar para testing
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
+  const [debugInfo, setDebugInfo] = useState("");
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
+    setError("");
+    setDebugInfo("Starting login process...");
 
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
+      console.log("🔐 Starting login with:", { email, password: "***" });
+      setDebugInfo("Sending login request...");
+
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({ email, password }),
+        credentials: "include", // ¡MUY IMPORTANTE!
       });
 
+      console.log("📡 Response status:", response.status);
+
       const data = await response.json();
+      console.log("📡 Response data:", data);
+
+      setDebugInfo(`Response: ${response.status} - ${JSON.stringify(data)}`);
 
       if (data.success) {
-        // Redirect to dashboard or home page
-        router.push('/');
-        router.refresh();
+        console.log("✅ Login successful!");
+        setDebugInfo("Login successful! Checking cookies...");
+
+        // Verificar que las cookies se guardaron
+        const cookieCheck = document.cookie;
+        console.log("🍪 Current cookies:", cookieCheck);
+        setDebugInfo(`Cookies: ${cookieCheck || "No cookies found!"}`);
+
+        // Intentar verificar el token inmediatamente
+        setTimeout(async () => {
+          try {
+            console.log("🔍 Verifying token...");
+            const verifyResponse = await fetch("/api/auth/verify", {
+              method: "GET",
+              credentials: "include",
+            });
+
+            const verifyData = await verifyResponse.json();
+            console.log("🔍 Verify response:", verifyData);
+
+            if (verifyData.success) {
+              console.log("✅ Token verification successful, redirecting...");
+              setDebugInfo("Token verified! Redirecting...");
+
+              // Usar window.location para forzar navegación completa
+              window.location.href = "/";
+            } else {
+              setError("Token verification failed: " + verifyData.message);
+              setDebugInfo("Token verification failed!");
+            }
+          } catch (verifyError) {
+            console.error("❌ Token verification error:", verifyError);
+            setError("Token verification error");
+          }
+        }, 500);
       } else {
-        setError(data.message || 'Login failed');
+        console.log("❌ Login failed:", data.message);
+        setError(data.message || "Login failed");
+        setDebugInfo("Login failed!");
       }
     } catch (error) {
-      setError('An error occurred. Please try again.');
+      console.error("❌ Login error:", error);
+      setError("Network error occurred");
+      setDebugInfo("Network error: " + String(error));
     } finally {
       setLoading(false);
     }
   };
 
+  // Función para testing manual
+  const testCookies = () => {
+    console.log("🧪 Testing cookies...");
+    const cookies = document.cookie;
+    console.log("Current cookies:", cookies);
+    setDebugInfo("Current cookies: " + (cookies || "None"));
+  };
+
+  const testVerify = async () => {
+    console.log("🧪 Testing verify endpoint...");
+    try {
+      const response = await fetch("/api/auth/verify", {
+        method: "GET",
+        credentials: "include",
+      });
+      const data = await response.json();
+      console.log("Verify test result:", data);
+      setDebugInfo("Verify result: " + JSON.stringify(data));
+    } catch (error) {
+      console.log("Verify test error:", error);
+      setDebugInfo("Verify error: " + String(error));
+    }
+  };
+
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        padding: 2,
-      }}
-    >
-      <Card
+    <CssVarsProvider theme={dynamicTheme} defaultMode="dark">
+      <Box
         sx={{
-          width: '100%',
-          maxWidth: 400,
-          padding: 4,
-          boxShadow: 'lg',
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+          padding: 2,
         }}
       >
-        <Box sx={{ textAlign: 'center', mb: 3 }}>
-          <Typography level="h2" sx={{ mb: 1 }}>
-            Welcome Back
-          </Typography>
-          <Typography level="body-md" color="neutral">
-            Sign in to your account
-          </Typography>
-        </Box>
+        <Card
+          sx={{
+            width: "100%",
+            maxWidth: 500,
+            padding: 4,
+            boxShadow: "lg",
+          }}
+        >
+          <Box sx={{ textAlign: "center", mb: 3 }}>
+            <Typography level="h2" sx={{ mb: 1 }}>
+              Welcome Back
+            </Typography>
+            <Typography level="body-md" color="neutral">
+              Sign in to your account
+            </Typography>
+          </Box>
 
-        {error && (
-          <Alert color="danger" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
+          {error && (
+            <Alert color="danger" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
 
-        <form onSubmit={handleSubmit}>
-          <FormControl sx={{ mb: 2 }}>
-            <FormLabel>
-              <HugeiconsIcon icon={UserIcon} size={16} style={{ marginRight: 8 }} />
-              Email
-            </FormLabel>
-            <Input
-              type="email"
-              placeholder="Enter your email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
+          {debugInfo && (
+            <Alert color="neutral" sx={{ mb: 2, fontSize: "xs" }}>
+              <strong>Debug:</strong> {debugInfo}
+            </Alert>
+          )}
+
+          <form onSubmit={handleSubmit}>
+            <FormControl sx={{ mb: 2 }}>
+              <FormLabel>
+                <HugeiconsIcon
+                  icon={UserIcon}
+                  size={16}
+                  style={{ marginRight: 8 }}
+                />
+                Email
+              </FormLabel>
+              <Input
+                type="email"
+                placeholder="Enter your email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                disabled={loading}
+                autoComplete="email"
+              />
+            </FormControl>
+
+            <FormControl sx={{ mb: 3 }}>
+              <FormLabel>
+                <HugeiconsIcon
+                  icon={LockPasswordIcon}
+                  size={16}
+                  style={{ marginRight: 8 }}
+                />
+                Password
+              </FormLabel>
+              <Input
+                type="password"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                disabled={loading}
+                autoComplete="current-password"
+              />
+            </FormControl>
+
+            <Button
+              type="submit"
+              fullWidth
+              loading={loading}
               disabled={loading}
-              autoComplete="email"
-            />
-          </FormControl>
+              startDecorator={<HugeiconsIcon icon={Login01Icon} size={16} />}
+              sx={{ mb: 2 }}
+            >
+              {loading ? "Signing in..." : "Sign In"}
+            </Button>
+          </form>
 
-          <FormControl sx={{ mb: 3 }}>
-            <FormLabel>
-              <HugeiconsIcon icon={LockPasswordIcon} size={16} style={{ marginRight: 8 }} />
-              Password
-            </FormLabel>
-            <Input
-              type="password"
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              disabled={loading}
-              autoComplete="current-password"
-            />
-          </FormControl>
+          {/* Debug buttons */}
+          <Box sx={{ display: "flex", gap: 1, mt: 2 }}>
+            <Button size="sm" variant="outlined" onClick={testCookies}>
+              Check Cookies
+            </Button>
+            <Button size="sm" variant="outlined" onClick={testVerify}>
+              Test Verify
+            </Button>
+          </Box>
 
-          <Button
-            type="submit"
-            fullWidth
-            loading={loading}
-            disabled={loading}
-            startDecorator={<HugeiconsIcon icon={Login01Icon} size={16} />}
-            sx={{ mb: 2 }}
-          >
-            {loading ? 'Signing in...' : 'Sign In'}
-          </Button>
-        </form>
-
-        <Box sx={{ textAlign: 'center', mt: 2 }}>
-          <Typography level="body-sm" color="neutral">
-            Demo credentials available for testing
-          </Typography>
-        </Box>
-      </Card>
-    </Box>
+          <Box sx={{ textAlign: "center", mt: 2 }}>
+            <Typography level="body-sm" color="neutral">
+              Credentials pre-filled for testing
+            </Typography>
+          </Box>
+        </Card>
+      </Box>
+    </CssVarsProvider>
   );
 }

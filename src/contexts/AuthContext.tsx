@@ -46,6 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
+      // Usar DELETE en el endpoint de login según tu API
       await fetch('/api/auth/login', {
         method: 'DELETE',
         credentials: 'include',
@@ -56,6 +57,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       router.refresh();
     } catch (error) {
       console.error('Logout failed:', error);
+      // Incluso si falla la petición, limpiar estado local
+      setUser(null);
+      router.push('/login');
     }
   };
 
