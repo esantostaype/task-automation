@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-// src/app/api/tasks/parallel/route.ts - ACTUALIZADO CON PRIORIDADES EN PARALELO + VACACIONES + MOVIMIENTO LOW
+// src/app/api/tasks/parallel/route.ts - REACTIVADO CON CLICKUP REAL
 
 import { NextResponse } from 'next/server'
 import { prisma } from '@/utils/prisma'
@@ -10,7 +10,7 @@ import {
   calculateUserSlots,
   getBestUserWithCache
 } from '@/services/task-assignment.service'
-import { createTaskInClickUp } from '@/services/clickup.service'
+import { createTaskInClickUp } from '@/services/clickup.service' // ✅ USAR SERVICIO REAL
 import { TaskCreationParams, UserSlot, UserWithRoles, ClickUpBrand, TaskWhereInput, UserVacation } from '@/interfaces'
 import { 
   calculateParallelPriorityInsertion  // ✅ NUEVA FUNCIÓN QUE NO EMPUJA FECHAS + MUEVE LOW
@@ -263,7 +263,7 @@ export async function POST(req: Request) {
       }, { status: 400 })
     }
 
-    console.log(`🚀 === CREANDO TAREA "${name}" CON PRIORIDADES EN PARALELO + VACACIONES + LOW MOVEMENT ===`)
+    console.log(`🚀 === CREANDO TAREA "${name}" CON PRIORIDADES EN PARALELO + VACACIONES + LOW MOVEMENT EN CLICKUP REAL ===`)
     console.log(`📋 Parámetros:`)
     console.log(`   - Priority: ${priority}`)
     console.log(`   - Duration: ${durationDays} días`)
@@ -274,6 +274,7 @@ export async function POST(req: Request) {
     console.log(`   ✅ Nueva lógica: NO empuja fechas de tareas existentes`)
     console.log(`   🏖️ Considera vacaciones automáticamente`)
     console.log(`   🔄 Mueve tareas LOW del mismo día al final (solo para NORMAL)`)
+    console.log(`   ✅ CREANDO EN CLICKUP REAL`)
 
     const [category, brand] = await Promise.all([
       prisma.taskCategory.findUnique({
@@ -362,7 +363,7 @@ export async function POST(req: Request) {
       })
     }
 
-    // ✅ NUEVA LÓGICA: PRIORIDADES EN PARALELO + VACACIONES + MOVIMIENTO LOW
+    // ✅ NUEVA LÓGICA: PRIORIDADES EN PARALELO + VACACIONES + MOVIMIENTO Low
     console.log(`\n🎯 === APLICANDO PRIORIDADES EN PARALELO + VACACIONES + LOW MOVEMENT ===`)
     console.log(`✅ Las tareas existentes NO se verán afectadas (excepto LOW del mismo día)`)
     console.log(`🏖️ Se considerarán vacaciones automáticamente`)
@@ -450,18 +451,28 @@ export async function POST(req: Request) {
       teamId: brand.teamId ?? ''
     }
 
-    console.log('📤 Creando tarea...')
+    console.log('📤 Creando tarea EN CLICKUP REAL...')
     
-    // Para desarrollo, usar ID temporal
-    const clickupTaskId = `parallel-vacation-low-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    const clickupTaskUrl = `https://parallel-vacation-low-dev.com/task/${clickupTaskId}`
+    // ✅ USAR CLICKUP REAL EN LUGAR DE ID TEMPORAL
+    const { clickupTaskId, clickupTaskUrl } = await createTaskInClickUp({
+      name,
+      description,
+      priority,
+      deadline: finalInsertion.deadline,
+      startDate: finalInsertion.startDate,
+      usersToAssign,
+      category: categoryForClickUp,
+      brand: brandForClickUp,
+      customDurationDays: durationDays !== category.tierList.duration ? durationDays : undefined
+    })
 
-    console.log(`✅ Tarea temporal creada: ${clickupTaskId}`)
+    console.log(`✅ Tarea creada en ClickUp: ${clickupTaskId}`)
+    console.log(`🔗 URL: ${clickupTaskUrl}`)
 
     // ✅ CREAR TAREA CON FECHAS QUE CONSIDERAN VACACIONES Y PRIORIDADES EN PARALELO
     const task = await prisma.task.create({
       data: {
-        id: clickupTaskId,
+        id: clickupTaskId, // ✅ USAR ID REAL DE CLICKUP
         name,
         description,
         typeId: typeId,
@@ -470,7 +481,7 @@ export async function POST(req: Request) {
         priority,
         startDate: finalInsertion.startDate,  // ✅ Fecha ajustada por vacaciones, sin empujar otras
         deadline: finalInsertion.deadline,    // ✅ Deadline ajustado por vacaciones, sin empujar otras
-        url: clickupTaskUrl,
+        url: clickupTaskUrl, // ✅ URL REAL DE CLICKUP
         lastSyncAt: new Date(),
         syncStatus: 'SYNCED',
         customDuration: durationDays !== category.tierList.duration ? durationDays : null
@@ -543,6 +554,7 @@ export async function POST(req: Request) {
     console.log(`✅ Compromisos estables para la mayoría de tareas`)
     console.log(`🏖️ Vacaciones consideradas automáticamente`)
     console.log(`🚫 NO se ejecuta recálculo masivo como antes`)
+    console.log(`✅ CREADO EN CLICKUP REAL`)
     
     if (tasksToMoveAfterCreation.length > 0) {
       console.log(`📋 ${tasksToMoveAfterCreation.length} tareas LOW reposicionadas para mantener orden consecutivo`)
@@ -591,7 +603,7 @@ export async function POST(req: Request) {
     invalidateAllCache()
     console.log('🗑️ Cache invalidado después de crear tarea')
 
-    console.log(`🎉 === TAREA "${name}" CREADA CON PRIORIDADES EN PARALELO + VACACIONES + LOW MOVEMENT ===`)
+    console.log(`🎉 === TAREA "${name}" CREADA CON PRIORIDADES EN PARALELO + VACACIONES + LOW MOVEMENT EN CLICKUP REAL ===`)
 
     return NextResponse.json({
       id: taskWithAssignees?.id,
@@ -625,6 +637,11 @@ export async function POST(req: Request) {
           email: assignment.user.email
         }
       })) || [],
+      clickupInfo: {
+        clickupId: clickupTaskId,
+        clickupUrl: clickupTaskUrl,
+        createdInClickUp: true
+      },
       vacationInfo: {
         hadVacationConflicts: vacationAdjustments.length > 0,
         adjustments: vacationAdjustments.map(adj => ({
@@ -657,7 +674,8 @@ export async function POST(req: Request) {
         vacationAware: true,
         holidayAware: true,
         parallelPriorities: true,
-        lowTaskMovement: true // ✅ NUEVO
+        lowTaskMovement: true, // ✅ NUEVO
+        createdInClickUp: true // ✅ NUEVO
       }
     })
 
