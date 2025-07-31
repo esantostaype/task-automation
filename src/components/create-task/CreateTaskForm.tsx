@@ -14,6 +14,7 @@ import { Formik, Form, useFormikContext } from "formik";
 import { Button, Typography } from "@mui/joy";
 import { toast } from "react-toastify";
 import { Tier } from "@prisma/client";
+import { useQueryClient } from "@tanstack/react-query"; // ✅ NUEVO IMPORT
 
 import { SpinnerCreatingTask, SpinnerSearching } from "@/components";
 import {
@@ -28,6 +29,7 @@ import {
 } from "./";
 
 import { useSocket, useTaskData, useTaskSuggestion } from "@/hooks";
+import { taskKeys } from "@/hooks/queries/useTasks"; // ✅ NUEVO IMPORT
 import { getTypeKind } from "@/utils";
 import { validationSchema } from "@/validation/taskValidation";
 import { FormValues, User, TaskType } from "@/interfaces";
@@ -267,6 +269,8 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
 };
 
 export const CreateTaskForm: FC = () => {
+  const queryClient = useQueryClient(); // ✅ NUEVO: Hook de React Query
+  
   const {
     types,
     brands,
@@ -443,6 +447,17 @@ export const CreateTaskForm: FC = () => {
         } catch (refreshError) {
           console.error("❌ Error al refrescar categorías:", refreshError);
         }
+      }
+
+      // ✅ NUEVO: Invalidar cache de tareas de ClickUp
+      console.log("🔄 Invalidating ClickUp tasks cache...");
+      try {
+        await queryClient.invalidateQueries({ 
+          queryKey: taskKeys.clickup() 
+        });
+        console.log("✅ ClickUp tasks cache invalidated successfully");
+      } catch (cacheError) {
+        console.error("❌ Error invalidating ClickUp tasks cache:", cacheError);
       }
 
       const assignedUserNames =

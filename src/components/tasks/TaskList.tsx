@@ -21,6 +21,7 @@ interface Task {
     color: string;
   }>;
   dueDate?: string | null;
+  startDate?: string | null; // ✅ AGREGADA: fecha de inicio
   timeEstimate?: number | null;
   tags: string[];
   list: {

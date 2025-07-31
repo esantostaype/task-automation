@@ -28,6 +28,7 @@ interface TaskCardProps {
       color: string;
     }>;
     dueDate?: string | null;
+    startDate?: string | null; // ✅ NUEVO: Agregada fecha de inicio
     timeEstimate?: number | null;
     tags: string[];
     list: {
@@ -55,27 +56,59 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   onEdit,
   showSelection = true,
 }) => {
-  const formatDueDate = (dateString: string) => {
+  // ✅ NUEVA FUNCIÓN: Formatear fecha y hora
+  const formatDateTime = (dateString: string) => {
     const date = new Date(dateString);
+    
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    
+    const month = monthNames[date.getMonth()];
+    const day = date.getDate();
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    
+    return `${month} ${day}, ${hours}:${minutes}`;
+  };
+
+  // ✅ NUEVA FUNCIÓN: Crear el rango de fechas
+  const formatDateRange = () => {
+    if (!task.dueDate) return null;
+
+    const dueDateTime = formatDateTime(task.dueDate);
+    
+    // Si tenemos fecha de inicio, mostrar rango
+    if (task.startDate) {
+      const startDateTime = formatDateTime(task.startDate);
+      return `${startDateTime} - ${dueDateTime}`;
+    }
+    
+    // Si no tenemos fecha de inicio, solo mostrar fecha de vencimiento
+    return `Due: ${dueDateTime}`;
+  };
+
+  // ✅ NUEVA FUNCIÓN: Determinar color según urgencia
+  const getDateColor = () => {
+    if (!task.dueDate) return "text-gray-400";
+    
+    const dueDate = new Date(task.dueDate);
     const now = new Date();
-    const diffTime = date.getTime() - now.getTime();
+    const diffTime = dueDate.getTime() - now.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
     if (diffDays < 0) {
-      return {
-        text: `${Math.abs(diffDays)} days overdue`,
-        color: "text-red-400",
-      };
+      return "text-red-400"; // Overdue
     } else if (diffDays === 0) {
-      return { text: "Due today", color: "text-orange-400" };
-    } else if (diffDays === 1) {
-      return { text: "Due tomorrow", color: "text-yellow-400" };
+      return "text-orange-400"; // Due today  
+    } else if (diffDays <= 2) {
+      return "text-yellow-400"; // Due soon
     } else {
-      return { text: `Due in ${diffDays} days`, color: "text-gray-400" };
+      return "text-gray-300"; // Normal
     }
   };
 
-  const dueInfo = task.dueDate ? formatDueDate(task.dueDate) : null;
+  const dateRange = formatDateRange();
+  const dateColor = getDateColor();
 
   return (
     <div
@@ -164,26 +197,36 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
       {/* Task Details */}
       <div className="space-y-2 text-sm">
-        {/* Due Date */}
-        {dueInfo && (
-          <div className="flex items-center gap-2">
+        {/* ✅ NUEVA SECCIÓN: Date Range con formato mejorado */}
+        {dateRange && (
+          <div className="flex items-center gap-1">
             <HugeiconsIcon
               icon={Calendar03Icon}
               size={16}
-              className="text-gray-400"
+              className="text-gray-400 flex-shrink-0"
             />
-            <span className={dueInfo.color}>{dueInfo.text}</span>
+            <div 
+              className={`${dateColor} text-sm font-medium mt-[2px]`}
+              style={{
+                fontSize: '11px',
+                lineHeight: '1.2'
+              }}
+            >
+              {dateRange}
+            </div>
           </div>
         )}
       </div>
 
       {/* Status and Priority Header */}
       <div className="flex items-center justify-between mt-6 capitalize">
-        <div className="flex items-center gap-1 text-sm"  style={{ color: task.priorityColor }}>
-          <span><HugeiconsIcon
+        <div className="flex items-center gap-1 text-sm" style={{ color: task.priorityColor }}>
+          <span>
+            <HugeiconsIcon
               icon={Flag02Icon}
               size={16}
-            /></span>
+            />
+          </span>
           <span>{task.priority}</span>
         </div>
       </div>
