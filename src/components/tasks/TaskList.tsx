@@ -105,9 +105,9 @@ export const TasksList: React.FC<TasksListProps> = ({
     
     return (
       <div className="space-y-6">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100dvh-11.375rem)]">
+        <div className="flex align-baseline gap-6 h-[calc(100dvh-11.375rem)]">
           {columnOrder.map((column) => (
-            <div key={column} className="flex flex-col overflow-y-auto relative pr-2">
+            <div key={column} className="flex flex-[0_0_360px] flex-col overflow-y-auto relative pr-2">
               {/* Column Header */}
               <div className="sticky top-0 pb-2 bg-background flex items-center justify-between z-20">
                 <h2 className="font-semibold text-lg">{column}</h2>
