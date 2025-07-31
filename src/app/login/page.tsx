@@ -2,8 +2,9 @@
 // src/app/login/page.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Button,
   Input,
@@ -24,12 +25,21 @@ import {
 import { dynamicTheme } from "@/themes/dynamicTheme";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("esantos@inszoneins.com"); // Pre-llenar para testing
-  const [password, setPassword] = useState("Ersa#123!"); // Pre-llenar para testing
+  const [email, setEmail] = useState("esantos@inszoneins.com");
+  const [password, setPassword] = useState("Ersa#123!");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [debugInfo, setDebugInfo] = useState("");
   const router = useRouter();
+  const { login, user, loading: authLoading } = useAuth();
+
+  // Redirigir si el usuario ya está autenticado
+  useEffect(() => {
+    if (!authLoading && user) {
+      console.log("🔄 User already authenticated, redirecting...");
+      router.push("/");
+    }
+  }, [user, authLoading, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,63 +49,20 @@ export default function LoginPage() {
 
     try {
       console.log("🔐 Starting login with:", { email, password: "***" });
-      setDebugInfo("Sending login request...");
+      setDebugInfo("Attempting login...");
 
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email, password }),
-        credentials: "include", // ¡MUY IMPORTANTE!
-      });
+      const success = await login(email, password);
 
-      console.log("📡 Response status:", response.status);
-
-      const data = await response.json();
-      console.log("📡 Response data:", data);
-
-      setDebugInfo(`Response: ${response.status} - ${JSON.stringify(data)}`);
-
-      if (data.success) {
+      if (success) {
         console.log("✅ Login successful!");
-        setDebugInfo("Login successful! Checking cookies...");
-
-        // Verificar que las cookies se guardaron
-        const cookieCheck = document.cookie;
-        console.log("🍪 Current cookies:", cookieCheck);
-        setDebugInfo(`Cookies: ${cookieCheck || "No cookies found!"}`);
-
-        // Intentar verificar el token inmediatamente
-        setTimeout(async () => {
-          try {
-            console.log("🔍 Verifying token...");
-            const verifyResponse = await fetch("/api/auth/verify", {
-              method: "GET",
-              credentials: "include",
-            });
-
-            const verifyData = await verifyResponse.json();
-            console.log("🔍 Verify response:", verifyData);
-
-            if (verifyData.success) {
-              console.log("✅ Token verification successful, redirecting...");
-              setDebugInfo("Token verified! Redirecting...");
-
-              // Usar window.location para forzar navegación completa
-              window.location.href = "/";
-            } else {
-              setError("Token verification failed: " + verifyData.message);
-              setDebugInfo("Token verification failed!");
-            }
-          } catch (verifyError) {
-            console.error("❌ Token verification error:", verifyError);
-            setError("Token verification error");
-          }
-        }, 500);
+        setDebugInfo("Login successful! Redirecting...");
+        
+        // Usar router.push para navegar
+        router.push("/");
+        router.refresh();
       } else {
-        console.log("❌ Login failed:", data.message);
-        setError(data.message || "Login failed");
+        console.log("❌ Login failed");
+        setError("Invalid credentials");
         setDebugInfo("Login failed!");
       }
     } catch (error) {
@@ -130,6 +97,25 @@ export default function LoginPage() {
       setDebugInfo("Verify error: " + String(error));
     }
   };
+
+  // Mostrar loading si aún se está verificando la autenticación
+  if (authLoading) {
+    return (
+      <CssVarsProvider theme={dynamicTheme} defaultMode="dark">
+        <Box
+          sx={{
+            minHeight: "100vh",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+          }}
+        >
+          <Typography>Loading...</Typography>
+        </Box>
+      </CssVarsProvider>
+    );
+  }
 
   return (
     <CssVarsProvider theme={dynamicTheme} defaultMode="dark">
