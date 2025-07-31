@@ -2,9 +2,8 @@
 // src/app/login/page.tsx
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/contexts/AuthContext";
 import {
   Button,
   Input,
@@ -14,7 +13,6 @@ import {
   Card,
   Typography,
   Box,
-  CssVarsProvider,
 } from "@mui/joy";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -22,7 +20,6 @@ import {
   LockPasswordIcon,
   Login01Icon,
 } from "@hugeicons/core-free-icons";
-import { dynamicTheme } from "@/themes/dynamicTheme";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("esantos@inszoneins.com");
@@ -31,15 +28,6 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [debugInfo, setDebugInfo] = useState("");
   const router = useRouter();
-  const { login, user, loading: authLoading } = useAuth();
-
-  // Redirigir si el usuario ya está autenticado
-  useEffect(() => {
-    if (!authLoading && user) {
-      console.log("🔄 User already authenticated, redirecting...");
-      router.push("/");
-    }
-  }, [user, authLoading, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,20 +37,37 @@ export default function LoginPage() {
 
     try {
       console.log("🔐 Starting login with:", { email, password: "***" });
-      setDebugInfo("Attempting login...");
+      setDebugInfo("Sending login request...");
 
-      const success = await login(email, password);
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+        credentials: "include",
+      });
 
-      if (success) {
+      console.log("📡 Response status:", response.status);
+      const data = await response.json();
+      console.log("📡 Response data:", data);
+
+      if (data.success) {
         console.log("✅ Login successful!");
         setDebugInfo("Login successful! Redirecting...");
-        
-        // Usar router.push para navegar
-        router.push("/");
-        router.refresh();
+
+        // Dar tiempo para que la cookie se establezca completamente
+        // y luego hacer la redirección
+        setTimeout(() => {
+          console.log("🔄 Redirecting to dashboard...");
+          // Usar router.push y también router.refresh para asegurar que el middleware vea la cookie
+          router.push("/");
+          router.refresh();
+        }, 100);
+
       } else {
-        console.log("❌ Login failed");
-        setError("Invalid credentials");
+        console.log("❌ Login failed:", data.message);
+        setError(data.message || "Login failed");
         setDebugInfo("Login failed!");
       }
     } catch (error) {
@@ -98,27 +103,7 @@ export default function LoginPage() {
     }
   };
 
-  // Mostrar loading si aún se está verificando la autenticación
-  if (authLoading) {
-    return (
-      <CssVarsProvider theme={dynamicTheme} defaultMode="dark">
-        <Box
-          sx={{
-            minHeight: "100vh",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-          }}
-        >
-          <Typography>Loading...</Typography>
-        </Box>
-      </CssVarsProvider>
-    );
-  }
-
   return (
-    <CssVarsProvider theme={dynamicTheme} defaultMode="dark">
       <Box
         sx={{
           minHeight: "100vh",
@@ -228,6 +213,5 @@ export default function LoginPage() {
           </Box>
         </Card>
       </Box>
-    </CssVarsProvider>
   );
 }

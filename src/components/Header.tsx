@@ -38,7 +38,7 @@ export const Header = () => {
   }
 
   const navItems = [
-    { href: '/', label: 'Tasks', icon: Queue01Icon },
+    { href: '/tasks', label: 'Tasks', icon: Queue01Icon },
     { href: '/designers', label: 'Designers', icon: UserGroup03Icon },
     { onClick: handleTypesClick, label: 'Types', icon: SwatchIcon },
     { onClick: handleTiersClick, label: 'Tiers', icon: Layers01Icon },

@@ -1,4 +1,3 @@
-import './globals.css'
 import { Providers } from '../providers'
 import { CreateTaskForm, GlobalModal, Header } from '@/components'
 import { GlobalConfirmation } from '@/components/Confirmation'
