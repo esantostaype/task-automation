@@ -1,9 +1,9 @@
 'use client'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { LabelImportantIcon, Layers01Icon, Queue01Icon, Settings01Icon, SwatchIcon, UserGroup03Icon } from '@hugeicons/core-free-icons'
+import { LabelImportantIcon, Layers01Icon, Queue01Icon, Logout02Icon, SwatchIcon, UserGroup03Icon } from '@hugeicons/core-free-icons'
 import Image from 'next/image'
 import { CategoriesForm, NavItem, TaskTypesForm, TierListForm } from '@/components'
-import { IconButton } from '@mui/joy'
+import { Button } from '@mui/joy'
 import { useModalStore } from '@/stores/modalStore'
 
 export const Header = () => {
@@ -55,13 +55,15 @@ export const Header = () => {
           ))}
         </ul>
       </div>
-      <IconButton 
+      <Button 
         size='sm' 
-        variant='soft'
+        variant='plain'
         onClick={handleSettingsClick}
+        color='danger'
+        startDecorator={<HugeiconsIcon icon={Logout02Icon} size={20} strokeWidth={1.5} />}
       >
-        <HugeiconsIcon icon={Settings01Icon} size={20} strokeWidth={1.5} />
-      </IconButton>
+        Logout
+      </Button>
     </header>
   )
 }

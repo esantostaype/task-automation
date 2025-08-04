@@ -1,9 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// src/app/api/auth/verify/route.ts - MEJORADO
+// src/app/api/auth/verify/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import jwt from 'jsonwebtoken';
+import { jwtVerify } from 'jose';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-key-change-in-production';
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET || 'your-super-secret-key-change-in-production'
+);
 
 export async function GET(request: NextRequest) {
   try {
@@ -23,13 +25,13 @@ export async function GET(request: NextRequest) {
 
     try {
       console.log('🔍 Verifying JWT token...');
-      const decoded = jwt.verify(token, JWT_SECRET) as any;
-      console.log('✅ Token verified successfully:', { email: decoded.email });
+      const { payload } = await jwtVerify(token, JWT_SECRET);
+      console.log('✅ Token verified successfully:', { email: payload.email });
       
       return NextResponse.json({
         success: true,
         user: {
-          email: decoded.email
+          email: payload.email
         },
         authenticated: true
       });
@@ -45,15 +47,7 @@ export async function GET(request: NextRequest) {
       }, { status: 401 });
 
       // Limpiar cookie
-      response.cookies.set({
-        name: 'auth-token',
-        value: '',
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 0,
-        path: '/',
-      });
+      response.cookies.delete('auth-token');
 
       return response;
     }

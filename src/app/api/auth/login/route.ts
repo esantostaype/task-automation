@@ -1,8 +1,11 @@
-// src/app/api/auth/login/route.ts - MEJORADO (actualizar el existente)
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// src/app/api/auth/login/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import jwt from 'jsonwebtoken';
+import { SignJWT } from 'jose';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-key-change-in-production';
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET || 'your-super-secret-key-change-in-production'
+);
 
 // Credenciales hardcodeadas
 const VALID_CREDENTIALS = {
@@ -29,16 +32,16 @@ export async function POST(request: NextRequest) {
     if (email === VALID_CREDENTIALS.email && password === VALID_CREDENTIALS.password) {
       console.log('Credentials valid, creating JWT token');
       
-      // Crear JWT token
-      const token = jwt.sign(
-        { 
-          email: email, 
-          authenticated: true,
-          loginTime: new Date().toISOString()
-        },
-        JWT_SECRET,
-        { expiresIn: '7d' }
-      );
+      // Crear JWT token usando jose
+      const token = await new SignJWT({ 
+        email: email, 
+        authenticated: true,
+        loginTime: new Date().toISOString()
+      })
+        .setProtectedHeader({ alg: 'HS256' })
+        .setExpirationTime('7d')
+        .setIssuedAt()
+        .sign(JWT_SECRET);
 
       console.log('JWT token created, setting up response');
 
@@ -54,7 +57,7 @@ export async function POST(request: NextRequest) {
         name: 'auth-token',
         value: token,
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production', // HTTPS en producción
+        secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         maxAge: 7 * 24 * 60 * 60, // 7 días en segundos
         path: '/',
@@ -82,7 +85,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Logout endpoint mejorado
+// Logout endpoint
 export async function DELETE() {
   console.log('Logout request received');
   
@@ -93,15 +96,7 @@ export async function DELETE() {
   });
 
   // Limpiar cookie
-  response.cookies.set({
-    name: 'auth-token',
-    value: '',
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 0,
-    path: '/',
-  });
+  response.cookies.delete('auth-token');
 
   console.log('Cookie cleared, user logged out');
   return response;
