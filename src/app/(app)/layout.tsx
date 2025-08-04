@@ -1,9 +1,10 @@
-import { CreateTaskForm, GlobalModal, Header, ProtectedRoute } from '@/components'
+import { CreateTaskForm, GlobalModal, Header } from '@/components'
 import { GlobalConfirmation } from '@/components/Confirmation'
+import { Providers } from '../providers'
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <ProtectedRoute>
+    <Providers>
       <main className='flex'>
         <section className='flex-1 h-dvh overflow-y-auto flex flex-col'>
           <Header />
@@ -13,6 +14,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </main>
       <GlobalModal />
       <GlobalConfirmation />
-    </ProtectedRoute>
+    </Providers>
   )
 }

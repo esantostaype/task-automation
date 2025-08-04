@@ -1,19 +1,18 @@
-'use client'
-import { ToastNotification } from '@/components'
-import { CssVarsProvider } from '@mui/joy'
-import { dynamicTheme } from '@/themes/dynamicTheme'
-import { QueryProvider } from '@/providers/QueryProvider'
-import { AuthProvider } from '@/contexts/AuthContext'
+"use client";
+import { ToastNotification } from "@/components";
+import { QueryProvider } from "@/providers/QueryProvider";
+import { ThemeProvider } from "@/providers/ThemeProvider";
+import { AuthProvider } from "@/contexts/AuthContext";
 
 export const Providers = ({ children }: { children: React.ReactNode }) => {
   return (
-    <QueryProvider>
-      <CssVarsProvider theme={dynamicTheme} defaultMode="dark">
-          <AuthProvider>
-            {children}
-          </AuthProvider>
-        <ToastNotification />
-      </CssVarsProvider>
-    </QueryProvider>
-  )
-}
+    <ThemeProvider>
+      <AuthProvider>
+        <QueryProvider>
+          {children}
+          <ToastNotification />
+        </QueryProvider>
+      </AuthProvider>
+    </ThemeProvider>
+  );
+};

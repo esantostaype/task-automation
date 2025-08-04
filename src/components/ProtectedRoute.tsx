@@ -1,4 +1,4 @@
-// src/components/ProtectedRoute.tsx
+// src/components/ProtectedRoute.tsx - VERSIÓN OPTIMIZADA
 'use client'
 
 import React from 'react'
@@ -24,7 +24,8 @@ export function ProtectedRoute({ children, fallback }: ProtectedRouteProps) {
             alignItems: 'center',
             justifyContent: 'center',
             minHeight: '100vh',
-            gap: 2
+            gap: 2,
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
           }}
         >
           <CircularProgress size="lg" />
@@ -37,7 +38,7 @@ export function ProtectedRoute({ children, fallback }: ProtectedRouteProps) {
   }
 
   // Si no está autenticado, el middleware se encargará de la redirección
-  // Pero por si acaso, mostramos un mensaje
+  // Pero mostramos un mensaje por si acaso
   if (!user) {
     return (
       <Box
@@ -47,7 +48,8 @@ export function ProtectedRoute({ children, fallback }: ProtectedRouteProps) {
           alignItems: 'center',
           justifyContent: 'center',
           minHeight: '100vh',
-          gap: 2
+          gap: 2,
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
         }}
       >
         <Typography level="h4" color="neutral">
@@ -65,7 +67,7 @@ export function ProtectedRoute({ children, fallback }: ProtectedRouteProps) {
   return <>{children}</>
 }
 
-// Hook personalizado para verificar autenticación en componentes
+// Hook personalizado optimizado
 export function useRequireAuth() {
   const { user, loading } = useAuth()
   
