@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// src/app/api/auth/verify/route.ts
+// src/app/api/auth/verify/route.ts - MEJORADO
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 
@@ -9,26 +9,15 @@ export async function GET(request: NextRequest) {
   try {
     console.log('🔍 Verify endpoint called');
     
-    // Obtener todas las cookies para debugging
-    const allCookies = request.cookies.getAll();
-    console.log('🍪 All cookies received:', allCookies);
-    
     const token = request.cookies.get('auth-token')?.value;
     console.log('🔑 Auth token found:', !!token);
-    
-    if (token) {
-      console.log('🔑 Token preview:', token.substring(0, 20) + '...');
-    }
 
     if (!token) {
       console.log('❌ No token provided');
       return NextResponse.json({
         success: false,
-        message: 'No token provided',
-        debug: {
-          cookiesReceived: allCookies.length,
-          allCookies: allCookies
-        }
+        message: 'No authentication token provided',
+        requiresLogin: true
       }, { status: 401 });
     }
 
@@ -42,30 +31,38 @@ export async function GET(request: NextRequest) {
         user: {
           email: decoded.email
         },
-        debug: {
-          tokenValid: true,
-          decodedEmail: decoded.email
-        }
+        authenticated: true
       });
-    } catch (jwtError) {
-      console.log('❌ JWT verification failed:', jwtError);
-      return NextResponse.json({
+    } catch (jwtError: any) {
+      console.log('❌ JWT verification failed:', jwtError.message);
+      
+      // Limpiar cookie inválida
+      const response = NextResponse.json({
         success: false,
-        message: 'Invalid token',
-        debug: {
-          jwtError: String(jwtError),
-          tokenReceived: !!token
-        }
+        message: 'Invalid or expired token',
+        requiresLogin: true,
+        tokenError: true
       }, { status: 401 });
+
+      // Limpiar cookie
+      response.cookies.set({
+        name: 'auth-token',
+        value: '',
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 0,
+        path: '/',
+      });
+
+      return response;
     }
   } catch (error) {
     console.error('❌ Verify endpoint error:', error);
     return NextResponse.json({
       success: false,
-      message: 'Server error',
-      debug: {
-        error: String(error)
-      }
+      message: 'Internal server error',
+      requiresLogin: true
     }, { status: 500 });
   }
 }
