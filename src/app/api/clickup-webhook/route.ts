@@ -1,12 +1,23 @@
-// src/app/api/clickup-webhook/route.ts
+// src/app/api/clickup-webhook/route.ts - VERSIÓN CORREGIDA SIN queuePosition
 import { NextResponse } from 'next/server'
 import { prisma } from '@/utils/prisma'
 import axios from 'axios'
 import { Status, Priority } from '@prisma/client'
-import { calculateUserSlots, findCompatibleUsers, processUserAssignments, selectBestUser } from '@/services/task-assignment.service'
+import { 
+  calculateUserSlots, 
+  findCompatibleUsers, 
+  processUserAssignments, 
+  selectBestUser 
+} from '@/services/task-assignment.service'
 import { createTaskInClickUp } from '@/services/clickup.service'
-import { TaskCreationParams, UserSlot, UserWithRoles, ClickUpBrand, TaskWhereInput } from '@/interfaces'
-// import { shiftUserTasks } from '@/utils/task-calculation-utils' // Eliminamos esta importación directa aquí
+import { 
+  TaskCreationParams, 
+  UserSlot, 
+  UserWithRoles, 
+  ClickUpBrand, 
+  TaskWhereInput 
+} from '@/interfaces'
+import { calculateParallelPriorityInsertion } from '@/services/parallel-priority-insertion.service'
 
 const CLICKUP_TOKEN = process.env.CLICKUP_API_TOKEN
 
@@ -35,9 +46,13 @@ export async function GET(req: Request) {
       where,
       skip,
       take: limit,
-      orderBy: { startDate: 'asc' },
+      orderBy: { startDate: 'asc' }, // ✅ Ordenar por fecha, no por queuePosition
       include: {
-        category: true,
+        category: {
+          include: {
+            tierList: true
+          }
+        },
         type: true,
         brand: true,
         assignees: { include: { user: true } }
@@ -72,19 +87,36 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json()
-    const { name, description, typeId, categoryId, priority, brandId, assignedUserIds, durationDays }: TaskCreationParams = body
+    const { 
+      name, 
+      description, 
+      typeId, 
+      categoryId, 
+      priority, 
+      brandId, 
+      assignedUserIds, 
+      durationDays 
+    }: TaskCreationParams = body
 
-    if (!name || !typeId || !categoryId || !priority || typeof durationDays !== 'number' || durationDays <= 0) {
-      return NextResponse.json({ error: 'Faltan campos requeridos o duración inválida' }, { status: 400 })
+    // Validación de campos requeridos
+    if (!name || !typeId || !categoryId || !priority || !brandId || typeof durationDays !== 'number' || durationDays <= 0) {
+      return NextResponse.json({ 
+        error: 'Faltan campos requeridos o duración inválida',
+        required: ['name', 'typeId', 'categoryId', 'priority', 'brandId', 'durationDays']
+      }, { status: 400 })
     }
 
-    console.log(`🚀 === CREANDO TAREA "${name}" ===`)
+    console.log(`🚀 === CREANDO TAREA "${name}" (WEBHOOK) ===`)
     console.log(`📋 Parámetros: Priority=${priority}, Duration=${durationDays}d, Users=${assignedUserIds || 'AUTO'}`)
 
+    // Obtener categoría y brand
     const [category, brand] = await Promise.all([
       prisma.taskCategory.findUnique({
         where: { id: categoryId },
-        include: { type: true }
+        include: { 
+          type: true,
+          tierList: true // ✅ Incluir tierList para tener la duración
+        }
       }),
       prisma.brand.findUnique({
         where: { id: brandId }
@@ -102,7 +134,9 @@ export async function POST(req: Request) {
     let usersToAssign: string[] = []
     let userSlots: UserSlot[] = []
 
+    // Manejo de asignación de usuarios (manual o automática)
     if (assignedUserIds && assignedUserIds.length > 0) {
+      // ASIGNACIÓN MANUAL
       usersToAssign = assignedUserIds
       console.log('✅ Asignación manual de usuarios:', usersToAssign)
 
@@ -132,24 +166,32 @@ export async function POST(req: Request) {
         ) as UserWithRoles[]
 
       if (validUsers.length === 0) {
-        return NextResponse.json({ error: 'Ninguno de los usuarios especificados es compatible con este tipo de tarea' }, { status: 400 })
+        return NextResponse.json({ 
+          error: 'Ninguno de los usuarios especificados es compatible con este tipo de tarea' 
+        }, { status: 400 })
       }
 
-      userSlots = await calculateUserSlots(validUsers, typeId, brandId)
+      userSlots = await calculateUserSlots(validUsers, typeId, durationDays, brandId)
+      
     } else {
+      // ASIGNACIÓN AUTOMÁTICA
       console.log('🤖 Iniciando asignación automática...')
       
       const compatibleUsers = await findCompatibleUsers(typeId, brandId)
       
       if (compatibleUsers.length === 0) {
-        return NextResponse.json({ error: 'No hay usuarios compatibles disponibles para asignación automática' }, { status: 400 })
+        return NextResponse.json({ 
+          error: 'No hay usuarios compatibles disponibles para asignación automática' 
+        }, { status: 400 })
       }
 
-      userSlots = await calculateUserSlots(compatibleUsers, typeId, brandId)
+      userSlots = await calculateUserSlots(compatibleUsers, typeId, durationDays, brandId)
       const bestUser = selectBestUser(userSlots)
 
       if (!bestUser) {
-        return NextResponse.json({ error: 'No se pudo encontrar un diseñador óptimo para la asignación automática.' }, { status: 400 })
+        return NextResponse.json({ 
+          error: 'No se pudo encontrar un diseñador óptimo para la asignación automática.' 
+        }, { status: 400 })
       }
 
       usersToAssign = [bestUser.userId]
@@ -166,17 +208,63 @@ export async function POST(req: Request) {
       }
     })
 
-    // processUserAssignments ahora se encarga de llamar a shiftUserTasks internamente
-    // para cada usuario asignado.
-    const taskTiming = await processUserAssignments(usersToAssign, userSlots, priority, durationDays)
+    // ✅ NUEVO: Usar el servicio de inserción paralela con prioridades
+    let taskStartDate: Date
+    let taskDeadline: Date
 
-    console.log('✅ Fechas calculadas para nueva tarea:', {
-      name,
-      startDate: taskTiming.startDate.toISOString(),
-      deadline: taskTiming.deadline.toISOString(),
-      insertAt: taskTiming.insertAt
-    })
+    if (usersToAssign.length === 1) {
+      // Un solo usuario: usar lógica de prioridad paralela
+      const insertionResult = await calculateParallelPriorityInsertion(
+        usersToAssign[0],
+        priority,
+        durationDays
+      )
+      
+      taskStartDate = insertionResult.startDate
+      taskDeadline = insertionResult.deadline
+      
+      console.log('✅ Fechas calculadas con prioridad paralela:', {
+        startDate: taskStartDate.toISOString(),
+        deadline: taskDeadline.toISOString(),
+        reason: insertionResult.insertionReason
+      })
 
+      // ✅ Si hay tareas LOW que mover (solo para NORMAL)
+      if (insertionResult.tasksToMove && insertionResult.tasksToMove.length > 0) {
+        console.log(`🔄 Moviendo ${insertionResult.tasksToMove.length} tareas LOW del día...`)
+        
+        for (const taskToMove of insertionResult.tasksToMove) {
+          await prisma.task.update({
+            where: { id: taskToMove.taskId },
+            data: {
+              startDate: taskToMove.newStartDate,
+              deadline: taskToMove.newDeadline
+            }
+          })
+          console.log(`   ✅ Tarea ${taskToMove.taskId} movida`)
+        }
+      }
+      
+    } else {
+      // Múltiples usuarios: usar lógica existente
+      const taskTiming = await processUserAssignments(
+        usersToAssign, 
+        userSlots, 
+        priority, 
+        durationDays,
+        brandId
+      )
+      
+      taskStartDate = taskTiming.startDate
+      taskDeadline = taskTiming.deadline
+      
+      console.log('✅ Fechas calculadas para múltiples usuarios:', {
+        startDate: taskStartDate.toISOString(),
+        deadline: taskDeadline.toISOString()
+      })
+    }
+
+    // Preparar datos para ClickUp
     const categoryForClickUp = {
       ...category,
       type: {
@@ -190,17 +278,20 @@ export async function POST(req: Request) {
       teamId: brand.teamId ?? ''
     }
 
+    // Crear tarea en ClickUp
     const { clickupTaskId, clickupTaskUrl } = await createTaskInClickUp({
       name,
       description,
       priority,
-      deadline: taskTiming.deadline,
-      startDate: taskTiming.startDate,
+      deadline: taskDeadline,
+      startDate: taskStartDate,
       usersToAssign,
       category: categoryForClickUp,
-      brand: brandForClickUp
+      brand: brandForClickUp,
+      customDurationDays: durationDays // ✅ Pasar duración custom si es diferente
     })
 
+    // Crear tarea en base de datos local
     const task = await prisma.task.create({
       data: {
         id: clickupTaskId,
@@ -210,15 +301,20 @@ export async function POST(req: Request) {
         categoryId: categoryId,
         brandId: brandId,
         priority,
-        startDate: taskTiming.startDate,
-        deadline: taskTiming.deadline,
-        queuePosition: taskTiming.insertAt,
+        startDate: taskStartDate,
+        deadline: taskDeadline,
+        customDuration: durationDays, // ✅ Guardar duración custom
         url: clickupTaskUrl,
         lastSyncAt: new Date(),
         syncStatus: 'SYNCED',
+        // ✅ NO incluir queuePosition
       },
       include: {
-        category: true,
+        category: {
+          include: {
+            tierList: true
+          }
+        },
         type: true,
         brand: true,
         assignees: {
@@ -229,6 +325,7 @@ export async function POST(req: Request) {
       },
     })
 
+    // Crear asignaciones
     await prisma.taskAssignment.createMany({
       data: usersToAssign.map(userId => ({
         userId: userId,
@@ -236,20 +333,15 @@ export async function POST(req: Request) {
       })),
     })
 
-    // Eliminamos este bucle ya que processUserAssignments ya maneja el reacomodo
-    // for (const userId of usersToAssign) {
-    //   try {
-    //     await shiftUserTasks(userId, task.id, taskTiming.deadline, taskTiming.insertAt)
-    //     console.log(`✅ Fechas recalculadas para usuario ${userId}`)
-    //   } catch (shiftError) {
-    //     console.error(`❌ Error recalculando fechas para usuario ${userId}:`, shiftError)
-    //   }
-    // }
-
+    // Obtener tarea completa con asignaciones
     const taskWithAssignees = await prisma.task.findUnique({
       where: { id: task.id },
       include: {
-        category: true,
+        category: {
+          include: {
+            tierList: true
+          }
+        },
         type: true,
         brand: true,
         assignees: {
@@ -268,16 +360,24 @@ export async function POST(req: Request) {
           assignees: { some: { userId } },
           status: { notIn: ['COMPLETE'] }
         },
-        orderBy: { queuePosition: 'asc' },
-        include: { category: true }
+        orderBy: { startDate: 'asc' }, // ✅ Ordenar por fecha
+        include: { 
+          category: {
+            include: {
+              tierList: true
+            }
+          }
+        }
       })
       
       console.log(`  👤 Usuario ${userId} ahora tiene ${userTasks.length} tareas:`)
       userTasks.forEach((t, i) => {
-        console.log(`    ${i + 1}. [${t.queuePosition}] "${t.name}": ${t.startDate.toISOString()} → ${t.deadline.toISOString()}`)
+        const taskDuration = t.customDuration ?? t.category.tierList.duration
+        console.log(`    ${i + 1}. "${t.name}" [${t.priority}]: ${t.startDate.toISOString().split('T')[0]} → ${t.deadline.toISOString().split('T')[0]} (${taskDuration}d)`)
       })
     }
 
+    // Emitir evento Socket.IO
     try {
       await axios.post('https://task-automation-zeta.vercel.app/api/socket_emitter', {
         eventName: 'task_update',
@@ -288,7 +388,7 @@ export async function POST(req: Request) {
       console.error('⚠️ Error al enviar evento a socket-emitter:', emitterError)
     }
 
-    console.log(`🎉 === TAREA "${name}" CREADA EXITOSAMENTE ===\n`)
+    console.log(`🎉 === TAREA "${name}" CREADA EXITOSAMENTE VIA WEBHOOK ===\n`)
 
     return NextResponse.json(taskWithAssignees)
 
