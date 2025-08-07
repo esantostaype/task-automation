@@ -1,4 +1,4 @@
-// src/app/api/users/enhanced/route.ts
+// src/app/api/users/enhanced/route.ts - VERSIÓN CORREGIDA
 import { NextResponse } from 'next/server';
 import { prisma } from '@/utils/prisma';
 import {
@@ -25,7 +25,7 @@ interface EnhancedUser {
       startDate: string;
       endDate: string;
       durationDays: number;
-      returnDate: string; // Primer día laboral después de vacaciones
+      returnDate: string;
     };
     upcomingVacations: Array<{
       startDate: string;
@@ -83,6 +83,10 @@ export async function GET(req: Request) {
     console.log(`🧠 === ENHANCED USER ANALYSIS ===`);
     console.log(`📋 Params: typeId=${typeId}, brandId=${brandId || 'global'}, duration=${durationDays} days`);
 
+    // ✅ OBTENER FECHA ACTUAL PARA FILTRAR TAREAS RELEVANTES
+    const now = new Date();
+    console.log(`📅 Current date for filtering: ${now.toISOString()}`);
+
     // Obtener usuarios compatibles con datos completos
     const allUsersWithData = await prisma.user.findMany({
       where: { active: true },
@@ -99,7 +103,7 @@ export async function GET(req: Request) {
         vacations: {
           where: {
             endDate: {
-              gte: new Date() // Solo vacaciones futuras/actuales
+              gte: now // Solo vacaciones futuras/actuales
             }
           }
         }
@@ -124,30 +128,67 @@ export async function GET(req: Request) {
       const matchingRoles = user.roles.filter(role => role.typeId === typeId);
       const isSpecialist = matchingRoles.length === 1 && user.roles.length === 1;
 
-      // Obtener carga de trabajo actual
+      // ✅ CORRECCIÓN: Obtener SOLO tareas relevantes (actuales y futuras)
       const userTasks = await prisma.task.findMany({
         where: {
           assignees: { some: { userId: user.id } },
-          status: { notIn: ['COMPLETE'] }
+          status: { notIn: ['COMPLETE'] },
+          // ✅ NUEVO: Filtrar tareas que aún son relevantes
+          OR: [
+            // Tareas en progreso (empezaron pero no han terminado)
+            {
+              startDate: { lte: now },
+              deadline: { gte: now }
+            },
+            // Tareas futuras (aún no han empezado)
+            {
+              startDate: { gt: now }
+            }
+          ]
         },
         orderBy: { startDate: 'asc' },
         include: {
           category: {
             include: {
-              tierList: true // Para acceder a duration
+              tierList: true
             }
           }
         }
       });
 
+      // ✅ NUEVO: Separar tareas para mejor análisis
+      const tasksInProgress = userTasks.filter(task => 
+        task.startDate <= now && task.deadline >= now
+      );
+      const futureTasks = userTasks.filter(task => 
+        task.startDate > now
+      );
+
+      console.log(`   📊 Relevant tasks breakdown:`);
+      console.log(`      - In progress: ${tasksInProgress.length}`);
+      console.log(`      - Future: ${futureTasks.length}`);
+      console.log(`      - Total relevant: ${userTasks.length}`);
+
+      // ✅ CORRECCIÓN: Calcular carga de trabajo solo con tareas relevantes
       const currentWorkload = {
         taskCount: userTasks.length,
         durationDays: userTasks.reduce((sum, task) => {
-          // Usar customDuration si existe, sino usar duration de tierList
-          return sum + (task.customDuration !== null ? task.customDuration : task.category.tierList.duration);
+          // Para tareas en progreso, calcular solo los días restantes
+          if (task.startDate <= now && task.deadline >= now) {
+            const remainingDays = Math.ceil(
+              (task.deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+            );
+            console.log(`      - Task "${task.name}": ${remainingDays} days remaining`);
+            return sum + remainingDays;
+          }
+          // Para tareas futuras, usar duración completa
+          const duration = task.customDuration !== null ? task.customDuration : task.category.tierList.duration;
+          return sum + duration;
         }, 0),
         lastTaskDeadline: userTasks.length > 0 ? userTasks[userTasks.length - 1].deadline.toISOString().split('T')[0] : undefined
       };
+
+      console.log(`   📈 Calculated workload: ${currentWorkload.durationDays} days`);
 
       // Calcular disponibilidad base
       let baseAvailableDate: Date;
@@ -155,7 +196,7 @@ export async function GET(req: Request) {
         const lastTask = userTasks[userTasks.length - 1];
         baseAvailableDate = await getNextAvailableStart(new Date(lastTask.deadline));
       } else {
-        baseAvailableDate = await getNextAvailableStart(new Date());
+        baseAvailableDate = await getNextAvailableStart(now);
       }
 
       // Analizar vacaciones
@@ -167,7 +208,6 @@ export async function GET(req: Request) {
       }));
 
       // Verificar vacación actual
-      const now = new Date();
       const currentVacation = upcomingVacations.find(vacation =>
         vacation.startDate <= now && vacation.endDate >= now
       );
@@ -218,6 +258,10 @@ export async function GET(req: Request) {
         }
       }
 
+      // ✅ CORRECCIÓN: Ajustar umbral de overload basado en tareas relevantes
+      // Considerar overloaded si tiene más de 10 días de trabajo relevante pendiente
+      const OVERLOAD_THRESHOLD = 10; // Puedes ajustar este valor
+
       // Crear objeto de usuario mejorado
       const enhancedUser: EnhancedUser = {
         id: user.id,
@@ -226,7 +270,7 @@ export async function GET(req: Request) {
         active: user.active,
         isSpecialist,
         status: currentVacation || hasVacationConflict ? 'on_vacation' :
-          currentWorkload.durationDays > 15 ? 'overloaded' : 'available',
+          currentWorkload.durationDays > OVERLOAD_THRESHOLD ? 'overloaded' : 'available',
         availableFrom: (returnDate || baseAvailableDate).toISOString().split('T')[0],
         hasVacationConflict,
         currentWorkload,
@@ -255,7 +299,7 @@ export async function GET(req: Request) {
         overloadedUsers.push(enhancedUser);
       }
 
-      console.log(`   📊 ${user.name}: ${enhancedUser.status} | Workload: ${currentWorkload.durationDays}d | Available: ${enhancedUser.availableFrom}`);
+      console.log(`   📊 ${user.name}: ${enhancedUser.status} | Relevant workload: ${currentWorkload.durationDays}d | Available: ${enhancedUser.availableFrom}`);
       if (recommendation) {
         console.log(`   💡 Recommendation: Wait for return (saves ${recommendation.daysSavedByWaiting} days)`);
       }
