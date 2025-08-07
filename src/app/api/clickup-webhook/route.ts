@@ -342,7 +342,7 @@ async function handleTaskUpdate(event: ClickUpWebhookEvent) {
 
       // Emitir evento Socket.IO
       try {
-        await axios.post('https://task-automation-zeta.vercel.app/api/socket_emitter', {
+        await axios.post('https://assignify.vercel.app/api/socket_emitter', {
           eventName: 'task_update',
           data: updatedTask,
         })
