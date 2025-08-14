@@ -12,9 +12,9 @@ import {
 } from '@/services/task-assignment.service'
 import { createTaskInClickUp } from '@/services/clickup.service'
 import { TaskCreationParams, UserSlot, UserWithRoles, ClickUpBrand, TaskWhereInput, UserVacation } from '@/interfaces'
-import { 
-  calculatePriorityInsertion, 
-  shiftTasksAfterInsertion 
+import {
+  calculatePriorityInsertion,
+  shiftTasksAfterInsertion
 } from '@/services/priority-insertion.service'
 import { getNextAvailableStart, calculateWorkingDeadline } from '@/utils/task-calculation-utils'
 import { invalidateAllCache } from '@/utils/cache'
@@ -61,13 +61,13 @@ async function getNextAvailableStartAfterVacations(
         console.log(`   ❌ CONFLICTO DETECTADO:`);
         console.log(`      Tarea: ${availableDate.toISOString()} → ${potentialTaskEnd.toISOString()}`);
         console.log(`      Vacación: ${vacStart.toISOString()} → ${vacEnd.toISOString()}`);
-        
+
         const dayAfterVacation = new Date(vacEnd);
         dayAfterVacation.setUTCDate(dayAfterVacation.getUTCDate() + 1);
         const newAvailableDate = await getNextAvailableStart(dayAfterVacation);
 
         console.log(`   🔄 Moviendo tarea a: ${newAvailableDate.toISOString()}`);
-        
+
         availableDate = newAvailableDate;
         adjusted = true;
         break;
@@ -149,7 +149,7 @@ async function calculatePriorityInsertionWithVacations(
 
   // 6. Determinar si hubo ajuste por vacaciones
   const wasAdjusted = adjustedStartDate.getTime() !== originalStartDate.getTime();
-  
+
   let vacationAdjustment;
   if (wasAdjusted) {
     const conflictingVacations = upcomingVacations
@@ -158,7 +158,7 @@ async function calculatePriorityInsertionWithVacations(
         const vacEnd = new Date(vacation.endDate);
         return originalStartDate <= vacEnd && basicInsertion.deadline >= vacStart;
       })
-      .map(vacation => 
+      .map(vacation =>
         `${vacation.startDate.toISOString().split('T')[0]} → ${vacation.endDate.toISOString().split('T')[0]}`
       );
 
@@ -178,7 +178,7 @@ async function calculatePriorityInsertionWithVacations(
     startDate: adjustedStartDate,
     deadline: adjustedDeadline,
     affectedTasks: basicInsertion.affectedTasks,
-    insertionReason: wasAdjusted 
+    insertionReason: wasAdjusted
       ? `${basicInsertion.insertionReason} (ajustado por vacaciones)`
       : basicInsertion.insertionReason,
     vacationAdjustment
@@ -223,7 +223,7 @@ export async function POST(req: Request) {
     const [category, brand] = await Promise.all([
       prisma.taskCategory.findUnique({
         where: { id: categoryId },
-        include: { 
+        include: {
           type: true,
           tierList: true
         }
@@ -243,6 +243,10 @@ export async function POST(req: Request) {
 
     console.log(`✅ Categoría: ${category.name} (${category.type.name})`)
     console.log(`✅ Brand: ${brand.name}`)
+
+    const categoryDefaultDuration = category.tierList.duration;
+    const userProvidedDuration = durationDays;
+    const isCustomDuration = Math.abs(userProvidedDuration - categoryDefaultDuration) > 0.001;
 
     let usersToAssign: string[] = []
 
@@ -309,26 +313,26 @@ export async function POST(req: Request) {
 
     // ✅ NUEVA LÓGICA: Calcular fechas CON VACACIONES para cada usuario
     console.log(`\n🏖️ === APLICANDO PRIORIDADES Y VACACIONES ===`)
-    
+
     const insertionResults = []
-    
+
     for (const userId of usersToAssign) {
       console.log(`\n👤 Calculando para usuario: ${userId}`)
-      
+
       const userDuration = durationDays / usersToAssign.length
-      
+
       // ✅ USAR FUNCIÓN CON VACACIONES
       const insertionResult = await calculatePriorityInsertionWithVacations(
-        userId, 
-        priority, 
+        userId,
+        priority,
         userDuration
       )
-      
+
       insertionResults.push({
         userId,
         ...insertionResult
       })
-      
+
       console.log(`✅ Resultado para ${userId}:`)
       console.log(`   - Start: ${insertionResult.startDate.toISOString()}`)
       console.log(`   - Deadline: ${insertionResult.deadline.toISOString()}`)
@@ -339,7 +343,7 @@ export async function POST(req: Request) {
     }
 
     // Para múltiples usuarios, usar las fechas más conservadoras
-    const finalInsertion = insertionResults.reduce((latest, current) => 
+    const finalInsertion = insertionResults.reduce((latest, current) =>
       current.startDate > latest.startDate ? current : latest
     )
 
@@ -347,7 +351,7 @@ export async function POST(req: Request) {
     console.log(`📅 Fecha de inicio: ${finalInsertion.startDate.toISOString()}`)
     console.log(`📅 Deadline: ${finalInsertion.deadline.toISOString()}`)
     console.log(`💭 Razón: ${finalInsertion.insertionReason}`)
-    
+
     // ✅ MOSTRAR INFORMACIÓN DE AJUSTES POR VACACIONES
     const vacationAdjustments = insertionResults.filter(r => r.vacationAdjustment)
     if (vacationAdjustments.length > 0) {
@@ -376,7 +380,7 @@ export async function POST(req: Request) {
     }
 
     console.log('📤 Creando tarea...')
-    
+
     // Para desarrollo, usar ID temporal
     const clickupTaskId = `vacation-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     const clickupTaskUrl = `https://vacation-dev.com/task/${clickupTaskId}`
@@ -393,12 +397,13 @@ export async function POST(req: Request) {
         categoryId: categoryId,
         brandId: brandId,
         priority,
-        startDate: finalInsertion.startDate,  // ✅ Fecha ajustada por vacaciones
-        deadline: finalInsertion.deadline,    // ✅ Deadline ajustado por vacaciones
+        startDate: finalInsertion.startDate,
+        deadline: finalInsertion.deadline,
         url: clickupTaskUrl,
         lastSyncAt: new Date(),
         syncStatus: 'SYNCED',
-        customDuration: durationDays !== category.tierList.duration ? durationDays : null
+        // ✅ USAR LA VERIFICACIÓN MEJORADA
+        customDuration: isCustomDuration ? userProvidedDuration : null
       },
       include: {
         category: {
@@ -421,7 +426,7 @@ export async function POST(req: Request) {
           }
         }
       },
-    })
+    });
 
     // Crear asignaciones
     await prisma.taskAssignment.createMany({
@@ -435,7 +440,7 @@ export async function POST(req: Request) {
 
     // Aplicar recálculo de tareas afectadas
     console.log('🔄 Aplicando recálculo de tareas afectadas...')
-    
+
     for (const result of insertionResults) {
       if (result.affectedTasks.length > 0) {
         console.log(`   📊 Recalculando ${result.affectedTasks.length} tareas afectadas para usuario ${result.userId}`)

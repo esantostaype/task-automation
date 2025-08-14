@@ -353,87 +353,99 @@ export const CreateTaskForm: FC = () => {
       let finalCategoryId = values.categoryId;
       let finalTypeId: number;
       let newCategoryCreated = false;
+      let effectiveCategoryDuration: number
 
       if (values.isNewCategory) {
-        if (!values.newCategoryName.trim()) {
-          toast.error("Category name is required for new category");
-          return;
-        }
-
-        if (!values.newCategoryTier) {
-          toast.error("Tier selection is required for new category");
-          return;
-        }
-
-        // ✅ BUSCAR EL TIER SELECCIONADO
-        const selectedTier = tiers.find(
-          (t) => t.name === values.newCategoryTier
-        );
-        if (!selectedTier) {
-          toast.error("Selected tier not found");
-          return;
-        }
-
-        const selectedType = filteredTypes[0];
-        if (!selectedType) {
-          toast.error("No type found for the selected kind");
-          return;
-        }
-
-        finalTypeId = selectedType.id;
-
-        console.log(
-          `🆕 Creando nueva categoría: (name: ${values.newCategoryName.trim()}, tierId: ${
-            selectedTier.id
-          }, typeId: ${finalTypeId})`
-        );
-
-        // ✅ ENVIAR tierId EN LUGAR DE duration Y tier
-        const categoryResponse = await axios.post("/api/categories", {
-          name: values.newCategoryName.trim(),
-          tierId: selectedTier.id, // ✅ USAR EL ID DEL TIER
-          typeId: finalTypeId,
-        });
-
-        finalCategoryId = categoryResponse.data.id.toString();
-        newCategoryCreated = true;
-        console.log(`✅ Nueva categoría creada con ID: ${finalCategoryId}`);
-      } else {
-        const selectedCategory = allCategories.find(
-          (cat) => cat.id.toString() === values.categoryId
-        );
-        if (!selectedCategory) {
-          toast.error("Categoría seleccionada no encontrada");
-          return;
-        }
-        finalTypeId = selectedCategory.typeId;
-      }
-
-      const finalDurationDays = parseFloat(values.durationDays as string);
-
-      if (finalDurationDays <= 0) {
-        toast.error("La duración de la tarea debe ser mayor a cero.");
+      if (!values.newCategoryName.trim()) {
+        toast.error("Category name is required for new category");
         return;
       }
 
-      const payload = {
-        name: values.name.trim(),
-        description: values.description.trim() || undefined,
+      if (!values.newCategoryTier) {
+        toast.error("Tier selection is required for new category");
+        return;
+      }
+
+      // ✅ BUSCAR EL TIER SELECCIONADO para obtener la duración
+      const selectedTier = tiers.find(
+        (t) => t.name === values.newCategoryTier
+      );
+      if (!selectedTier) {
+        toast.error("Selected tier not found");
+        return;
+      }
+
+      const selectedType = filteredTypes[0];
+      if (!selectedType) {
+        toast.error("No type found for the selected kind");
+        return;
+      }
+
+      finalTypeId = selectedType.id;
+      effectiveCategoryDuration = selectedTier.duration; // ✅ USAR DURACIÓN DEL TIER
+
+      console.log(
+        `🆕 Creando nueva categoría: (name: ${values.newCategoryName.trim()}, tierId: ${
+          selectedTier.id
+        }, typeId: ${finalTypeId})`
+      );
+
+      const categoryResponse = await axios.post("/api/categories", {
+        name: values.newCategoryName.trim(),
+        tierId: selectedTier.id,
         typeId: finalTypeId,
-        categoryId: Number(finalCategoryId),
-        priority: values.priority,
-        brandId: values.brandId,
-        assignedUserIds:
-          values.assignedUserIds.length > 0
-            ? values.assignedUserIds
-            : undefined,
-        durationDays: finalDurationDays,
-      };
+      });
 
-      setLoading(true);
+      finalCategoryId = categoryResponse.data.id.toString();
+      newCategoryCreated = true;
+      console.log(`✅ Nueva categoría creada con ID: ${finalCategoryId}`);
+    } else {
+      // ✅ PARA CATEGORÍA EXISTENTE
+      const selectedCategory = allCategories.find(
+        (cat) => cat.id.toString() === values.categoryId
+      );
+      if (!selectedCategory) {
+        toast.error("Categoría seleccionada no encontrada");
+        return;
+      }
+      finalTypeId = selectedCategory.typeId;
+      effectiveCategoryDuration = selectedCategory.tierList.duration; // ✅ USAR DURACIÓN DE LA CATEGORÍA
+    }
 
-      const taskResponse = await axios.post("/api/tasks/parallel", payload);
-      const createdTask = taskResponse.data;
+    const finalDurationDays = parseFloat(values.durationDays as string);
+
+    if (finalDurationDays <= 0) {
+      toast.error("La duración de la tarea debe ser mayor a cero.");
+      return;
+    }
+
+    // ✅ AHORA LA COMPARACIÓN ES CORRECTA
+    const isCustomDuration = finalDurationDays !== effectiveCategoryDuration;
+    
+    console.log(`🔍 Comparación de duración:`);
+    console.log(`   - Duración ingresada: ${finalDurationDays} días`);
+    console.log(`   - Duración de categoría: ${effectiveCategoryDuration} días`);
+    console.log(`   - Es duración personalizada: ${isCustomDuration}`);
+
+    const payload = {
+      name: values.name.trim(),
+      description: values.description.trim() || undefined,
+      typeId: finalTypeId,
+      categoryId: Number(finalCategoryId),
+      priority: values.priority,
+      brandId: values.brandId,
+      assignedUserIds:
+        values.assignedUserIds.length > 0
+          ? values.assignedUserIds
+          : undefined,
+      durationDays: finalDurationDays,
+    };
+
+    setLoading(true);
+
+    // ✅ EL BACKEND RECIBIRÁ LA DURACIÓN CORRECTA Y HARÁ LA COMPARACIÓN APROPIADA
+    const taskResponse = await axios.post("/api/tasks/parallel", payload);
+    const createdTask = taskResponse.data;
 
       setLoading(false);
 
