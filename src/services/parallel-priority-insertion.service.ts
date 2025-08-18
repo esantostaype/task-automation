@@ -1,5 +1,6 @@
-// src/services/parallel-priority-insertion.service.ts
-// 🎯 NUEVA LÓGICA: Prioridades en paralelo sin empujar fechas + VACACIONES
+/* eslint-disable @typescript-eslint/no-unused-vars */
+// src/services/parallel-priority-insertion.service.ts - CORREGIDO
+// 🎯 NUEVA LÓGICA: Prioridades en paralelo sin empujar fechas + VACACIONES + SOLO TAREAS FUTURAS
 
 import { prisma } from '@/utils/prisma';
 import { Priority } from '@prisma/client';
@@ -13,7 +14,7 @@ interface TaskForParallelInsertion {
   deadline: Date;
   priority: Priority;
   customDuration?: number | null;
-  createdAt: Date; // ✅ AÑADIR FECHA DE CREACIÓN
+  createdAt: Date;
   category: {
     tierList: {
       duration: number;
@@ -36,7 +37,7 @@ interface ParallelInsertionResult {
     adjustedDate: Date;
     conflictingVacations: string[];
   };
-  tasksToMove?: { taskId: string; newStartDate: Date; newDeadline: Date }[]; // ✅ NUEVO: Para NORMAL
+  tasksToMove?: { taskId: string; newStartDate: Date; newDeadline: Date }[];
 }
 
 /**
@@ -193,13 +194,13 @@ async function applyVacationLogic(
 }
 
 /**
- * 🔴 URGENT: Inserción en paralelo con todas las tareas
+ * 🔴 URGENT: Inserción en paralelo con todas las tareas FUTURAS
  */
 async function handleUrgentParallel(
-  userTasks: TaskForParallelInsertion[], 
+  futureTasks: TaskForParallelInsertion[], 
   durationDays: number
 ): Promise<ParallelInsertionResult> {
-  console.log('🔴 URGENT: Inserción en paralelo (no empuja tareas)');
+  console.log('🔴 URGENT: Inserción en paralelo (no empuja tareas) - SOLO TAREAS FUTURAS');
   
   // Siempre empieza lo más pronto posible
   const newStartDate = await getNextAvailableStart(new Date());
@@ -209,42 +210,61 @@ async function handleUrgentParallel(
   console.log(`   📅 Fecha calculada: ${newStartDate.toISOString()} → ${newDeadline.toISOString()}`);
   console.log(`   ✅ NO se afectan tareas existentes`);
   
+  // ✅ INFORMACIÓN ADICIONAL: Mostrar con qué tarea va en paralelo
+  let parallelWith: { taskId: string; taskName: string; originalStartDate: Date } | undefined;
+  
+  if (futureTasks.length > 0) {
+    // Buscar la primera tarea futura (la que debería ser la #1 en cola)
+    const firstFutureTask = futureTasks[0];
+    parallelWith = {
+      taskId: firstFutureTask.id,
+      taskName: firstFutureTask.name,
+      originalStartDate: firstFutureTask.startDate
+    };
+    console.log(`   🔗 Va en paralelo con primera tarea futura: "${firstFutureTask.name}"`);
+  } else {
+    console.log(`   ℹ️ No hay tareas futuras, será la primera tarea`);
+  }
+  
   return {
     startDate: newStartDate,
     deadline: newDeadline,
-    insertionReason: 'URGENT: Paralelo inmediato, no afecta tareas existentes',
+    insertionReason: 'URGENT: Paralelo inmediato con primera tarea futura, no afecta tareas existentes',
+    parallelWith,
     noTasksAffected: true
   };
 }
 
 /**
- * 🟡 HIGH: Inserción en paralelo con lógica zebra (evitando NORMAL con URGENT)
+ * 🟡 HIGH: Inserción en paralelo con segunda tarea futura (evitando NORMAL con URGENT)
  */
 async function handleHighParallel(
-  userTasks: TaskForParallelInsertion[], 
+  futureTasks: TaskForParallelInsertion[], 
   durationDays: number
 ): Promise<ParallelInsertionResult> {
-  console.log('🟡 HIGH: Inserción en paralelo con lógica zebra (evitando NORMAL con URGENT)');
+  console.log('🟡 HIGH: Inserción en paralelo con segunda tarea futura');
   
-  if (userTasks.length === 0) {
+  if (futureTasks.length === 0) {
+    console.log('   ℹ️ No hay tareas futuras, comportándose como URGENT');
     return handleUrgentParallel([], durationDays);
   }
   
-  // Filtrar tareas por prioridad
-  const normalTasks = userTasks.filter(task => task.priority === 'NORMAL');
-  const highTasks = userTasks.filter(task => task.priority === 'HIGH');
-  const urgentTasks = userTasks.filter(task => task.priority === 'URGENT');
+  // ✅ FILTRAR SOLO TAREAS FUTURAS POR PRIORIDAD
+  const futureNormalTasks = futureTasks.filter(task => task.priority === 'NORMAL');
+  const futureHighTasks = futureTasks.filter(task => task.priority === 'HIGH');
+  const futureUrgentTasks = futureTasks.filter(task => task.priority === 'URGENT');
   
-  console.log(`   📊 Tareas NORMAL existentes: ${normalTasks.length}`);
-  console.log(`   📊 Tareas HIGH existentes: ${highTasks.length}`);
-  console.log(`   📊 Tareas URGENT existentes: ${urgentTasks.length}`);
+  console.log(`   📊 Tareas futuras por prioridad:`);
+  console.log(`     - NORMAL futuras: ${futureNormalTasks.length}`);
+  console.log(`     - HIGH futuras: ${futureHighTasks.length}`);
+  console.log(`     - URGENT futuras: ${futureUrgentTasks.length}`);
   
-  // ✅ NUEVA LÓGICA: Identificar qué NORMAL ya tienen URGENT en paralelo
+  // ✅ LÓGICA CORREGIDA: Identificar qué NORMAL futuras ya tienen URGENT en paralelo
   const normalWithUrgent = new Set<string>();
   
-  // Buscar URGENT que están en paralelo con NORMAL
-  urgentTasks.forEach(urgentTask => {
-    normalTasks.forEach(normalTask => {
+  // Buscar URGENT que están en paralelo con NORMAL (solo futuras)
+  futureUrgentTasks.forEach(urgentTask => {
+    futureNormalTasks.forEach(normalTask => {
       // Verificar si tienen fechas de inicio muy similares (en paralelo)
       const timeDifference = Math.abs(
         urgentTask.startDate.getTime() - normalTask.startDate.getTime()
@@ -253,21 +273,22 @@ async function handleHighParallel(
       
       if (isParallel) {
         normalWithUrgent.add(normalTask.id);
-        console.log(`   🔴 NORMAL "${normalTask.name}" ya tiene URGENT "${urgentTask.name}" en paralelo`);
+        console.log(`   🔴 NORMAL futura "${normalTask.name}" ya tiene URGENT "${urgentTask.name}" en paralelo`);
       }
     });
   });
   
-  // ✅ BUSCAR PRIMERA NORMAL LIBRE (sin URGENT en paralelo)
+  // ✅ BUSCAR SEGUNDA NORMAL LIBRE (sin URGENT en paralelo) ENTRE LAS FUTURAS
   let targetNormalIndex = -1;
   let targetNormal: TaskForParallelInsertion | null = null;
+  let normalLibresCount = 0;
   
-  for (let i = 0; i < normalTasks.length; i++) {
-    const normalTask = normalTasks[i];
+  for (let i = 0; i < futureNormalTasks.length; i++) {
+    const normalTask = futureNormalTasks[i];
     
     if (!normalWithUrgent.has(normalTask.id)) {
       // Esta NORMAL está libre, verificar si no tiene HIGH ya
-      const hasHighAlready = highTasks.some(highTask => {
+      const hasHighAlready = futureHighTasks.some(highTask => {
         const timeDifference = Math.abs(
           highTask.startDate.getTime() - normalTask.startDate.getTime()
         );
@@ -275,12 +296,19 @@ async function handleHighParallel(
       });
       
       if (!hasHighAlready) {
-        targetNormalIndex = i;
-        targetNormal = normalTask;
-        console.log(`   ✅ NORMAL libre encontrada: "${normalTask.name}" (posición ${i})`);
-        break;
+        normalLibresCount++;
+        
+        // ✅ BUSCAR LA SEGUNDA NORMAL LIBRE (no la primera)
+        if (normalLibresCount === 2) {
+          targetNormalIndex = i;
+          targetNormal = normalTask;
+          console.log(`   ✅ Segunda NORMAL futura libre encontrada: "${normalTask.name}" (posición global ${i})`);
+          break;
+        } else {
+          console.log(`   ⚠️ Primera NORMAL futura libre: "${normalTask.name}" - saltando para buscar la segunda`);
+        }
       } else {
-        console.log(`   ⚠️ NORMAL "${normalTask.name}" libre de URGENT pero ya tiene HIGH`);
+        console.log(`   ⚠️ NORMAL futura "${normalTask.name}" libre de URGENT pero ya tiene HIGH`);
       }
     }
   }
@@ -290,22 +318,55 @@ async function handleHighParallel(
   let parallelWithTask: TaskForParallelInsertion | null = null;
   
   if (targetNormal) {
-    // Encontramos una NORMAL libre
+    // Encontramos la segunda NORMAL libre entre las futuras
     parallelWithTask = targetNormal;
-    insertionReason = `HIGH: Paralelo con "${targetNormal.name}" (primera NORMAL libre, posición ${targetNormalIndex})`;
+    insertionReason = `HIGH: Paralelo con "${targetNormal.name}" (segunda NORMAL futura libre, posición ${targetNormalIndex})`;
     
     // ✅ Usar la MISMA fecha de inicio para verdadero paralelismo
     newStartDate = new Date(targetNormal.startDate);
     console.log(`   🔗 Verdadero paralelo: usando exactamente la misma fecha de inicio que "${targetNormal.name}"`);
     
   } else {
-    // No hay NORMAL libres, ir después de la última tarea
-    const lastTask = userTasks[userTasks.length - 1];
-    parallelWithTask = lastTask;
-    insertionReason = `HIGH: Después de última tarea "${lastTask.name}" (todas las NORMAL ocupadas)`;
-    
-    newStartDate = await getNextAvailableStart(lastTask.deadline);
-    console.log(`   📅 Todas las NORMAL ocupadas, yendo al final`);
+    // No hay segunda NORMAL libre entre las futuras, usar la primera disponible o ir al final
+    if (normalLibresCount === 1) {
+      // Solo hay una NORMAL libre, usar esa
+      const firstFreeNormal = futureNormalTasks.find(task => 
+        !normalWithUrgent.has(task.id) && 
+        !futureHighTasks.some(highTask => {
+          const timeDifference = Math.abs(
+            highTask.startDate.getTime() - task.startDate.getTime()
+          );
+          return timeDifference < 24 * 60 * 60 * 1000;
+        })
+      );
+      
+      if (firstFreeNormal) {
+        parallelWithTask = firstFreeNormal;
+        insertionReason = `HIGH: Paralelo con "${firstFreeNormal.name}" (única NORMAL futura libre)`;
+        newStartDate = new Date(firstFreeNormal.startDate);
+        console.log(`   🔗 Solo una NORMAL libre, usando: "${firstFreeNormal.name}"`);
+      } else {
+        // Ir al final
+        const lastFutureTask = futureTasks[futureTasks.length - 1];
+        parallelWithTask = lastFutureTask;
+        insertionReason = `HIGH: Después de última tarea futura "${lastFutureTask.name}"`;
+        newStartDate = await getNextAvailableStart(lastFutureTask.deadline);
+        console.log(`   📅 No hay NORMAL libres, yendo al final de tareas futuras`);
+      }
+    } else {
+      // No hay NORMAL libres o ir después de la última tarea futura
+      if (futureTasks.length > 0) {
+        const lastFutureTask = futureTasks[futureTasks.length - 1];
+        parallelWithTask = lastFutureTask;
+        insertionReason = `HIGH: Después de última tarea futura "${lastFutureTask.name}" (todas las NORMAL ocupadas)`;
+        newStartDate = await getNextAvailableStart(lastFutureTask.deadline);
+        console.log(`   📅 Todas las NORMAL futuras ocupadas, yendo al final`);
+      } else {
+        // No debería llegar aquí, pero por seguridad
+        newStartDate = await getNextAvailableStart(new Date());
+        insertionReason = `HIGH: Primera tarea (sin tareas futuras)`;
+      }
+    }
   }
   
   const taskHours = durationDays * 8;
@@ -328,15 +389,16 @@ async function handleHighParallel(
 }
 
 /**
- * 🔵 NORMAL: Mantiene comportamiento actual
+ * 🔵 NORMAL: Mantiene comportamiento actual pero solo considera tareas futuras para LOW del mismo día
  */
 async function handleNormalParallel(
-  userTasks: TaskForParallelInsertion[], 
+  allUserTasks: TaskForParallelInsertion[], 
+  futureTasks: TaskForParallelInsertion[],
   durationDays: number
 ): Promise<ParallelInsertionResult> {
-  console.log('🔵 NORMAL: Comportamiento actual + mover LOW del mismo día');
+  console.log('🔵 NORMAL: Comportamiento actual + mover LOW del mismo día (solo tareas futuras)');
   
-  if (userTasks.length === 0) {
+  if (allUserTasks.length === 0) {
     const newStartDate = await getNextAvailableStart(new Date());
     const taskHours = durationDays * 8;
     const newDeadline = await calculateWorkingDeadline(newStartDate, taskHours);
@@ -349,69 +411,69 @@ async function handleNormalParallel(
     };
   }
   
-  // ✅ NUEVA LÓGICA: Identificar tareas LOW creadas HOY que deben ser movidas
+  // ✅ NUEVA LÓGICA: Identificar tareas LOW creadas HOY que deben ser movidas (solo entre futuras)
   const today = new Date();
   const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
   
-  const lowTasksToday = userTasks.filter(task => {
+  const futureLowTasksToday = futureTasks.filter(task => {
     if (task.priority !== 'LOW') return false;
     const taskCreatedAt = new Date(task.createdAt);
     return taskCreatedAt >= todayStart && taskCreatedAt < todayEnd;
   });
   
-  console.log(`   📊 Tareas LOW de hoy que pueden ser movidas: ${lowTasksToday.length}`);
+  console.log(`   📊 Tareas LOW futuras de hoy que pueden ser movidas: ${futureLowTasksToday.length}`);
   
-  // ✅ CALCULAR POSICIÓN SIN LAS LOW DEL DÍA (temporalmente las excluimos)
-  const tasksWithoutTodaysLow = userTasks.filter(task => {
+  // ✅ CALCULAR POSICIÓN SIN LAS LOW DEL DÍA (temporalmente las excluimos, solo futuras)
+  const futureTasksWithoutTodaysLow = futureTasks.filter(task => {
     if (task.priority !== 'LOW') return true;
     const taskCreatedAt = new Date(task.createdAt);
     return taskCreatedAt < todayStart; // Solo LOW de días anteriores
   });
   
-  console.log(`   📊 Tareas sin LOW de hoy: ${tasksWithoutTodaysLow.length}`);
+  console.log(`   📊 Tareas futuras sin LOW de hoy: ${futureTasksWithoutTodaysLow.length}`);
   
-  // ✅ LÓGICA DE INTERCALADO EXISTENTE (sin las LOW de hoy)
+  // ✅ LÓGICA DE INTERCALADO EXISTENTE (sin las LOW de hoy, solo futuras)
   let insertAfterIndex = -1;
   let insertionReason = '';
   
-  for (let i = tasksWithoutTodaysLow.length - 1; i >= 0; i--) {
-    const task = tasksWithoutTodaysLow[i];
+  for (let i = futureTasksWithoutTodaysLow.length - 1; i >= 0; i--) {
+    const task = futureTasksWithoutTodaysLow[i];
     
     if (task.priority === 'LOW') {
-      const normalsBefore = tasksWithoutTodaysLow.slice(0, i)
+      const normalsBefore = futureTasksWithoutTodaysLow.slice(0, i)
         .filter(t => t.priority === 'NORMAL').length;
       
       if (normalsBefore < 5) {
         insertAfterIndex = i - 1;
-        insertionReason = `NORMAL: Intercalado antes de LOW "${task.name}" (${normalsBefore}/5)`;
+        insertionReason = `NORMAL: Intercalado antes de LOW futura "${task.name}" (${normalsBefore}/5)`;
         break;
       }
     }
   }
   
   if (insertAfterIndex === -1) {
-    insertAfterIndex = tasksWithoutTodaysLow.length - 1;
-    insertionReason = 'NORMAL: Al final de la cola (sin LOW de hoy)';
+    insertAfterIndex = futureTasksWithoutTodaysLow.length - 1;
+    insertionReason = 'NORMAL: Al final de las tareas futuras (sin LOW de hoy)';
   }
   
   // ✅ CALCULAR FECHA DE LA NUEVA TAREA NORMAL
   const insertAfterDate = insertAfterIndex >= 0 ? 
-    tasksWithoutTodaysLow[insertAfterIndex].deadline : new Date();
+    futureTasksWithoutTodaysLow[insertAfterIndex].deadline : new Date();
   
   const newStartDate = await getNextAvailableStart(insertAfterDate);
   const taskHours = durationDays * 8;
   const newDeadline = await calculateWorkingDeadline(newStartDate, taskHours);
   
-  // ✅ PREPARAR MOVIMIENTO DE TAREAS LOW DEL MISMO DÍA
+  // ✅ PREPARAR MOVIMIENTO DE TAREAS LOW DEL MISMO DÍA (solo futuras)
   const tasksToMove: { taskId: string; newStartDate: Date; newDeadline: Date }[] = [];
   
-  if (lowTasksToday.length > 0) {
-    console.log(`   🔄 Preparando movimiento de ${lowTasksToday.length} tareas LOW al final`);
+  if (futureLowTasksToday.length > 0) {
+    console.log(`   🔄 Preparando movimiento de ${futureLowTasksToday.length} tareas LOW futuras al final`);
     
     let currentDate = newDeadline; // Empezar después de la nueva NORMAL
     
-    for (const lowTask of lowTasksToday) {
+    for (const lowTask of futureLowTasksToday) {
       const lowDuration = lowTask.customDuration ?? lowTask.category.tierList.duration;
       const lowHours = lowDuration * 8;
       
@@ -424,16 +486,16 @@ async function handleNormalParallel(
         newDeadline: lowDeadline
       });
       
-      console.log(`     📋 LOW "${lowTask.name}" será movida a: ${lowStartDate.toISOString()} → ${lowDeadline.toISOString()}`);
+      console.log(`     📋 LOW futura "${lowTask.name}" será movida a: ${lowStartDate.toISOString()} → ${lowDeadline.toISOString()}`);
       
       currentDate = lowDeadline;
     }
     
-    insertionReason += ` (${lowTasksToday.length} LOW del día movidas al final)`;
+    insertionReason += ` (${futureLowTasksToday.length} LOW futuras del día movidas al final)`;
   }
   
   console.log(`   📅 Fecha calculada para NORMAL: ${newStartDate.toISOString()} → ${newDeadline.toISOString()}`);
-  console.log(`   ✅ Tareas LOW del día serán reposicionadas: ${tasksToMove.length}`);
+  console.log(`   ✅ Tareas LOW futuras del día serán reposicionadas: ${tasksToMove.length}`);
   
   return {
     startDate: newStartDate,
@@ -448,10 +510,10 @@ async function handleNormalParallel(
  * 🟢 LOW: SIEMPRE va al final del día (muy simple)
  */
 async function handleLowParallel(
-  userTasks: TaskForParallelInsertion[], 
+  futureTasks: TaskForParallelInsertion[], 
   durationDays: number
 ): Promise<ParallelInsertionResult> {
-  console.log('🟢 LOW: SIEMPRE va al final del día (será movida por NORMAL si es necesario)');
+  console.log('🟢 LOW: SIEMPRE va al final del día (será movida por NORMAL si es necesario) - SOLO TAREAS FUTURAS');
   
   const now = new Date();
   const currentHour = now.getHours();
@@ -460,24 +522,24 @@ async function handleLowParallel(
   if (isEndOfDay) {
     console.log('   🕐 Fin del día: LOW se comporta como NORMAL (fecha fija)');
     // Después de las 5 PM, se comporta como NORMAL
-    const result = await handleNormalParallel(userTasks, durationDays);
+    const result = await handleNormalParallel(futureTasks, futureTasks, durationDays);
     result.insertionReason = `LOW (post-5PM): ${result.insertionReason}`;
     return result;
   }
   
-  console.log('   🕐 Durante el día: LOW va al final (puede ser movida por NORMAL futuras)');
+  console.log('   🕐 Durante el día: LOW va al final de tareas futuras (puede ser movida por NORMAL futuras)');
   
-  // ✅ SIMPLIFICADO: LOW siempre al final
+  // ✅ SIMPLIFICADO: LOW siempre al final de las tareas futuras
   let newStartDate: Date;
   let insertionReason: string;
   
-  if (userTasks.length > 0) {
-    const lastTask = userTasks[userTasks.length - 1];
-    newStartDate = await getNextAvailableStart(lastTask.deadline);
-    insertionReason = `LOW: Al final después de "${lastTask.name}" (puede ser movida por NORMAL del mismo día)`;
+  if (futureTasks.length > 0) {
+    const lastFutureTask = futureTasks[futureTasks.length - 1];
+    newStartDate = await getNextAvailableStart(lastFutureTask.deadline);
+    insertionReason = `LOW: Al final después de última tarea futura "${lastFutureTask.name}" (puede ser movida por NORMAL del mismo día)`;
   } else {
     newStartDate = await getNextAvailableStart(new Date());
-    insertionReason = 'LOW: Primera tarea (puede ser movida por NORMAL del mismo día)';
+    insertionReason = 'LOW: Primera tarea futura (puede ser movida por NORMAL del mismo día)';
   }
   
   const taskHours = durationDays * 8;
@@ -495,24 +557,24 @@ async function handleLowParallel(
 }
 
 /**
- * 🎯 FUNCIÓN PRINCIPAL: Calcular inserción en paralelo CON VACACIONES
+ * 🎯 FUNCIÓN PRINCIPAL: Calcular inserción en paralelo CON VACACIONES + SOLO TAREAS FUTURAS
  */
 export async function calculateParallelPriorityInsertion(
   userId: string,
   priority: Priority,
   durationDays: number
 ): Promise<ParallelInsertionResult> {
-  console.log(`\n🎯 === CÁLCULO DE INSERCIÓN EN PARALELO + VACACIONES + LOW MOVEMENT ===`);
+  console.log(`\n🎯 === CÁLCULO DE INSERCIÓN EN PARALELO + VACACIONES + SOLO TAREAS FUTURAS ===`);
   console.log(`👤 Usuario: ${userId}`);
   console.log(`🔥 Prioridad: ${priority}`);
   console.log(`⏱️ Duración: ${durationDays} días`);
   console.log(`✅ NO se afectarán tareas existentes (excepto LOW del mismo día para NORMAL)`);
   console.log(`🏖️ SE considerarán vacaciones del usuario`);
-  console.log(`📅 NUEVA LÓGICA: LOW solo intercala con tareas del mismo día`);
-  console.log(`🔒 LOW de días anteriores se comportan como NORMAL (fechas fijas)`);
+  console.log(`📅 NUEVA LÓGICA: Solo considera tareas desde fecha actual hacia adelante`);
+  console.log(`🔒 Tareas del pasado se ignoran completamente`);
   
-  // Obtener timeline actual CON FECHA DE CREACIÓN
-  const userTasks = await prisma.task.findMany({
+  // ✅ OBTENER TODAS LAS TAREAS CON FECHA DE CREACIÓN
+  const allUserTasks = await prisma.task.findMany({
     where: {
       assignees: { some: { userId } },
       status: { notIn: ['COMPLETE'] }
@@ -525,7 +587,7 @@ export async function calculateParallelPriorityInsertion(
       deadline: true,
       priority: true,
       customDuration: true,
-      createdAt: true, // ✅ INCLUIR FECHA DE CREACIÓN
+      createdAt: true,
       category: {
         include: {
           tierList: {
@@ -538,71 +600,87 @@ export async function calculateParallelPriorityInsertion(
     }
   }) as unknown as (TaskForParallelInsertion & { createdAt: Date })[];
   
-  console.log(`📊 Tareas existentes: ${userTasks.length}`);
+  // ✅ FILTRAR SOLO TAREAS FUTURAS (desde hoy hacia adelante)
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   
-  // ✅ MOSTRAR ANÁLISIS DE TAREAS LOW POR FECHA
+  const futureTasks = allUserTasks.filter(task => {
+    const taskStartDate = new Date(task.startDate);
+    return taskStartDate >= todayStart;
+  });
+  
+  console.log(`📊 Análisis de tareas:`);
+  console.log(`   📋 Tareas totales del usuario: ${allUserTasks.length}`);
+  console.log(`   🔮 Tareas futuras (desde hoy): ${futureTasks.length}`);
+  console.log(`   🕒 Tareas del pasado (ignoradas): ${allUserTasks.length - futureTasks.length}`);
+  
+  if (allUserTasks.length - futureTasks.length > 0) {
+    console.log(`   ⚠️ Se ignoraron ${allUserTasks.length - futureTasks.length} tareas del pasado para cálculo de paralelos`);
+  }
+  
+  // ✅ MOSTRAR ANÁLISIS DE TAREAS LOW POR FECHA (solo futuras)
   const today = new Date();
-  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+  const todayStartForLow = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const todayEnd = new Date(todayStartForLow.getTime() + 24 * 60 * 60 * 1000);
   
-  const lowTasksToday = userTasks.filter(task => {
+  const futureLowTasksToday = futureTasks.filter(task => {
     if (task.priority !== 'LOW') return false;
     const taskCreatedAt = new Date(task.createdAt);
-    return taskCreatedAt >= todayStart && taskCreatedAt < todayEnd;
+    return taskCreatedAt >= todayStartForLow && taskCreatedAt < todayEnd;
   });
   
-  const lowTasksPrevious = userTasks.filter(task => {
+  const futureLowTasksPrevious = futureTasks.filter(task => {
     if (task.priority !== 'LOW') return false;
     const taskCreatedAt = new Date(task.createdAt);
-    return taskCreatedAt < todayStart;
+    return taskCreatedAt < todayStartForLow;
   });
   
-  console.log(`📋 Análisis de tareas LOW:`);
-  console.log(`   🟢 LOW de hoy (intercalables): ${lowTasksToday.length}`);
-  console.log(`   🔒 LOW de días anteriores (fijas): ${lowTasksPrevious.length}`);
+  console.log(`📋 Análisis de tareas LOW futuras:`);
+  console.log(`   🟢 LOW futuras de hoy (intercalables): ${futureLowTasksToday.length}`);
+  console.log(`   🔒 LOW futuras de días anteriores (fijas): ${futureLowTasksPrevious.length}`);
   
-  if (lowTasksToday.length > 0) {
-    console.log(`   📅 LOW del día actual:`);
-    lowTasksToday.forEach(task => {
+  if (futureLowTasksToday.length > 0) {
+    console.log(`   📅 LOW futuras del día actual:`);
+    futureLowTasksToday.forEach(task => {
       console.log(`     - "${task.name}": ${task.startDate.toISOString()}`);
     });
   }
   
-  if (lowTasksPrevious.length > 0) {
-    console.log(`   🔒 LOW de días anteriores (NO intercalables):`);
-    lowTasksPrevious.forEach(task => {
+  if (futureLowTasksPrevious.length > 0) {
+    console.log(`   🔒 LOW futuras de días anteriores (NO intercalables):`);
+    futureLowTasksPrevious.forEach(task => {
       console.log(`     - "${task.name}": ${task.startDate.toISOString()}`);
     });
   }
   
-  // Calcular inserción según prioridad (SIN vacaciones primero)
+  // Calcular inserción según prioridad (SIN vacaciones primero, solo con tareas futuras)
   let result: ParallelInsertionResult;
   
   switch (priority) {
     case 'URGENT':
-      result = await handleUrgentParallel(userTasks, durationDays);
+      result = await handleUrgentParallel(futureTasks, durationDays);
       break;
     case 'HIGH':
-      result = await handleHighParallel(userTasks, durationDays);
+      result = await handleHighParallel(futureTasks, durationDays);
       break;
     case 'NORMAL':
-      result = await handleNormalParallel(userTasks, durationDays); // ✅ INCLUYE LÓGICA DE MOVER LOW
+      result = await handleNormalParallel(allUserTasks, futureTasks, durationDays); // Pasar ambas para contexto
       break;
     case 'LOW':
-      result = await handleLowParallel(userTasks, durationDays);
+      result = await handleLowParallel(futureTasks, durationDays);
       break;
     default:
       throw new Error(`Prioridad desconocida: ${priority}`);
   }
   
-  console.log(`\n📅 === FECHAS ANTES DE VACACIONES ===`);
+  console.log(`\n📅 === FECHAS ANTES DE VACACIONES (SOLO TAREAS FUTURAS) ===`);
   console.log(`📅 Inicio: ${result.startDate.toISOString()}`);
   console.log(`📅 Fin: ${result.deadline.toISOString()}`);
   console.log(`💭 Razón: ${result.insertionReason}`);
   
   // ✅ MOSTRAR TAREAS QUE SERÁN MOVIDAS
   if (result.tasksToMove && result.tasksToMove.length > 0) {
-    console.log(`\n🔄 === TAREAS LOW QUE SERÁN MOVIDAS ===`);
+    console.log(`\n🔄 === TAREAS LOW FUTURAS QUE SERÁN MOVIDAS ===`);
     result.tasksToMove.forEach(task => {
       console.log(`   📋 ${task.taskId}: ${task.newStartDate.toISOString()} → ${task.newDeadline.toISOString()}`);
     });
@@ -611,12 +689,13 @@ export async function calculateParallelPriorityInsertion(
   // ✅ APLICAR LÓGICA DE VACACIONES
   const finalResult = await applyVacationLogic(userId, result, durationDays);
   
-  console.log(`\n✅ === RESULTADO FINAL CON VACACIONES ===`);
+  console.log(`\n✅ === RESULTADO FINAL CON VACACIONES (SOLO TAREAS FUTURAS) ===`);
   console.log(`📅 Inicio: ${finalResult.startDate.toISOString()}`);
   console.log(`📅 Fin: ${finalResult.deadline.toISOString()}`);
   console.log(`💭 Razón: ${finalResult.insertionReason}`);
-  console.log(`✅ Tareas afectadas: ${finalResult.tasksToMove?.length || 0} LOW del mismo día`);
+  console.log(`✅ Tareas afectadas: ${finalResult.tasksToMove?.length || 0} LOW futuras del mismo día`);
   console.log(`🏖️ Vacaciones consideradas: SÍ`);
+  console.log(`🔮 Solo tareas futuras consideradas: SÍ`);
   
   if (finalResult.vacationAdjustment) {
     console.log(`\n🏖️ === AJUSTES POR VACACIONES ===`);
@@ -626,7 +705,7 @@ export async function calculateParallelPriorityInsertion(
   }
   
   if (finalResult.parallelWith) {
-    console.log(`🔗 Paralelo con: "${finalResult.parallelWith.taskName}"`);
+    console.log(`🔗 Paralelo con tarea futura: "${finalResult.parallelWith.taskName}"`);
     console.log(`📅 Fecha original de referencia: ${finalResult.parallelWith.originalStartDate.toISOString()}`);
   }
   
@@ -634,7 +713,7 @@ export async function calculateParallelPriorityInsertion(
 }
 
 /**
- * 🎯 FUNCIÓN AUXILIAR: Obtener información de paralelismo
+ * 🎯 FUNCIÓN AUXILIAR: Obtener información de paralelismo (solo tareas futuras)
  */
 export async function getParallelismInfo(
   userId: string,
@@ -647,10 +726,15 @@ export async function getParallelismInfo(
   nextInsertionWillBeParallel: boolean;
   estimatedParallelWith?: string;
 }> {
-  const userTasks = await prisma.task.findMany({
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  
+  // ✅ SOLO CONSIDERAR TAREAS FUTURAS
+  const futureTasks = await prisma.task.findMany({
     where: {
       assignees: { some: { userId } },
-      status: { notIn: ['COMPLETE'] }
+      status: { notIn: ['COMPLETE'] },
+      startDate: { gte: todayStart } // ✅ SOLO TAREAS FUTURAS
     },
     orderBy: { startDate: 'asc' },
     select: {
@@ -662,26 +746,30 @@ export async function getParallelismInfo(
   });
   
   const priorityCounts = {
-    currentUrgentCount: userTasks.filter(t => t.priority === 'URGENT').length,
-    currentHighCount: userTasks.filter(t => t.priority === 'HIGH').length,
-    currentNormalCount: userTasks.filter(t => t.priority === 'NORMAL').length,
-    currentLowCount: userTasks.filter(t => t.priority === 'LOW').length,
+    currentUrgentCount: futureTasks.filter(t => t.priority === 'URGENT').length,
+    currentHighCount: futureTasks.filter(t => t.priority === 'HIGH').length,
+    currentNormalCount: futureTasks.filter(t => t.priority === 'NORMAL').length,
+    currentLowCount: futureTasks.filter(t => t.priority === 'LOW').length,
     nextInsertionWillBeParallel: ['URGENT', 'HIGH'].includes(priority),
     estimatedParallelWith: undefined as string | undefined
   };
   
-  // Calcular con qué tarea será paralelo
+  // Calcular con qué tarea futura será paralelo
   if (priority === 'URGENT') {
-    priorityCounts.estimatedParallelWith = 'Todas las tareas existentes';
+    const firstFutureTask = futureTasks[0];
+    priorityCounts.estimatedParallelWith = firstFutureTask ? 
+      `Primera tarea futura: ${firstFutureTask.name}` : 
+      'Será la primera tarea';
   } else if (priority === 'HIGH') {
-    const normalTasks = userTasks.filter(t => t.priority === 'NORMAL');
-    const highTasks = userTasks.filter(t => t.priority === 'HIGH');
-    const nextPosition = highTasks.length;
+    const futureNormalTasks = futureTasks.filter(t => t.priority === 'NORMAL');
+    const futureHighTasks = futureTasks.filter(t => t.priority === 'HIGH');
     
-    if (nextPosition < normalTasks.length) {
-      priorityCounts.estimatedParallelWith = normalTasks[nextPosition].name;
+    if (futureNormalTasks.length >= 2) {
+      priorityCounts.estimatedParallelWith = `Segunda NORMAL futura: ${futureNormalTasks[1].name}`;
+    } else if (futureNormalTasks.length === 1) {
+      priorityCounts.estimatedParallelWith = `Única NORMAL futura: ${futureNormalTasks[0].name}`;
     } else {
-      priorityCounts.estimatedParallelWith = 'Después de última tarea';
+      priorityCounts.estimatedParallelWith = 'Después de última tarea futura';
     }
   }
   
