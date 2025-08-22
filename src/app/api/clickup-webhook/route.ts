@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // src/app/api/clickup-webhook/route.ts - VERSIÓN CON LOGS MEJORADOS
 import { NextResponse } from 'next/server'
@@ -176,74 +177,133 @@ export async function POST(req: Request) {
   const startTime = Date.now();
   
   try {
-    // ✅ NUEVO: Log de headers antes de procesar
-    logRequestHeaders(req);
+    console.log('\n🔔 =============== CLICKUP WEBHOOK RECEIVED ===============');
+    console.log(`⏰ Timestamp: ${new Date().toISOString()}`);
+    console.log(`🌐 Method: ${req.method}`);
+    console.log(`📍 URL: ${req.url}`);
     
-    const body = await req.json()
+    // Log ALL headers para debugging
+    console.log('📨 ALL HEADERS:');
+    const headers: Record<string, string> = {};
+    req.headers.forEach((value, key) => {
+      headers[key] = value;
+      console.log(`   ${key}: ${value}`);
+    });
     
-    // ✅ MEJORADO: Log de entrada detallado
-    logWebhookEntry(req, body);
+    // Verificar si el body existe y es válido JSON
+    let body: any = null;
+    let rawBody = '';
     
-    // ✅ NUEVO: Verificación de webhook
-    const signature = req.headers.get('x-signature');
-    logWebhookVerification(signature);
-    
-    // ✅ NUEVO: Validación básica del payload
-    if (!body.event) {
-      const message = 'Webhook payload missing event type';
-      console.error('❌ VALIDATION ERROR:', message);
-      logWebhookResponse('UNKNOWN', false, message);
-      return NextResponse.json({ error: message }, { status: 400 });
+    try {
+      rawBody = await req.text(); // Primero obtener como texto
+      console.log(`📦 Raw body length: ${rawBody.length}`);
+      console.log(`📦 Raw body preview: ${rawBody.substring(0, 200)}...`);
+      
+      if (rawBody.trim() === '') {
+        console.log('⚠️ Empty body received');
+        return NextResponse.json({ 
+          success: true, 
+          message: 'Empty body received - possibly a test ping',
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      body = JSON.parse(rawBody); // Parsear a JSON
+      console.log('✅ JSON parsed successfully');
+      
+    } catch (parseError) {
+      console.error('❌ JSON Parse Error:', parseError);
+      console.error('❌ Raw body was:', rawBody);
+      
+      return NextResponse.json({ 
+        error: 'Invalid JSON in request body',
+        rawBody: rawBody.substring(0, 100),
+        parseError: parseError instanceof Error ? parseError.message : 'Unknown parse error'
+      }, { status: 400 });
     }
     
-    const event = body as ClickUpWebhookEvent
+    // Log del payload parseado
+    console.log(`📋 Event Type: ${body.event || 'NO_EVENT'}`);
+    console.log(`📦 Task ID: ${body.task_id || 'NO_TASK_ID'}`);
+    console.log(`📊 Full Payload:`, JSON.stringify(body, null, 2));
     
+    // Verificación especial para test de ClickUp
+    if (!body.event && Object.keys(body).length === 0) {
+      console.log('🧪 Detected empty test payload from ClickUp');
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Test webhook received successfully',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Verificación para payload de test específico
+    if (body.test || body.ping || body.challenge) {
+      console.log('🧪 Detected test/ping payload from ClickUp');
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Test payload received successfully',
+        received: body,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Si no hay event type pero hay datos, intentar procesar
+    if (!body.event) {
+      console.log('⚠️ No event type specified, attempting to infer...');
+      
+      // Log detallado para ayudar a identificar el tipo
+      console.log('🔍 Payload analysis:');
+      console.log(`   - Has task_id: ${!!body.task_id}`);
+      console.log(`   - Has task: ${!!body.task}`);
+      console.log(`   - Has history_items: ${!!body.history_items}`);
+      console.log(`   - Keys present: ${Object.keys(body).join(', ')}`);
+      
+      return NextResponse.json({ 
+        success: true,
+        message: 'Webhook received but no event type specified',
+        payload_keys: Object.keys(body),
+        task_id: body.task_id || null,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Continuar con el procesamiento normal si hay event
+    const event = body as ClickUpWebhookEvent;
     console.log(`🎯 Processing webhook event: ${event.event}`);
     
-    let result;
-    let success = true;
-    let message = '';
-    
+    // Tu lógica switch existente...
     switch (event.event) {
       case 'taskUpdated':
         console.log('📝 Handling taskUpdated event...');
-        result = await handleTaskUpdate(event);
-        break;
+        return await handleTaskUpdate(event);
         
       case 'taskCreated':
         console.log('➕ Handling taskCreated event...');
-        result = await handleTaskCreated(event);
-        break;
+        return await handleTaskCreated(event);
         
       case 'taskDeleted':
         console.log('🗑️ Handling taskDeleted event...');
-        result = await handleTaskDeleted(event);
-        break;
+        return await handleTaskDeleted(event);
         
       case 'taskStatusUpdated':
         console.log('📊 Handling taskStatusUpdated event...');
-        result = await handleTaskStatusUpdate(event);
-        break;
+        return await handleTaskStatusUpdate(event);
         
       case 'taskAssigneeUpdated':
         console.log('👥 Handling taskAssigneeUpdated event...');
-        result = await handleTaskAssigneeUpdate(event);
-        break;
+        return await handleTaskAssigneeUpdate(event);
         
       default:
-        message = `Event ${event.event} received but not handled`;
+        const message = `Event ${event.event} received but not handled`;
         console.log(`⚠️ ${message}`);
-        success = false;
-        result = NextResponse.json({ message });
+        return NextResponse.json({ 
+          success: true,
+          message,
+          event_type: event.event,
+          timestamp: new Date().toISOString()
+        });
     }
-    
-    // ✅ NUEVO: Log de timing
-    const processingTime = Date.now() - startTime;
-    console.log(`⏱️ Webhook processing completed in ${processingTime}ms`);
-    
-    logWebhookResponse(event.event, success, message || 'Processed successfully', event.task_id);
-    
-    return result;
     
   } catch (error) {
     const processingTime = Date.now() - startTime;
@@ -251,14 +311,13 @@ export async function POST(req: Request) {
     console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack available');
     console.log(`⏱️ Failed after ${processingTime}ms`);
     
-    logWebhookResponse('ERROR', false, error instanceof Error ? error.message : 'Unknown error');
-    
-    // ✅ IMPORTANTE: Devolver 200 para que ClickUp no reintente
+    // IMPORTANTE: Devolver 200 para que ClickUp no marque como fallido
     return NextResponse.json({
+      success: false,
       error: 'Error processing webhook',
       details: error instanceof Error ? error.message : 'Unknown error',
       timestamp: new Date().toISOString()
-    }, { status: 200 })
+    }, { status: 200 }); // ← 200 en lugar de 500
   }
 }
 
