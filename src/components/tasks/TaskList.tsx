@@ -4,6 +4,7 @@ import { TaskCard } from "./TaskCard";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { TaskIcon } from "@hugeicons/core-free-icons";
 import { TaskCardSkeleton } from "./TaskCardSkeleton";
+import { mapClickUpStatusToLocal, mapLocalStatusToColumn, getColumnOrder } from "@/utils/clickup-status-mapping-utils";
 
 interface Task {
   clickupId: string;
@@ -61,45 +62,13 @@ export const TasksList: React.FC<TasksListProps> = ({
   loading = false,
   filters = {},
 }) => {
-  // ✅ ACTUALIZADO: Función para mapear status a 3 columnas específicas
+  // ✅ MEJORADO: Usar utilidades centralizadas para mapeo de estados
   const mapStatusToColumn = (status: string): string | null => {
-    const statusLower = status.toLowerCase();
-    
-    // TO DO - Estados iniciales
-    if (statusLower.includes('to do') || statusLower.includes('todo') || 
-        statusLower.includes('open') || statusLower.includes('backlog') ||
-        statusLower.includes('new') || statusLower.includes('pending') ||
-        statusLower.includes('ready')) {
-      return 'TO DO';
+    const localStatus = mapClickUpStatusToLocal(status);
+    if (localStatus === null) {
+      return null; // Task is completed, exclude it
     }
-    
-    // IN PROGRESS - Estados de trabajo activo
-    if (statusLower.includes('in progress') || statusLower.includes('in-progress') ||
-        statusLower.includes('progress') || statusLower.includes('active') ||
-        statusLower.includes('working') || statusLower.includes('development') ||
-        statusLower.includes('doing')) {
-      return 'IN PROGRESS';
-    }
-    
-    // ON APPROVAL - Estados de revisión/aprobación
-    if (statusLower.includes('review') || statusLower.includes('approval') ||
-        statusLower.includes('pending approval') || statusLower.includes('on approval') ||
-        statusLower.includes('waiting') || statusLower.includes('review') ||
-        statusLower.includes('qa') || statusLower.includes('testing') ||
-        statusLower.includes('check')) {
-      return 'ON APPROVAL';
-    }
-    
-    // ✅ NUEVO: Filtrar tareas completadas - devolver null para excluirlas
-    if (statusLower.includes('done') || statusLower.includes('complete') ||
-        statusLower.includes('finished') || statusLower.includes('closed') ||
-        statusLower.includes('resolved') || statusLower.includes('delivered') ||
-        statusLower.includes('merged') || statusLower.includes('deployed')) {
-      return null; // No mostrar estas tareas
-    }
-    
-    // Por defecto, otros estados van a TO DO
-    return 'TO DO';
+    return mapLocalStatusToColumn(localStatus);
   };
 
   // Función para ordenar tareas por fecha de vencimiento
@@ -117,7 +86,7 @@ export const TasksList: React.FC<TasksListProps> = ({
 
   // ✅ ACTUALIZADO: Renderizar skeletons para 3 columnas
   if (loading) {
-    const columnOrder = ['TO DO', 'IN PROGRESS', 'ON APPROVAL'];
+    const columnOrder = getColumnOrder();
     
     return (
       <div className="space-y-6">
@@ -180,9 +149,9 @@ export const TasksList: React.FC<TasksListProps> = ({
     groupedTasks[column] = sortTasksByDueDate(groupedTasks[column]);
   });
 
-  // ✅ ACTUALIZADO: Definir el orden de las 3 columnas
-  const columnOrder = ['TO DO', 'IN PROGRESS', 'ON APPROVAL'];
-  const orderedColumns = columnOrder.filter(column => groupedTasks[column]?.length > 0);
+  // ✅ ACTUALIZADO: Definir el orden de las 3 columnas usando utilidades
+  const columnOrder = getColumnOrder();
+  const orderedColumns = columnOrder.filter((column: string | number) => groupedTasks[column]?.length > 0);
 
   if (tasks.length === 0) {
     return (
@@ -220,7 +189,7 @@ export const TasksList: React.FC<TasksListProps> = ({
     );
   }
 
-  // ✅ ACTUALIZADO: Siempre mostrar las 3 columnas, incluso si están vacías
+  // ✅ ACTUALIZADO: Siempre mostrar las 3 columnas usando utilidades
   const displayColumns = columnOrder;
 
   return (

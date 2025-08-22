@@ -6,35 +6,15 @@ import { NextResponse } from 'next/server';
 import axios from 'axios';
 import { prisma } from '@/utils/prisma';
 import { API_CONFIG } from '@/config';
-import { mapClickUpStatusToLocal } from '@/utils/clickup-task-mapping-utils';
+import { 
+  mapClickUpStatusToLocal, 
+  mapClickUpStatusToLocalSafe,
+  isActiveTaskStatus,
+  mapClickUpPriority,
+  getValidLocalStatuses
+} from '@/utils/clickup-status-mapping-utils';
 
 const CLICKUP_TOKEN = process.env.CLICKUP_API_TOKEN;
-
-// ✅ NUEVA FUNCIÓN: Verificar si un estado es válido (no completado)
-function isValidTaskStatus(status: string): boolean {
-  const statusLower = status.toLowerCase();
-  
-  // ✅ EXCLUIR tareas completadas
-  if (statusLower.includes('done') || statusLower.includes('complete') ||
-      statusLower.includes('finished') || statusLower.includes('closed') ||
-      statusLower.includes('resolved') || statusLower.includes('delivered') ||
-      statusLower.includes('merged') || statusLower.includes('deployed')) {
-    return false;
-  }
-  
-  // ✅ INCLUIR solo tareas activas
-  return statusLower.includes('to do') || statusLower.includes('todo') || 
-         statusLower.includes('open') || statusLower.includes('backlog') ||
-         statusLower.includes('new') || statusLower.includes('pending') ||
-         statusLower.includes('ready') || statusLower.includes('in progress') || 
-         statusLower.includes('in-progress') || statusLower.includes('progress') || 
-         statusLower.includes('active') || statusLower.includes('working') || 
-         statusLower.includes('development') || statusLower.includes('doing') ||
-         statusLower.includes('review') || statusLower.includes('approval') ||
-         statusLower.includes('pending approval') || statusLower.includes('on approval') ||
-         statusLower.includes('waiting') || statusLower.includes('qa') || 
-         statusLower.includes('testing') || statusLower.includes('check');
-}
 
 // ✅ SIMPLIFICADO: Ya no calculamos posiciones, solo validamos fechas
 async function validateTaskDatesForSync(
@@ -174,34 +154,45 @@ export async function GET() {
 
           const tasks = tasksResponse.data.tasks || [];
           
-          // ✅ FILTROS MEJORADOS: Estado activo + Fechas requeridas + Excluir completadas
+          // ✅ FILTROS MEJORADOS: Estado activo + Fechas requeridas + Incluir ON APPROVAL
           const filteredTasks = tasks.filter((task: any) => {
             const taskStatus = task.status?.status || '';
             
-            // ✅ NUEVO: Primero verificar que no esté completada
-            if (!isValidTaskStatus(taskStatus)) {
-              console.log(`       🚫 Tarea "${task.name}" excluida por estar completada: ${taskStatus}`);
+            console.log(`\n📋 Analyzing task: "${task.name}"`);
+            console.log(`   📊 Status: "${taskStatus}"`);
+            
+            // ✅ MEJORADO: Usar nueva utilidad para verificar si está activa
+            if (!isActiveTaskStatus(taskStatus)) {
+              console.log(`   🚫 Task EXCLUDED: completed/invalid status`);
               return false;
             }
             
             const mappedStatus = mapClickUpStatusToLocal(taskStatus);
-            const hasValidStatus = mappedStatus === 'TO_DO' || mappedStatus === 'IN_PROGRESS';
+            console.log(`   🔄 Mapped status: ${taskStatus} -> ${mappedStatus}`);
+            
+            // ✅ MEJORADO: Incluir todas las tareas activas (TO_DO, IN_PROGRESS, ON_APPROVAL)
+            const validStatuses = getValidLocalStatuses();
+            const hasValidStatus = mappedStatus && validStatuses.includes(mappedStatus);
             
             const hasStartDate = task.start_date && task.start_date !== null;
             const hasDueDate = task.due_date && task.due_date !== null;
             
+            console.log(`   📅 Has start date: ${hasStartDate}`);
+            console.log(`   📅 Has due date: ${hasDueDate}`);
+            console.log(`   ✅ Valid mapped status: ${hasValidStatus} (${mappedStatus})`);
+            
             if (hasValidStatus && hasStartDate && hasDueDate) {
-              console.log(`       ✅ Tarea válida: "${task.name}" (${taskStatus} → ${mappedStatus})`);
+              console.log(`   ✅ Task INCLUDED: "${task.name}" (${taskStatus} → ${mappedStatus})`);
               return true;
             }
             
             // Log de exclusión para tareas activas sin fechas
             if (!hasStartDate) {
-              console.log(`       🚫 Tarea "${task.name}" excluida: sin startDate`);
+              console.log(`   🚫 Task EXCLUDED: missing start date`);
             } else if (!hasDueDate) {
-              console.log(`       🚫 Tarea "${task.name}" excluida: sin dueDate`);
+              console.log(`   🚫 Task EXCLUDED: missing due date`);
             } else if (!hasValidStatus) {
-              console.log(`       🚫 Tarea "${task.name}" excluida por estado: ${taskStatus} → ${mappedStatus}`);
+              console.log(`   🚫 Task EXCLUDED: invalid mapped status (${mappedStatus})`);
             }
             
             return false;
@@ -527,8 +518,8 @@ export async function POST(req: Request) {
 
         const task = taskResponse.data;
         
-        // ✅ MEJORADO: Verificar que no esté completada
-        if (!isValidTaskStatus(task.status?.status || '')) {
+        // ✅ MEJORADO: Verificar que no esté completada usando nueva utilidad
+        if (!isActiveTaskStatus(task.status?.status || '')) {
           console.log(`   🚫 Tarea ${taskId} omitida: está completada (${task.status?.status})`);
           notFoundTasks.push(taskId);
           continue;
@@ -541,7 +532,8 @@ export async function POST(req: Request) {
         }
 
         const mappedStatus = mapClickUpStatusToLocal(task.status?.status || '');
-        if (mappedStatus === 'TO_DO' || mappedStatus === 'IN_PROGRESS') {
+        const validStatuses = getValidLocalStatuses();
+        if (mappedStatus && validStatuses.includes(mappedStatus)) {
           tasksData.push(task);
           console.log(`   ✅ Tarea válida: ${task.name} (${mappedStatus})`);
         } else {
@@ -608,7 +600,9 @@ export async function POST(req: Request) {
         console.log(`\n🔄 === PROCESANDO: "${clickupTask.name}" ===`);
 
         const taskId = clickupTask.id;
-        const mappedStatus = mapClickUpStatusToLocal(clickupTask.status?.status || '');
+        const mappedStatus = mapClickUpStatusToLocalSafe(clickupTask.status?.status || '');
+        
+        console.log(`   🔄 Status mapeado seguro: ${clickupTask.status?.status} → ${mappedStatus}`);
 
         const startDate = new Date(parseInt(clickupTask.start_date));
         const deadline = new Date(parseInt(clickupTask.due_date));
@@ -740,17 +734,4 @@ export async function POST(req: Request) {
       details: error instanceof Error ? error.message : 'Error desconocido'
     }, { status: 500 });
   }
-}
-
-function mapClickUpPriority(clickupPriority?: string): 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT' {
-  if (!clickupPriority) return 'NORMAL';
-  
-  const priorityMap: Record<string, 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'> = {
-    'urgent': 'URGENT',
-    'high': 'HIGH',
-    'normal': 'NORMAL',
-    'low': 'LOW'
-  };
-  
-  return priorityMap[clickupPriority.toLowerCase()] || 'NORMAL';
 }
