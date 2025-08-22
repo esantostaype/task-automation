@@ -60,6 +60,8 @@ interface FormikSuggestionLogicProps {
   forceSuggestionUpdate?: () => void;
 }
 
+// src/components/create-task/CreateTaskForm.tsx - CORRECCIÓN DE DURACIÓN MANUAL
+
 const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
   setSuggestedAssignment,
   setFetchingSuggestion,
@@ -82,6 +84,8 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
   
   // ✅ NUEVO: Flag para evitar aplicaciones simultáneas
   const applyingChangesRef = useRef(false);
+  // ✅ NUEVO: Referencia para trackear la última categoría procesada
+  const lastProcessedCategoryRef = useRef<string>('');
 
   // Obtener el typeId para cualquier caso (nueva categoría o existente)
   const getCurrentTypeId = () => {
@@ -102,15 +106,21 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
 
   const currentTypeId = getCurrentTypeId();
 
-  // ✅ OPTIMIZADO: Efecto para aplicar duración de categoría existente
+  // ✅ CORREGIDO: Efecto para aplicar duración de categoría existente SOLO cuando cambia la categoría
   useEffect(() => {
     // Evitar aplicar durante resets o cambios simultáneos
     if (applyingChangesRef.current || resetCategory || isSubmitting) {
       return;
     }
 
+    // ✅ NUEVO: Solo aplicar si la categoría cambió realmente
+    const currentCategoryKey = `${values.categoryId}-${isNewCategory}`;
+    if (lastProcessedCategoryRef.current === currentCategoryKey) {
+      return; // No hacer nada si es la misma categoría
+    }
+
     if (!isNewCategory && values.categoryId && !durationManuallyEdited) {
-      console.log("🔍 Applying duration for existing category...");
+      console.log("🔍 Category changed, applying default duration...");
 
       const selectedCategory = allCategories.find(
         (cat) => cat.id.toString() === values.categoryId
@@ -121,7 +131,7 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
         
         // Solo aplicar si es diferente al valor actual
         if (values.durationDays !== newDuration) {
-          console.log(`✅ Setting duration: ${newDuration} days`);
+          console.log(`✅ Setting duration from category: ${newDuration} days`);
           
           applyingChangesRef.current = true;
           setFieldValue("durationDays", newDuration);
@@ -133,6 +143,10 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
         }
       }
     }
+
+    // ✅ ACTUALIZAR referencia de categoría procesada
+    lastProcessedCategoryRef.current = currentCategoryKey;
+
   }, [
     values.categoryId,
     isNewCategory,
@@ -143,22 +157,50 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
     isSubmitting
   ]);
 
-  // Detectar cambios manuales en duración con debounce
+  // ✅ CORREGIDO: Detectar cambios manuales en duración con mejor lógica
   useEffect(() => {
+    // No marcar como manual si estamos aplicando cambios automáticos
     if (applyingChangesRef.current || !values.durationDays) {
       return;
     }
 
-    const timeout = setTimeout(() => {
-      setDurationManuallyEdited(true);
-    }, 500);
+    // ✅ NUEVO: Solo marcar como manual si realmente el usuario editó
+    // Verificar si la duración actual es diferente a la duración por defecto de la categoría
+    if (!isNewCategory && values.categoryId) {
+      const selectedCategory = allCategories.find(
+        (cat) => cat.id.toString() === values.categoryId
+      );
+      
+      if (selectedCategory?.tierList?.duration) {
+        const categoryDuration = selectedCategory.tierList.duration.toString();
+        const currentDuration = values.durationDays as string;
+        
+        // Si la duración actual es diferente a la de la categoría, es manual
+        if (currentDuration !== categoryDuration && currentDuration.trim() !== '') {
+          const timeout = setTimeout(() => {
+            console.log(`🔧 Duration manually edited: ${currentDuration} vs category default: ${categoryDuration}`);
+            setDurationManuallyEdited(true);
+          }, 300); // Reducir el debounce
 
-    return () => clearTimeout(timeout);
-  }, [values.durationDays]);
+          return () => clearTimeout(timeout);
+        }
+      }
+    } else if (isNewCategory && values.durationDays) {
+      // Para nuevas categorías, cualquier input es manual
+      const timeout = setTimeout(() => {
+        console.log(`🔧 Duration manually set for new category: ${values.durationDays}`);
+        setDurationManuallyEdited(true);
+      }, 300);
 
-  // Resetear cuando cambia categoría o tipo
+      return () => clearTimeout(timeout);
+    }
+  }, [values.durationDays, values.categoryId, isNewCategory, allCategories]);
+
+  // ✅ CORREGIDO: Resetear cuando cambia categoría o tipo, pero preservar si fue editado manualmente
   useEffect(() => {
+    console.log(`🔄 Category/type changed, resetting manual edit flag`);
     setDurationManuallyEdited(false);
+    lastProcessedCategoryRef.current = ''; // Reset de la referencia
   }, [values.categoryId, values.isNewCategory, selectedKind]);
 
   // Hook de sugerencias con función de forzar update
@@ -201,6 +243,7 @@ const FormikSuggestionLogic: FC<FormikSuggestionLogicProps> = ({
       setUserHasManuallyChanged(false);
       setDurationManuallyEdited(false);
       setSuggestedAssignment(null);
+      lastProcessedCategoryRef.current = ''; // Reset de la referencia
       
       requestAnimationFrame(() => {
         applyingChangesRef.current = false;

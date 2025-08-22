@@ -39,22 +39,35 @@ export const DurationField: React.FC<DurationFieldProps> = ({
   
   const [localInputValue, setLocalInputValue] = React.useState('')
   const [hasManualEdit, setHasManualEdit] = React.useState(false)
-  // ✅ NUEVO: Estado para mostrar indicador de cambio de sugerencia
+  // ✅ NUEVO: Estado para detectar si estamos aplicando automáticamente
+  const [isApplyingAutomatic, setIsApplyingAutomatic] = React.useState(false)
   
   const numberOfAssignees = values.assignedUserIds.length
   const originalDuration = parseFloat(localInputValue) || 0
   const effectiveDuration = numberOfAssignees > 0 ? originalDuration / numberOfAssignees : originalDuration
 
-  // Sincronizar con Formik solo cuando no hay edición manual activa
+  // Sincronizar con Formik cuando cambia el valor externamente (ej. cambio de categoría)
   React.useEffect(() => {
-    if (!hasManualEdit && values.durationDays !== localInputValue) {
-      setLocalInputValue(values.durationDays as string || '')
+    const currentFormikValue = values.durationDays as string || '';
+    
+    if (currentFormikValue !== localInputValue && !hasManualEdit) {
+      console.log(`🔄 Syncing duration from Formik: "${currentFormikValue}"`);
+      setIsApplyingAutomatic(true);
+      setLocalInputValue(currentFormikValue);
+      
+      // Reset flag después de un corto delay
+      setTimeout(() => {
+        setIsApplyingAutomatic(false);
+      }, 100);
     }
-  }, [values.durationDays, hasManualEdit, localInputValue])
-
+  }, [values.durationDays, hasManualEdit, localInputValue]);
 
   // Determinar la fuente de la duración
   const getDurationSource = () => {
+    if (isApplyingAutomatic) {
+      return 'applying'
+    }
+    
     if (isTypingNewCategory || values.isNewCategory) {
       return 'manual'
     }
@@ -86,6 +99,8 @@ export const DurationField: React.FC<DurationFieldProps> = ({
     const source = getDurationSource()
     
     switch (source) {
+      case 'applying':
+        return { text: "(Applying...)", color: 'var(--joy-palette-primary-400)' }
       case 'manual':
         return { text: "(Manual)", color: 'var(--joy-palette-warning-500)' }
       case 'calculating':
@@ -111,19 +126,36 @@ export const DurationField: React.FC<DurationFieldProps> = ({
     return "Duration in days"
   }
 
-  // ✅ MEJORADO: Manejar cambios del usuario con notificación inmediata
+  // ✅ MEJORADO: Manejar cambios del usuario con detección mejorada
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = event.target.value
     setLocalInputValue(newValue)
     setFieldValue('durationDays', newValue)
     
-    // Marcar que el usuario ha editado manualmente
-    if (newValue !== values.durationDays) {
-      setHasManualEdit(true)
+    // ✅ MEJORADO: Detectar cambio manual solo si no estamos aplicando automáticamente
+    if (!isApplyingAutomatic) {
+      // Verificar si el usuario realmente cambió algo manualmente
+      if (newValue.trim() !== '') {
+        if (!values.isNewCategory && values.categoryId) {
+          // Para categorías existentes, verificar si es diferente a la duración por defecto
+          const selectedCategory = allCategories.find(cat => cat.id.toString() === values.categoryId)
+          if (selectedCategory?.tierList?.duration) {
+            const categoryDuration = selectedCategory.tierList.duration.toString()
+            if (newValue !== categoryDuration) {
+              console.log(`🔧 Manual edit detected: ${newValue} vs category default: ${categoryDuration}`)
+              setHasManualEdit(true)
+            }
+          }
+        } else {
+          // Para nuevas categorías, cualquier input es manual
+          console.log(`🔧 Manual input for new category: ${newValue}`)
+          setHasManualEdit(true)
+        }
+      }
     }
 
     // ✅ NUEVO: Notificar cambio inmediatamente para recálculo de sugerencias
-    if (onDurationChange && newValue.trim()) {
+    if (onDurationChange && newValue.trim() && !isApplyingAutomatic) {
       const duration = parseFloat(newValue)
       if (duration > 0) {
         console.log('⏰ Duration changed in real-time:', newValue)
@@ -140,7 +172,7 @@ export const DurationField: React.FC<DurationFieldProps> = ({
 
     const value = event.target.value.trim()
     
-    if (onDurationComplete && value) {
+    if (onDurationComplete && value && !isApplyingAutomatic) {
       const durationValue = parseFloat(value)
       if (durationValue > 0) {
         console.log('⏰ Duration completed by user:', value)
@@ -149,8 +181,9 @@ export const DurationField: React.FC<DurationFieldProps> = ({
     }
   }
 
-  // Resetear estado manual cuando cambia la categoría
+  // ✅ CORREGIDO: Resetear estado manual cuando cambia la categoría
   React.useEffect(() => {
+    console.log(`🔄 Category changed, resetting manual edit state`)
     setHasManualEdit(false)
   }, [values.categoryId, values.isNewCategory])
 
