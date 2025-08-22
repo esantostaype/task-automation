@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import React from "react";
 import { TaskCard } from "./TaskCard";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -21,7 +22,7 @@ interface Task {
     color: string;
   }>;
   dueDate?: string | null;
-  startDate?: string | null; // ✅ AGREGADA: fecha de inicio
+  startDate?: string | null;
   timeEstimate?: number | null;
   tags: string[];
   list: {
@@ -60,29 +61,44 @@ export const TasksList: React.FC<TasksListProps> = ({
   loading = false,
   filters = {},
 }) => {
-  // Función para mapear status a columnas
-  const mapStatusToColumn = (status: string): string => {
+  // ✅ ACTUALIZADO: Función para mapear status a 3 columnas específicas
+  const mapStatusToColumn = (status: string): string | null => {
     const statusLower = status.toLowerCase();
     
+    // TO DO - Estados iniciales
     if (statusLower.includes('to do') || statusLower.includes('todo') || 
         statusLower.includes('open') || statusLower.includes('backlog') ||
-        statusLower.includes('new') || statusLower.includes('pending')) {
+        statusLower.includes('new') || statusLower.includes('pending') ||
+        statusLower.includes('ready')) {
       return 'TO DO';
     }
     
+    // IN PROGRESS - Estados de trabajo activo
     if (statusLower.includes('in progress') || statusLower.includes('in-progress') ||
         statusLower.includes('progress') || statusLower.includes('active') ||
-        statusLower.includes('working') || statusLower.includes('development')) {
+        statusLower.includes('working') || statusLower.includes('development') ||
+        statusLower.includes('doing')) {
       return 'IN PROGRESS';
     }
     
-    if (statusLower.includes('done') || statusLower.includes('complete') ||
-        statusLower.includes('finished') || statusLower.includes('closed') ||
-        statusLower.includes('resolved') || statusLower.includes('delivered')) {
-      return 'DONE';
+    // ON APPROVAL - Estados de revisión/aprobación
+    if (statusLower.includes('review') || statusLower.includes('approval') ||
+        statusLower.includes('pending approval') || statusLower.includes('on approval') ||
+        statusLower.includes('waiting') || statusLower.includes('review') ||
+        statusLower.includes('qa') || statusLower.includes('testing') ||
+        statusLower.includes('check')) {
+      return 'ON APPROVAL';
     }
     
-    // Por defecto, manejar otros status como TO DO
+    // ✅ NUEVO: Filtrar tareas completadas - devolver null para excluirlas
+    if (statusLower.includes('done') || statusLower.includes('complete') ||
+        statusLower.includes('finished') || statusLower.includes('closed') ||
+        statusLower.includes('resolved') || statusLower.includes('delivered') ||
+        statusLower.includes('merged') || statusLower.includes('deployed')) {
+      return null; // No mostrar estas tareas
+    }
+    
+    // Por defecto, otros estados van a TO DO
     return 'TO DO';
   };
 
@@ -99,14 +115,14 @@ export const TasksList: React.FC<TasksListProps> = ({
     });
   };
 
-  // Renderizar skeletons durante la carga
+  // ✅ ACTUALIZADO: Renderizar skeletons para 3 columnas
   if (loading) {
-    const columnOrder = ['TO DO', 'IN PROGRESS'];
+    const columnOrder = ['TO DO', 'IN PROGRESS', 'ON APPROVAL'];
     
     return (
       <div className="space-y-6">
         <div className="flex align-baseline gap-6 h-[calc(100dvh-11.375rem)]">
-          {columnOrder.map((column) => (
+          {columnOrder.map((column, index) => (
             <div key={column} className="flex flex-[0_0_360px] flex-col overflow-y-auto relative pr-2">
               {/* Column Header */}
               <div className="sticky top-0 pb-2 bg-background flex items-center justify-between z-20">
@@ -115,10 +131,12 @@ export const TasksList: React.FC<TasksListProps> = ({
                 </div>
               </div>
               
-              {/* Skeleton Tasks - 2 per column */}
+              {/* Skeleton Tasks - Diferentes cantidades por columna para variedad */}
               <div className="flex-1 space-y-4">
                 <TaskCardSkeleton />
                 <TaskCardSkeleton />
+                {index === 0 && <TaskCardSkeleton />} {/* TO DO tiene una tarea extra */}
+                {index === 1 && <TaskCardSkeleton />} {/* IN PROGRESS tiene una tarea extra */}
               </div>
             </div>
           ))}
@@ -127,8 +145,13 @@ export const TasksList: React.FC<TasksListProps> = ({
     );
   }
 
-  // Filtrar tareas según los filtros aplicados
+  // ✅ ACTUALIZADO: Filtrar tareas según los filtros aplicados Y excluir completadas
   const filteredTasks = tasks.filter(task => {
+    // ✅ NUEVO: Primero filtrar por mapeo de columna (excluye DONE/COMPLETE)
+    const column = mapStatusToColumn(task.status);
+    if (column === null) return false; // Excluir tareas completadas
+    
+    // Aplicar otros filtros
     if (filters.status && task.status !== filters.status) return false;
     if (filters.priority && task.priority !== filters.priority) return false;
     if (filters.space && task.space.id !== filters.space) return false;
@@ -140,13 +163,15 @@ export const TasksList: React.FC<TasksListProps> = ({
     return true;
   });
 
-  // Agrupar tareas por columnas
+  // ✅ ACTUALIZADO: Agrupar tareas por las 3 columnas específicas
   const groupedTasks = filteredTasks.reduce((acc, task) => {
     const column = mapStatusToColumn(task.status);
-    if (!acc[column]) {
-      acc[column] = [];
+    if (column) { // Solo procesar si column no es null
+      if (!acc[column]) {
+        acc[column] = [];
+      }
+      acc[column].push(task);
     }
-    acc[column].push(task);
     return acc;
   }, {} as Record<string, Task[]>);
 
@@ -155,8 +180,8 @@ export const TasksList: React.FC<TasksListProps> = ({
     groupedTasks[column] = sortTasksByDueDate(groupedTasks[column]);
   });
 
-  // Definir el orden de las columnas
-  const columnOrder = ['TO DO', 'IN PROGRESS'];
+  // ✅ ACTUALIZADO: Definir el orden de las 3 columnas
+  const columnOrder = ['TO DO', 'IN PROGRESS', 'ON APPROVAL'];
   const orderedColumns = columnOrder.filter(column => groupedTasks[column]?.length > 0);
 
   if (tasks.length === 0) {
@@ -186,21 +211,21 @@ export const TasksList: React.FC<TasksListProps> = ({
             size={48}
             className="mx-auto mb-4 text-gray-400"
           />
-          <h3 className="text-2xl font-medium mb-2">No tasks match your filters</h3>
+          <h3 className="text-2xl font-medium mb-2">No active tasks match your filters</h3>
           <p className="text-gray-400">
-            Try adjusting your search criteria
+            Try adjusting your search criteria or check if tasks are completed
           </p>
         </div>
       </div>
     );
   }
 
-  // Si no hay columnas ordenadas, mostrar todas las columnas con placeholders
-  const displayColumns = orderedColumns.length > 0 ? orderedColumns : ['TO DO', 'IN PROGRESS', 'DONE'];
+  // ✅ ACTUALIZADO: Siempre mostrar las 3 columnas, incluso si están vacías
+  const displayColumns = columnOrder;
 
   return (
     <div className="space-y-6">
-      {/* Kanban Board */}
+      {/* ✅ ACTUALIZADO: Kanban Board con 3 columnas */}
       <div className="flex align-baseline gap-6 h-[calc(100dvh-11.375rem)]">
         {displayColumns.map((column) => (
           <div key={column} className="flex flex-[0_0_360px] flex-col overflow-y-auto relative pr-2">
@@ -237,7 +262,7 @@ export const TasksList: React.FC<TasksListProps> = ({
       {/* Summary */}
       {filteredTasks.length !== tasks.length && (
         <div className="text-center text-sm text-gray-500 pt-4 border-t border-white/10">
-          Showing {filteredTasks.length} of {tasks.length} tasks
+          Showing {filteredTasks.length} of {tasks.length} active tasks (completed tasks hidden)
         </div>
       )}
     </div>

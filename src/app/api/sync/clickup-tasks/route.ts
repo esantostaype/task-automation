@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// src/app/api/sync/clickup-tasks/route.ts - CORREGIDO SIN queuePosition
+// src/app/api/sync/clickup-tasks/route.ts - UPDATED to filter completed tasks
 
 import { NextResponse } from 'next/server';
 import axios from 'axios';
@@ -9,6 +9,32 @@ import { API_CONFIG } from '@/config';
 import { mapClickUpStatusToLocal } from '@/utils/clickup-task-mapping-utils';
 
 const CLICKUP_TOKEN = process.env.CLICKUP_API_TOKEN;
+
+// ✅ NUEVA FUNCIÓN: Verificar si un estado es válido (no completado)
+function isValidTaskStatus(status: string): boolean {
+  const statusLower = status.toLowerCase();
+  
+  // ✅ EXCLUIR tareas completadas
+  if (statusLower.includes('done') || statusLower.includes('complete') ||
+      statusLower.includes('finished') || statusLower.includes('closed') ||
+      statusLower.includes('resolved') || statusLower.includes('delivered') ||
+      statusLower.includes('merged') || statusLower.includes('deployed')) {
+    return false;
+  }
+  
+  // ✅ INCLUIR solo tareas activas
+  return statusLower.includes('to do') || statusLower.includes('todo') || 
+         statusLower.includes('open') || statusLower.includes('backlog') ||
+         statusLower.includes('new') || statusLower.includes('pending') ||
+         statusLower.includes('ready') || statusLower.includes('in progress') || 
+         statusLower.includes('in-progress') || statusLower.includes('progress') || 
+         statusLower.includes('active') || statusLower.includes('working') || 
+         statusLower.includes('development') || statusLower.includes('doing') ||
+         statusLower.includes('review') || statusLower.includes('approval') ||
+         statusLower.includes('pending approval') || statusLower.includes('on approval') ||
+         statusLower.includes('waiting') || statusLower.includes('qa') || 
+         statusLower.includes('testing') || statusLower.includes('check');
+}
 
 // ✅ SIMPLIFICADO: Ya no calculamos posiciones, solo validamos fechas
 async function validateTaskDatesForSync(
@@ -86,7 +112,7 @@ export async function GET() {
   }
 
   try {
-    console.log('🔍 Obteniendo tareas de ClickUp (sin queuePosition)...');
+    console.log('🔍 Obteniendo tareas activas de ClickUp (excluyendo completadas)...');
 
     const teamsResponse = await axios.get(
       `${API_CONFIG.CLICKUP_API_BASE}/team`,
@@ -141,32 +167,41 @@ export async function GET() {
                 order_by: 'updated',
                 reverse: true,
                 subtasks: true,
-                include_closed: false,
+                include_closed: false, // ✅ MEJORADO: Excluir tareas cerradas desde ClickUp
               }
             }
           );
 
           const tasks = tasksResponse.data.tasks || [];
           
-          // ✅ FILTROS: Estado + Fechas requeridas (sin referencias a queuePosition)
+          // ✅ FILTROS MEJORADOS: Estado activo + Fechas requeridas + Excluir completadas
           const filteredTasks = tasks.filter((task: any) => {
-            const mappedStatus = mapClickUpStatusToLocal(task.status?.status || '');
+            const taskStatus = task.status?.status || '';
+            
+            // ✅ NUEVO: Primero verificar que no esté completada
+            if (!isValidTaskStatus(taskStatus)) {
+              console.log(`       🚫 Tarea "${task.name}" excluida por estar completada: ${taskStatus}`);
+              return false;
+            }
+            
+            const mappedStatus = mapClickUpStatusToLocal(taskStatus);
             const hasValidStatus = mappedStatus === 'TO_DO' || mappedStatus === 'IN_PROGRESS';
             
             const hasStartDate = task.start_date && task.start_date !== null;
             const hasDueDate = task.due_date && task.due_date !== null;
             
             if (hasValidStatus && hasStartDate && hasDueDate) {
+              console.log(`       ✅ Tarea válida: "${task.name}" (${taskStatus} → ${mappedStatus})`);
               return true;
             }
             
-            // Log de exclusión
-            if (!hasValidStatus) {
-              console.log(`       🚫 Tarea "${task.name}" excluida por estado: ${task.status?.status} → ${mappedStatus}`);
-            } else if (!hasStartDate) {
+            // Log de exclusión para tareas activas sin fechas
+            if (!hasStartDate) {
               console.log(`       🚫 Tarea "${task.name}" excluida: sin startDate`);
             } else if (!hasDueDate) {
               console.log(`       🚫 Tarea "${task.name}" excluida: sin dueDate`);
+            } else if (!hasValidStatus) {
+              console.log(`       🚫 Tarea "${task.name}" excluida por estado: ${taskStatus} → ${mappedStatus}`);
             }
             
             return false;
@@ -174,7 +209,7 @@ export async function GET() {
           
           tasksArray.push(...filteredTasks);
           
-          console.log(`         Página ${page}: ${tasks.length} tareas totales, ${filteredTasks.length} con fechas válidas`);
+          console.log(`         Página ${page}: ${tasks.length} tareas totales, ${filteredTasks.length} tareas activas con fechas válidas`);
           
           hasMorePages = tasks.length > 0 && tasks.length >= 100;
           page++;
@@ -249,10 +284,13 @@ export async function GET() {
       }
     }
 
-    console.log(`🎯 Total de tareas con fechas válidas en ClickUp: ${allTasks.length}`);
+    console.log(`🎯 Total de tareas activas con fechas válidas en ClickUp: ${allTasks.length}`);
 
-    // Obtener tareas existentes en la DB local
+    // Obtener tareas existentes en la DB local (solo activas)
     const localTasks = await prisma.task.findMany({
+      where: {
+        status: { notIn: ['COMPLETE'] } // ✅ MEJORADO: Excluir completadas de DB local también
+      },
       select: { 
         id: true, 
         name: true, 
@@ -261,7 +299,7 @@ export async function GET() {
       }
     });
 
-    console.log(`💾 Tareas en DB local: ${localTasks.length}`);
+    console.log(`💾 Tareas activas en DB local: ${localTasks.length}`);
 
     const localTaskIds = new Set(localTasks.map(task => task.id));
     const localTaskUrls = new Set(localTasks.map(task => task.url).filter(Boolean));
@@ -327,7 +365,7 @@ export async function GET() {
     const existingCount = clickupTasksWithSyncStatus.filter(t => t.existsInLocal).length;
     const newCount = clickupTasksWithSyncStatus.filter(t => t.canSync).length;
 
-    console.log(`📈 Estadísticas de sincronización (solo fechas, sin queuePosition):`);
+    console.log(`📈 Estadísticas de sincronización (solo tareas activas):`);
     console.log(`   - Ya existen en local: ${existingCount}`);
     console.log(`   - Nuevas por sincronizar: ${newCount}`);
 
@@ -399,7 +437,7 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    console.log(`🔄 === SINCRONIZANDO ${taskIds.length} TAREAS SIN queuePosition ===`);
+    console.log(`🔄 === SINCRONIZANDO ${taskIds.length} TAREAS ACTIVAS ===`);
     console.log(`📋 Brand ID: ${brandId}`);
     console.log(`📋 Category ID: ${categoryId || 'default'}`);
 
@@ -489,6 +527,13 @@ export async function POST(req: Request) {
 
         const task = taskResponse.data;
         
+        // ✅ MEJORADO: Verificar que no esté completada
+        if (!isValidTaskStatus(task.status?.status || '')) {
+          console.log(`   🚫 Tarea ${taskId} omitida: está completada (${task.status?.status})`);
+          notFoundTasks.push(taskId);
+          continue;
+        }
+        
         if (!task.start_date || !task.due_date) {
           console.log(`   ⚠️ Tarea ${taskId} omitida: sin startDate o dueDate`);
           notFoundTasks.push(taskId);
@@ -512,7 +557,7 @@ export async function POST(req: Request) {
 
     if (tasksData.length === 0) {
       return NextResponse.json({
-        error: 'No se encontró información de ninguna tarea válida con fechas en ClickUp',
+        error: 'No se encontró información de ninguna tarea válida activa con fechas en ClickUp',
         notFoundTasks: notFoundTasks
       }, { status: 400 });
     }
@@ -553,7 +598,7 @@ export async function POST(req: Request) {
       return dateA - dateB;
     });
 
-    console.log(`📅 === PROCESANDO ${newTasksData.length} TAREAS ORDENADAS POR FECHA ===`);
+    console.log(`📅 === PROCESANDO ${newTasksData.length} TAREAS ACTIVAS ORDENADAS POR FECHA ===`);
 
     const createdTasks = [];
     const errors = [];
@@ -666,13 +711,13 @@ export async function POST(req: Request) {
       }
     }
 
-    console.log(`\n🎉 === SINCRONIZACIÓN COMPLETADA SIN queuePosition ===`);
+    console.log(`\n🎉 === SINCRONIZACIÓN COMPLETADA (SOLO TAREAS ACTIVAS) ===`);
     console.log(`✅ ${createdTasks.length} tareas creadas exitosamente`);
     console.log(`⚠️ ${errors.length} errores`);
     console.log(`🚫 ${notFoundTasks.length} tareas omitidas`);
 
     return NextResponse.json({
-      message: `${createdTasks.length} tareas sincronizadas exitosamente con fechas ordenadas`,
+      message: `${createdTasks.length} tareas activas sincronizadas exitosamente con fechas ordenadas`,
       createdTasks: createdTasks,
       skippedTasks: existingTasks,
       notFoundTasks: notFoundTasks.length > 0 ? notFoundTasks : undefined,
