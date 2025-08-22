@@ -21,7 +21,7 @@ interface Task {
     color: string;
   }>;
   dueDate?: string | null;
-  startDate?: string | null; // ✅ AGREGADA: fecha de inicio
+  startDate?: string | null;
   timeEstimate?: number | null;
   tags: string[];
   list: {
@@ -35,6 +35,8 @@ interface Task {
   url: string;
   existsInLocal: boolean;
   canSync: boolean;
+  isCompleted?: boolean; // ✅ NUEVO: Para identificar tareas DONE
+  dateClosed?: string | null; // ✅ NUEVO: Fecha de cierre
 }
 
 interface TasksListProps {
@@ -60,7 +62,7 @@ export const TasksList: React.FC<TasksListProps> = ({
   loading = false,
   filters = {},
 }) => {
-  // Función para mapear status a columnas
+  // ✅ MEJORADO: Función para mapear status a columnas incluyendo DONE
   const mapStatusToColumn = (status: string): string => {
     const statusLower = status.toLowerCase();
     
@@ -76,32 +78,62 @@ export const TasksList: React.FC<TasksListProps> = ({
       return 'IN PROGRESS';
     }
     
+    // ✅ NUEVO: Manejar estados de DONE/COMPLETE
     if (statusLower.includes('done') || statusLower.includes('complete') ||
         statusLower.includes('finished') || statusLower.includes('closed') ||
-        statusLower.includes('resolved') || statusLower.includes('delivered')) {
+        statusLower.includes('resolved') || statusLower.includes('delivered') ||
+        statusLower.includes('approved')) {
       return 'DONE';
+    }
+    
+    // ✅ NUEVO: Manejar ON_APPROVAL como columna separada
+    if (statusLower.includes('approval') || statusLower.includes('review') ||
+        statusLower.includes('reviewing')) {
+      return 'REVIEW';
     }
     
     // Por defecto, manejar otros status como TO DO
     return 'TO DO';
   };
 
-  // Función para ordenar tareas por fecha de vencimiento
-  const sortTasksByDueDate = (tasks: Task[]): Task[] => {
+  // ✅ MEJORADO: Función para ordenar tareas considerando fechas de cierre para DONE
+  const sortTasksByDate = (tasks: Task[], column: string): Task[] => {
     return tasks.sort((a, b) => {
-      // Las tareas sin fecha van al final
+      // Para tareas DONE, ordenar por fecha de cierre (más recientes primero)
+      if (column === 'DONE') {
+        const aCloseDate = a.dateClosed ? new Date(a.dateClosed).getTime() : 0;
+        const bCloseDate = b.dateClosed ? new Date(b.dateClosed).getTime() : 0;
+        
+        // Si ambas tienen fecha de cierre, ordenar por fecha (más recientes primero)
+        if (aCloseDate && bCloseDate) {
+          return bCloseDate - aCloseDate;
+        }
+        
+        // Las que tienen fecha de cierre van primero
+        if (aCloseDate && !bCloseDate) return -1;
+        if (!aCloseDate && bCloseDate) return 1;
+        
+        // Si ninguna tiene fecha de cierre, usar fecha de vencimiento
+        if (!a.dueDate && !b.dueDate) return 0;
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        
+        return new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime();
+      }
+      
+      // Para otras columnas, ordenar por fecha de vencimiento (más próximas primero)
       if (!a.dueDate && !b.dueDate) return 0;
       if (!a.dueDate) return 1;
       if (!b.dueDate) return -1;
       
-      // Ordenar por fecha (más próximas primero)
       return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
     });
   };
 
   // Renderizar skeletons durante la carga
   if (loading) {
-    const columnOrder = ['TO DO', 'IN PROGRESS'];
+    // ✅ ACTUALIZADO: Incluir columna DONE en el skeleton
+    const columnOrder = ['TO DO', 'IN PROGRESS', 'REVIEW', 'DONE'];
     
     return (
       <div className="space-y-6">
@@ -115,7 +147,7 @@ export const TasksList: React.FC<TasksListProps> = ({
                 </div>
               </div>
               
-              {/* Skeleton Tasks - 2 per column */}
+              {/* Skeleton Tasks */}
               <div className="flex-1 space-y-4">
                 <TaskCardSkeleton />
                 <TaskCardSkeleton />
@@ -152,12 +184,44 @@ export const TasksList: React.FC<TasksListProps> = ({
 
   // Ordenar tareas dentro de cada columna
   Object.keys(groupedTasks).forEach(column => {
-    groupedTasks[column] = sortTasksByDueDate(groupedTasks[column]);
+    groupedTasks[column] = sortTasksByDate(groupedTasks[column], column);
   });
 
-  // Definir el orden de las columnas
-  const columnOrder = ['TO DO', 'IN PROGRESS'];
+  // ✅ ACTUALIZADO: Definir el orden de las columnas incluyendo DONE
+  const columnOrder = ['TO DO', 'IN PROGRESS', 'REVIEW', 'DONE'];
   const orderedColumns = columnOrder.filter(column => groupedTasks[column]?.length > 0);
+
+  // ✅ MEJORADO: Función para obtener color de la columna
+  const getColumnColor = (column: string): string => {
+    switch (column) {
+      case 'TO DO':
+        return 'text-gray-400';
+      case 'IN PROGRESS':
+        return 'text-blue-400';
+      case 'REVIEW':
+        return 'text-yellow-400';
+      case 'DONE':
+        return 'text-green-400';
+      default:
+        return 'text-gray-400';
+    }
+  };
+
+  // ✅ MEJORADO: Función para obtener icono de la columna
+  const getColumnIcon = (column: string): string => {
+    switch (column) {
+      case 'TO DO':
+        return '📋';
+      case 'IN PROGRESS':
+        return '⚡';
+      case 'REVIEW':
+        return '👀';
+      case 'DONE':
+        return '✅';
+      default:
+        return '📋';
+    }
+  };
 
   if (tasks.length === 0) {
     return (
@@ -196,18 +260,37 @@ export const TasksList: React.FC<TasksListProps> = ({
   }
 
   // Si no hay columnas ordenadas, mostrar todas las columnas con placeholders
-  const displayColumns = orderedColumns.length > 0 ? orderedColumns : ['TO DO', 'IN PROGRESS', 'DONE'];
+  const displayColumns = orderedColumns.length > 0 ? orderedColumns : columnOrder;
 
   return (
     <div className="space-y-6">
+      {/* ✅ MEJORADO: Estadísticas de tareas incluyendo DONE */}
+      <div className="flex gap-4 text-sm text-gray-400 bg-background/50 p-3 rounded-lg">
+        <span>📊 Total: {filteredTasks.length}</span>
+        <span>📋 To Do: {groupedTasks['TO DO']?.length || 0}</span>
+        <span>⚡ In Progress: {groupedTasks['IN PROGRESS']?.length || 0}</span>
+        <span>👀 Review: {groupedTasks['REVIEW']?.length || 0}</span>
+        <span>✅ Done: {groupedTasks['DONE']?.length || 0}</span>
+      </div>
+
       {/* Kanban Board */}
       <div className="flex align-baseline gap-6 h-[calc(100dvh-11.375rem)]">
         {displayColumns.map((column) => (
           <div key={column} className="flex flex-[0_0_360px] flex-col overflow-y-auto relative pr-2">
-            {/* Column Header */}
+            {/* ✅ MEJORADO: Column Header con iconos y colores */}
             <div className="sticky top-0 pb-2 bg-background flex items-center justify-between z-20">
-              <h2 className="font-semibold text-lg">{column}</h2>
-              <span className="bg-accent/20 text-accent text-xs px-2 py-1 rounded-full">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">{getColumnIcon(column)}</span>
+                <h2 className={`font-semibold text-lg ${getColumnColor(column)}`}>
+                  {column}
+                </h2>
+              </div>
+              <span className={`${
+                column === 'DONE' ? 'bg-green-500/20 text-green-400' : 
+                column === 'REVIEW' ? 'bg-yellow-500/20 text-yellow-400' :
+                column === 'IN PROGRESS' ? 'bg-blue-500/20 text-blue-400' :
+                'bg-accent/20 text-accent'
+              } text-xs px-2 py-1 rounded-full`}>
                 {groupedTasks[column]?.length || 0}
               </span>
             </div>
@@ -224,9 +307,14 @@ export const TasksList: React.FC<TasksListProps> = ({
                   showSelection={!task.existsInLocal}
                 />
               )) || (
-                // Mostrar mensaje cuando no hay tareas en esta columna
+                // ✅ MEJORADO: Mensaje específico por columna
                 <div className="text-center text-gray-500 text-sm py-8">
-                  No {column.toLowerCase()} tasks
+                  {column === 'DONE' ? 
+                    'No completed tasks' : 
+                    column === 'REVIEW' ? 
+                    'No tasks under review' :
+                    `No ${column.toLowerCase()} tasks`
+                  }
                 </div>
               )}
             </div>
@@ -234,10 +322,17 @@ export const TasksList: React.FC<TasksListProps> = ({
         ))}
       </div>
 
-      {/* Summary */}
+      {/* ✅ MEJORADO: Summary con información de tareas DONE */}
       {filteredTasks.length !== tasks.length && (
         <div className="text-center text-sm text-gray-500 pt-4 border-t border-white/10">
-          Showing {filteredTasks.length} of {tasks.length} tasks
+          <div className="flex justify-center gap-6">
+            <span>Showing {filteredTasks.length} of {tasks.length} tasks</span>
+            {groupedTasks['DONE']?.length > 0 && (
+              <span className="text-green-400">
+                ✅ {groupedTasks['DONE'].length} completed
+              </span>
+            )}
+          </div>
         </div>
       )}
     </div>

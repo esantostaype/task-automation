@@ -1,12 +1,12 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-// src/utils/clickup-task-mapping-utils.ts - VERSIÓN CORREGIDA PARA MAPEO DE ESTADOS
+// src/utils/clickup-task-mapping-utils.ts - VERSIÓN ACTUALIZADA PARA DONE
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { prisma } from '@/utils/prisma';
 import { Priority, Status, Tier } from '@prisma/client';
 
 /**
- * ✅ MAPA MEJORADO: Mapea prioridades locales a valores de ClickUp
+ * ✅ MAPA DE PRIORIDADES: Mapea prioridades locales a valores de ClickUp
  */
 export const clickupPriorityMap: Record<Priority, number> = {
   'URGENT': 1,
@@ -16,7 +16,7 @@ export const clickupPriorityMap: Record<Priority, number> = {
 };
 
 /**
- * ✅ FUNCIÓN MEJORADA: Mapea estados de ClickUp a estados locales con logging detallado
+ * ✅ ACTUALIZADO: Mapea estados de ClickUp a estados locales INCLUYENDO COMPLETE
  */
 export function mapClickUpStatusToLocal(clickupStatus: string): Status {
   console.log(`🔄 Mapeando estado de ClickUp: "${clickupStatus}"`);
@@ -24,7 +24,7 @@ export function mapClickUpStatusToLocal(clickupStatus: string): Status {
   // Normalizar el estado (minúsculas y trim)
   const normalizedStatus = clickupStatus.toLowerCase().trim();
   
-  // Mapeo exhaustivo de posibles variaciones de estados
+  // ✅ ACTUALIZADO: Mapeo exhaustivo incluyendo más variaciones de COMPLETE
   const statusMap: Record<string, Status> = {
     // TO_DO variations
     'to do': Status.TO_DO,
@@ -33,6 +33,9 @@ export function mapClickUpStatusToLocal(clickupStatus: string): Status {
     'backlog': Status.TO_DO,
     'new': Status.TO_DO,
     'pending': Status.TO_DO,
+    'ready': Status.TO_DO,
+    'not started': Status.TO_DO,
+    'created': Status.TO_DO,
     
     // IN_PROGRESS variations  
     'in progress': Status.IN_PROGRESS,
@@ -42,6 +45,9 @@ export function mapClickUpStatusToLocal(clickupStatus: string): Status {
     'active': Status.IN_PROGRESS,
     'doing': Status.IN_PROGRESS,
     'wip': Status.IN_PROGRESS,
+    'started': Status.IN_PROGRESS,
+    'in development': Status.IN_PROGRESS,
+    'development': Status.IN_PROGRESS,
     
     // ON_APPROVAL variations
     'on approval': Status.ON_APPROVAL,
@@ -56,8 +62,11 @@ export function mapClickUpStatusToLocal(clickupStatus: string): Status {
     'for review': Status.ON_APPROVAL,
     'ready for review': Status.ON_APPROVAL,
     'under review': Status.ON_APPROVAL,
+    'needs review': Status.ON_APPROVAL,
+    'in review': Status.ON_APPROVAL,
+    'client review': Status.ON_APPROVAL,
     
-    // COMPLETE variations
+    // ✅ ACTUALIZADO: COMPLETE variations más exhaustivas
     'complete': Status.COMPLETE,
     'completed': Status.COMPLETE,
     'done': Status.COMPLETE,
@@ -66,21 +75,49 @@ export function mapClickUpStatusToLocal(clickupStatus: string): Status {
     'resolved': Status.COMPLETE,
     'delivered': Status.COMPLETE,
     'approved': Status.COMPLETE,
+    'accepted': Status.COMPLETE,
+    'verified': Status.COMPLETE,
+    'deployed': Status.COMPLETE,
+    'live': Status.COMPLETE,
+    'published': Status.COMPLETE,
+    'shipped': Status.COMPLETE,
+    'merged': Status.COMPLETE,
+    'released': Status.COMPLETE,
+    'production': Status.COMPLETE,
+    'validated': Status.COMPLETE,
+    'confirmed': Status.COMPLETE,
+    'final': Status.COMPLETE,
+    'success': Status.COMPLETE,
+    'completed successfully': Status.COMPLETE,
+    'task complete': Status.COMPLETE,
+    'work done': Status.COMPLETE,
+    // Variaciones en otros idiomas comunes
+    'terminado': Status.COMPLETE,
+    'completado': Status.COMPLETE,
+    'finalizado': Status.COMPLETE,
+    'listo': Status.COMPLETE,
   };
   
   const mappedStatus = statusMap[normalizedStatus];
   
   if (mappedStatus) {
     console.log(`✅ Estado mapeado: "${clickupStatus}" → ${mappedStatus}`);
+    
+    // ✅ NUEVO: Log especial para estados COMPLETE
+    if (mappedStatus === Status.COMPLETE) {
+      console.log(`🎯 Tarea marcada como COMPLETADA desde ClickUp: "${clickupStatus}"`);
+    }
+    
     return mappedStatus;
   } else {
     console.warn(`⚠️ Estado no reconocido: "${clickupStatus}", usando TO_DO por defecto`);
+    console.warn(`💡 Considera agregar "${normalizedStatus}" al mapeo de estados`);
     return Status.TO_DO; // Default fallback
   }
 }
 
 /**
- * ✅ FUNCIÓN MEJORADA: Mapea estados locales a nombres de ClickUp
+ * ✅ ACTUALIZADO: Mapea estados locales a nombres de ClickUp
  */
 export const getClickUpStatusName = (localStatus: Status): string => {
   console.log(`🔄 Convirtiendo estado local a ClickUp: ${localStatus}`);
@@ -88,8 +125,8 @@ export const getClickUpStatusName = (localStatus: Status): string => {
   const statusMap: Record<Status, string> = {
     [Status.TO_DO]: 'to do',
     [Status.IN_PROGRESS]: 'in progress', 
-    [Status.ON_APPROVAL]: 'review', // ✅ Mapear a 'review' que es más común en ClickUp
-    [Status.COMPLETE]: 'complete'
+    [Status.ON_APPROVAL]: 'review',
+    [Status.COMPLETE]: 'complete' // ✅ ACTUALIZADO: Mapear COMPLETE a 'complete'
   };
   
   const clickupStatus = statusMap[localStatus] || 'to do';
@@ -99,23 +136,93 @@ export const getClickUpStatusName = (localStatus: Status): string => {
 };
 
 /**
- * ✅ NUEVA FUNCIÓN: Debug de mapeo de estados para troubleshooting
+ * ✅ NUEVO: Función para verificar si un estado indica tarea completada
+ */
+export function isCompletedStatus(status: string): boolean {
+  const completedStatuses = [
+    'complete', 'completed', 'done', 'finished', 'closed', 'resolved',
+    'delivered', 'approved', 'accepted', 'verified', 'deployed', 'live',
+    'published', 'shipped', 'merged', 'released', 'production', 'validated',
+    'confirmed', 'final', 'success', 'terminado', 'completado', 'finalizado'
+  ];
+  
+  return completedStatuses.includes(status.toLowerCase().trim());
+}
+
+/**
+ * ✅ NUEVO: Función para obtener color del estado
+ */
+export function getStatusColor(status: Status): string {
+  const colorMap: Record<Status, string> = {
+    [Status.TO_DO]: '#6B7280',      // Gray
+    [Status.IN_PROGRESS]: '#3B82F6', // Blue
+    [Status.ON_APPROVAL]: '#F59E0B', // Yellow
+    [Status.COMPLETE]: '#10B981'     // Green
+  };
+  
+  return colorMap[status] || '#6B7280';
+}
+
+/**
+ * ✅ NUEVO: Función para obtener icono del estado
+ */
+export function getStatusIcon(status: Status): string {
+  const iconMap: Record<Status, string> = {
+    [Status.TO_DO]: '📋',
+    [Status.IN_PROGRESS]: '⚡',
+    [Status.ON_APPROVAL]: '👀',
+    [Status.COMPLETE]: '✅'
+  };
+  
+  return iconMap[status] || '📋';
+}
+
+/**
+ * ✅ MEJORADO: Debug de mapeo de estados para troubleshooting
  */
 export function debugStatusMapping(clickupStatuses: string[]): void {
-  console.log('\n🔍 === DEBUG DE MAPEO DE ESTADOS ===');
+  console.log('\n🔍 === DEBUG DE MAPEO DE ESTADOS (INCLUYENDO DONE) ===');
   console.log('Estados únicos encontrados en ClickUp:');
   
   const uniqueStatuses = [...new Set(clickupStatuses)];
-  uniqueStatuses.forEach(status => {
-    const mapped = mapClickUpStatusToLocal(status);
-    console.log(`  "${status}" → ${mapped}`);
+  const mappingResults = uniqueStatuses.map(status => ({
+    original: status,
+    mapped: mapClickUpStatusToLocal(status),
+    isCompleted: isCompletedStatus(status)
+  }));
+  
+  // Agrupar por estado mapeado
+  const groupedResults = mappingResults.reduce((acc, result) => {
+    if (!acc[result.mapped]) acc[result.mapped] = [];
+    acc[result.mapped].push(result);
+    return acc;
+  }, {} as Record<Status, typeof mappingResults>);
+  
+  // Mostrar agrupados
+  Object.entries(groupedResults).forEach(([mappedStatus, results]) => {
+    console.log(`\n📊 ${mappedStatus}:`);
+    results.forEach(result => {
+      const completedFlag = result.isCompleted ? ' ✅' : '';
+      console.log(`  "${result.original}" → ${result.mapped}${completedFlag}`);
+    });
   });
   
-  console.log('\nMapeos disponibles:');
+  console.log('\n📋 Mapeos disponibles:');
   Object.values(Status).forEach(localStatus => {
     const clickupName = getClickUpStatusName(localStatus);
-    console.log(`  ${localStatus} → "${clickupName}"`);
+    const color = getStatusColor(localStatus);
+    const icon = getStatusIcon(localStatus);
+    console.log(`  ${icon} ${localStatus} → "${clickupName}" (${color})`);
   });
+  
+  // ✅ NUEVO: Estadísticas de mapeo
+  console.log('\n📈 Estadísticas de mapeo:');
+  console.log(`  Total estados únicos: ${uniqueStatuses.length}`);
+  console.log(`  TO_DO: ${groupedResults[Status.TO_DO]?.length || 0}`);
+  console.log(`  IN_PROGRESS: ${groupedResults[Status.IN_PROGRESS]?.length || 0}`);
+  console.log(`  ON_APPROVAL: ${groupedResults[Status.ON_APPROVAL]?.length || 0}`);
+  console.log(`  COMPLETE: ${groupedResults[Status.COMPLETE]?.length || 0}`);
+  
   console.log('===========================================\n');
 }
 

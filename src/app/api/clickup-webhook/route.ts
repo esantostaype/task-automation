@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// src/app/api/clickup-webhook/route.ts - VERSIÓN COMPLETA CON MANEJO DE UPDATES
+// src/app/api/clickup-webhook/route.ts - VERSIÓN CON LOGS MEJORADOS
 import { NextResponse } from 'next/server'
 import { prisma } from '@/utils/prisma'
 import axios from 'axios'
@@ -7,9 +7,68 @@ import { Status, Priority } from '@prisma/client'
 import { mapClickUpStatusToLocal } from '@/utils/clickup-task-mapping-utils'
 
 const CLICKUP_TOKEN = process.env.CLICKUP_API_TOKEN
-const WEBHOOK_SECRET = process.env.CLICKUP_WEBHOOK_SECRET // Opcional para seguridad
+const WEBHOOK_SECRET = process.env.CLICKUP_WEBHOOK_SECRET
 
-// ✅ NUEVO: Tipos para eventos de ClickUp
+// ✅ MEJORADO: Log de entrada más detallado
+function logWebhookEntry(req: Request, body: any) {
+  const timestamp = new Date().toISOString();
+  const userAgent = req.headers.get('user-agent') || 'unknown';
+  const contentType = req.headers.get('content-type') || 'unknown';
+  const signature = req.headers.get('x-signature') || 'no-signature';
+  
+  console.log('\n🔔 =============== CLICKUP WEBHOOK RECEIVED ===============');
+  console.log(`⏰ Timestamp: ${timestamp}`);
+  console.log(`🌐 User-Agent: ${userAgent}`);
+  console.log(`📝 Content-Type: ${contentType}`);
+  console.log(`🔐 Signature: ${signature}`);
+  console.log(`📋 Event Type: ${body.event || 'NO_EVENT'}`);
+  console.log(`📦 Task ID: ${body.task_id || 'NO_TASK_ID'}`);
+  console.log(`📊 Payload Size: ${JSON.stringify(body).length} chars`);
+  
+  // Log completo del payload para debugging
+  console.log(`📦 FULL PAYLOAD:`);
+  console.log(JSON.stringify(body, null, 2));
+  console.log('========================================================\n');
+}
+
+// ✅ MEJORADO: Log de headers del request
+function logRequestHeaders(req: Request) {
+  console.log('📨 REQUEST HEADERS:');
+  req.headers.forEach((value, key) => {
+    console.log(`   ${key}: ${value}`);
+  });
+  console.log('');
+}
+
+// ✅ NUEVO: Log de verificación de webhook
+function logWebhookVerification(signature: string | null) {
+  console.log('🔐 WEBHOOK VERIFICATION:');
+  console.log(`   WEBHOOK_SECRET configured: ${WEBHOOK_SECRET ? 'YES' : 'NO'}`);
+  console.log(`   Signature received: ${signature ? 'YES' : 'NO'}`);
+  console.log(`   Signature value: ${signature || 'none'}`);
+  
+  if (WEBHOOK_SECRET && signature) {
+    // Aquí podrías implementar verificación HMAC si ClickUp la soporta
+    console.log(`   ✅ Signature verification: SKIPPED (implement HMAC if needed)`);
+  } else {
+    console.log(`   ⚠️ Webhook running without signature verification`);
+  }
+  console.log('');
+}
+
+// ✅ MEJORADO: Log de respuesta
+function logWebhookResponse(eventType: string, success: boolean, message: string, taskId?: string) {
+  const timestamp = new Date().toISOString();
+  const status = success ? '✅' : '❌';
+  
+  console.log(`${status} WEBHOOK RESPONSE [${timestamp}]:`);
+  console.log(`   Event: ${eventType}`);
+  console.log(`   Task ID: ${taskId || 'none'}`);
+  console.log(`   Success: ${success}`);
+  console.log(`   Message: ${message}`);
+  console.log('========================================================\n');
+}
+
 interface ClickUpWebhookEvent {
   event: string;
   task_id?: string;
@@ -42,28 +101,28 @@ interface ClickUpWebhookEvent {
   };
 }
 
-// ✅ MANTENER GET EXISTENTE
 export async function GET(req: Request) {
+  console.log('📥 GET request to webhook endpoint - probably ClickUp verification');
+  
   try {
-    console.log('📥 GET request to webhook endpoint')
-    
     const { searchParams } = new URL(req.url)
-    
-    // Si ClickUp está verificando el webhook
     const challenge = searchParams.get('challenge')
+    
     if (challenge) {
-      console.log('🔐 ClickUp webhook verification challenge received')
+      console.log('🔐 ClickUp webhook verification challenge received:', challenge);
+      console.log('✅ Responding with challenge for verification');
       return new Response(challenge, { status: 200 })
     }
 
-    // Tu lógica GET existente para obtener tareas...
+    // Tu lógica GET existente...
     const brandId = searchParams.get('brandId')
     const status = searchParams.get('status')
     const priority = searchParams.get('priority')
-
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '10')
     const skip = (page - 1) * limit
+
+    console.log(`📊 GET request with params: brandId=${brandId}, status=${status}, priority=${priority}, page=${page}`);
 
     const where: any = {}
     if (brandId) where.brandId = brandId
@@ -93,6 +152,8 @@ export async function GET(req: Request) {
 
     const totalTasks = await prisma.task.count({ where })
 
+    console.log(`✅ GET request successful: returned ${tasks.length} tasks`);
+
     return NextResponse.json({
       data: tasks,
       pagination: {
@@ -111,73 +172,111 @@ export async function GET(req: Request) {
   }
 }
 
-// ✅ MEJORADO: POST ahora maneja tanto creación como actualizaciones
 export async function POST(req: Request) {
+  const startTime = Date.now();
+  
   try {
+    // ✅ NUEVO: Log de headers antes de procesar
+    logRequestHeaders(req);
+    
     const body = await req.json()
     
-    // ✅ LOGGING COMPLETO
-    console.log('📥 === CLICKUP WEBHOOK RECEIVED ===')
-    console.log('📋 Event type:', body.event)
-    console.log('📦 Full payload:', JSON.stringify(body, null, 2))
+    // ✅ MEJORADO: Log de entrada detallado
+    logWebhookEntry(req, body);
     
-    // ✅ VERIFICACIÓN DE SEGURIDAD (opcional)
-    if (WEBHOOK_SECRET) {
-      const signature = req.headers.get('x-signature')
-      // Aquí implementarías la verificación de firma si ClickUp la proporciona
-      // Por ahora, solo loguear
-      console.log('🔐 Signature:', signature)
+    // ✅ NUEVO: Verificación de webhook
+    const signature = req.headers.get('x-signature');
+    logWebhookVerification(signature);
+    
+    // ✅ NUEVO: Validación básica del payload
+    if (!body.event) {
+      const message = 'Webhook payload missing event type';
+      console.error('❌ VALIDATION ERROR:', message);
+      logWebhookResponse('UNKNOWN', false, message);
+      return NextResponse.json({ error: message }, { status: 400 });
     }
-
-    // ✅ MANEJAR DIFERENTES EVENTOS DE CLICKUP
+    
     const event = body as ClickUpWebhookEvent
+    
+    console.log(`🎯 Processing webhook event: ${event.event}`);
+    
+    let result;
+    let success = true;
+    let message = '';
     
     switch (event.event) {
       case 'taskUpdated':
-        return await handleTaskUpdate(event)
+        console.log('📝 Handling taskUpdated event...');
+        result = await handleTaskUpdate(event);
+        break;
         
       case 'taskCreated':
-        return await handleTaskCreated(event)
+        console.log('➕ Handling taskCreated event...');
+        result = await handleTaskCreated(event);
+        break;
         
       case 'taskDeleted':
-        return await handleTaskDeleted(event)
+        console.log('🗑️ Handling taskDeleted event...');
+        result = await handleTaskDeleted(event);
+        break;
         
       case 'taskStatusUpdated':
-        return await handleTaskStatusUpdate(event)
+        console.log('📊 Handling taskStatusUpdated event...');
+        result = await handleTaskStatusUpdate(event);
+        break;
         
       case 'taskAssigneeUpdated':
-        return await handleTaskAssigneeUpdate(event)
+        console.log('👥 Handling taskAssigneeUpdated event...');
+        result = await handleTaskAssigneeUpdate(event);
+        break;
         
       default:
-        console.log(`⚠️ Unhandled webhook event: ${event.event}`)
-        return NextResponse.json({ 
-          message: `Event ${event.event} received but not handled` 
-        })
+        message = `Event ${event.event} received but not handled`;
+        console.log(`⚠️ ${message}`);
+        success = false;
+        result = NextResponse.json({ message });
     }
     
+    // ✅ NUEVO: Log de timing
+    const processingTime = Date.now() - startTime;
+    console.log(`⏱️ Webhook processing completed in ${processingTime}ms`);
+    
+    logWebhookResponse(event.event, success, message || 'Processed successfully', event.task_id);
+    
+    return result;
+    
   } catch (error) {
-    console.error('❌ Error processing webhook:', error)
+    const processingTime = Date.now() - startTime;
+    console.error('❌ CRITICAL ERROR processing webhook:', error);
+    console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack available');
+    console.log(`⏱️ Failed after ${processingTime}ms`);
+    
+    logWebhookResponse('ERROR', false, error instanceof Error ? error.message : 'Unknown error');
     
     // ✅ IMPORTANTE: Devolver 200 para que ClickUp no reintente
     return NextResponse.json({
       error: 'Error processing webhook',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 200 }) // ClickUp espera 200 incluso en errores
+      details: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    }, { status: 200 })
   }
 }
 
-// ✅ HANDLERS PARA DIFERENTES EVENTOS
+// ✅ Los handlers existentes con logs mejorados...
 
 async function handleTaskUpdate(event: ClickUpWebhookEvent) {
-  console.log('📝 Processing task update...')
+  console.log('📝 === HANDLING TASK UPDATE ===');
+  console.log(`📋 Task ID: ${event.task_id}`);
   
   if (!event.task_id) {
-    console.error('❌ No task_id in update event')
+    console.error('❌ No task_id in update event');
     return NextResponse.json({ error: 'No task_id provided' })
   }
 
   try {
-    // Obtener tarea actual de la DB
+    // Log de búsqueda de tarea
+    console.log(`🔍 Looking for task ${event.task_id} in local database...`);
+    
     const existingTask = await prisma.task.findUnique({
       where: { id: event.task_id },
       include: {
@@ -185,16 +284,13 @@ async function handleTaskUpdate(event: ClickUpWebhookEvent) {
       }
     })
 
-    // ✅ OPCIONAL: Validar/enriquecer datos con ClickUp API si no existe o datos incompletos
-    let enrichedTaskData = event.task
-    
     if (!existingTask) {
-      console.log(`⚠️ Task ${event.task_id} not found in local DB`)
+      console.log(`⚠️ Task ${event.task_id} not found in local DB`);
       
-      // ✅ OPCIONAL: Obtener detalles completos de ClickUp si no está en DB local
+      // ✅ Intentar obtener desde ClickUp API
       if (CLICKUP_TOKEN) {
         try {
-          console.log('🔍 Fetching task details from ClickUp API...')
+          console.log('🔍 Fetching task details from ClickUp API...');
           const clickupResponse = await axios.get(
             `https://api.clickup.com/api/v2/task/${event.task_id}`,
             {
@@ -204,75 +300,44 @@ async function handleTaskUpdate(event: ClickUpWebhookEvent) {
               }
             }
           )
-          console.log('✅ Task details obtained from ClickUp:', clickupResponse.data.name)
-          // Aquí podrías crear la tarea en tu DB si quisieras
+          console.log('✅ Task details obtained from ClickUp:', clickupResponse.data.name);
         } catch (apiError) {
           console.error('❌ Error fetching from ClickUp API:', apiError)
         }
       }
       
-      return NextResponse.json({ message: 'Task not found locally' })
+      return NextResponse.json({ 
+        message: 'Task not found locally',
+        suggestion: 'Task may need to be synced first'
+      })
     }
     
-    if (CLICKUP_TOKEN && (!event.task || !event.task.name)) {
-      try {
-        console.log('🔍 Webhook data incomplete, fetching full task from ClickUp...')
-        const clickupResponse = await axios.get(
-          `https://api.clickup.com/api/v2/task/${event.task_id}`,
-          {
-            headers: {
-              'Authorization': CLICKUP_TOKEN,
-              'Content-Type': 'application/json'
-            }
-          }
-        )
-        
-        // Mapear respuesta de ClickUp a nuestro formato
-        enrichedTaskData = {
-          id: clickupResponse.data.id,
-          name: clickupResponse.data.name,
-          description: clickupResponse.data.description,
-          status: clickupResponse.data.status,
-          priority: clickupResponse.data.priority,
-          assignees: clickupResponse.data.assignees,
-          due_date: clickupResponse.data.due_date,
-          start_date: clickupResponse.data.start_date,
-          time_estimate: clickupResponse.data.time_estimate
-        }
-        
-        console.log('✅ Task data enriched from ClickUp API')
-      } catch (apiError) {
-        console.error('⚠️ Could not enrich data from ClickUp:', apiError)
-        // Continuar con los datos del webhook
-      }
-    }
+    console.log(`✅ Found existing task: "${existingTask.name}"`);
+    console.log(`📊 Current status: ${existingTask.status}`);
+    console.log(`🔥 Current priority: ${existingTask.priority}`);
 
-    if (!existingTask) {
-      console.log(`⚠️ Task ${event.task_id} not found in local DB`)
-      return NextResponse.json({ message: 'Task not found locally' })
-    }
-
-    // Preparar datos de actualización
+    // Preparar datos de actualización con logs detallados
     const updateData: any = {}
+    const taskData = event.task
 
-    // Actualizar campos si han cambiado
-    const taskData = enrichedTaskData || event.task
     if (taskData) {
+      console.log('📝 Processing task data updates...');
+      
       if (taskData.name && taskData.name !== existingTask.name) {
         updateData.name = taskData.name
-        console.log(`  📝 Name: "${existingTask.name}" → "${taskData.name}"`)
+        console.log(`📝 Name change: "${existingTask.name}" → "${taskData.name}"`)
       }
 
       if (taskData.description !== undefined && taskData.description !== existingTask.description) {
         updateData.description = taskData.description || null
-        console.log(`  📝 Description updated`)
+        console.log(`📝 Description updated`)
       }
 
       if (taskData.status) {
         const newStatus = mapClickUpStatusToLocal(taskData.status.status)
         if (newStatus !== existingTask.status) {
           updateData.status = newStatus
-          console.log(`  📊 Status: ${existingTask.status} → ${newStatus}`)
+          console.log(`📊 Status change: ${existingTask.status} → ${newStatus}`)
         }
       }
 
@@ -287,7 +352,7 @@ async function handleTaskUpdate(event: ClickUpWebhookEvent) {
         
         if (newPriority !== existingTask.priority) {
           updateData.priority = newPriority
-          console.log(`  🔥 Priority: ${existingTask.priority} → ${newPriority}`)
+          console.log(`🔥 Priority change: ${existingTask.priority} → ${newPriority}`)
         }
       }
 
@@ -295,7 +360,7 @@ async function handleTaskUpdate(event: ClickUpWebhookEvent) {
         const newStartDate = taskData.start_date ? new Date(parseInt(taskData.start_date)) : null
         if (newStartDate && newStartDate.getTime() !== existingTask.startDate.getTime()) {
           updateData.startDate = newStartDate
-          console.log(`  📅 Start date: ${existingTask.startDate.toISOString()} → ${newStartDate.toISOString()}`)
+          console.log(`📅 Start date change: ${existingTask.startDate.toISOString()} → ${newStartDate.toISOString()}`)
         }
       }
 
@@ -303,20 +368,22 @@ async function handleTaskUpdate(event: ClickUpWebhookEvent) {
         const newDeadline = taskData.due_date ? new Date(parseInt(taskData.due_date)) : null
         if (newDeadline && newDeadline.getTime() !== existingTask.deadline.getTime()) {
           updateData.deadline = newDeadline
-          console.log(`  📅 Deadline: ${existingTask.deadline.toISOString()} → ${newDeadline.toISOString()}`)
+          console.log(`📅 Deadline change: ${existingTask.deadline.toISOString()} → ${newDeadline.toISOString()}`)
         }
       }
 
       if (taskData.time_estimate !== undefined) {
         updateData.timeEstimate = taskData.time_estimate
-        console.log(`  ⏱️ Time estimate: ${existingTask.timeEstimate} → ${taskData.time_estimate}`)
+        console.log(`⏱️ Time estimate change: ${existingTask.timeEstimate} → ${taskData.time_estimate}`)
       }
     }
 
-    // Si hay cambios, actualizar
+    // Actualizar si hay cambios
     if (Object.keys(updateData).length > 0) {
       updateData.lastSyncAt = new Date()
       updateData.syncStatus = 'SYNCED'
+
+      console.log(`💾 Updating task with ${Object.keys(updateData).length} changes...`);
 
       const updatedTask = await prisma.task.update({
         where: { id: event.task_id },
@@ -337,67 +404,85 @@ async function handleTaskUpdate(event: ClickUpWebhookEvent) {
         }
       })
 
-      console.log(`✅ Task ${event.task_id} updated successfully`)
-      console.log(`  Changed fields: ${Object.keys(updateData).join(', ')}`)
+      console.log(`✅ Task ${event.task_id} updated successfully`);
+      console.log(`📝 Changed fields: ${Object.keys(updateData).join(', ')}`);
 
       // Emitir evento Socket.IO
       try {
+        console.log('📡 Emitting socket event...');
         await axios.post('https://assignify.vercel.app/api/socket_emitter', {
           eventName: 'task_update',
           data: updatedTask,
         })
-        console.log('✅ Socket event emitted')
+        console.log('✅ Socket event emitted successfully');
       } catch (emitterError) {
         console.error('⚠️ Error emitting socket event:', emitterError)
       }
 
       return NextResponse.json({ 
         success: true, 
-        message: 'Task updated',
+        message: 'Task updated successfully',
         taskId: event.task_id,
-        updatedFields: Object.keys(updateData)
+        updatedFields: Object.keys(updateData),
+        taskName: updatedTask.name
       })
     } else {
-      console.log('ℹ️ No changes detected')
+      console.log('ℹ️ No changes detected - task already up to date');
       return NextResponse.json({ 
         success: true, 
-        message: 'No changes needed',
+        message: 'No changes needed - task already synchronized',
         taskId: event.task_id
       })
     }
 
   } catch (error) {
     console.error('❌ Error updating task:', error)
+    console.error('❌ Error details:', error instanceof Error ? error.stack : 'No stack available')
+    
     return NextResponse.json({ 
       error: 'Error updating task',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: error instanceof Error ? error.message : 'Unknown error',
+      taskId: event.task_id
     })
   }
 }
 
 async function handleTaskCreated(event: ClickUpWebhookEvent) {
-  console.log('➕ Processing task creation...')
-  
-  // Aquí podrías sincronizar la nueva tarea si fue creada directamente en ClickUp
-  // Por ahora, solo loguear
-  console.log('  Task ID:', event.task_id)
-  console.log('  Task Name:', event.task?.name)
+  console.log('➕ === HANDLING TASK CREATION ===');
+  console.log(`📋 Task ID: ${event.task_id}`);
+  console.log(`📝 Task Name: ${event.task?.name || 'Unknown'}`);
   
   return NextResponse.json({ 
     message: 'Task creation noted',
-    taskId: event.task_id
+    taskId: event.task_id,
+    note: 'New tasks from ClickUp should be synced manually via sync interface'
   })
 }
 
 async function handleTaskDeleted(event: ClickUpWebhookEvent) {
-  console.log('🗑️ Processing task deletion...')
+  console.log('🗑️ === HANDLING TASK DELETION ===');
+  console.log(`📋 Task ID: ${event.task_id}`);
   
   if (!event.task_id) {
     return NextResponse.json({ error: 'No task_id provided' })
   }
 
   try {
-    // Soft delete o hard delete según tu preferencia
+    console.log(`🔍 Looking for task ${event.task_id} to mark as deleted...`);
+    
+    const task = await prisma.task.findUnique({
+      where: { id: event.task_id }
+    });
+
+    if (!task) {
+      console.log(`⚠️ Task ${event.task_id} not found in local database`);
+      return NextResponse.json({ 
+        message: 'Task not found in local database',
+        taskId: event.task_id
+      });
+    }
+
+    // Soft delete o cambiar estado
     await prisma.task.update({
       where: { id: event.task_id },
       data: {
@@ -407,7 +492,7 @@ async function handleTaskDeleted(event: ClickUpWebhookEvent) {
       }
     })
 
-    console.log(`✅ Task ${event.task_id} marked as deleted`)
+    console.log(`✅ Task ${event.task_id} marked as deleted/completed`);
     
     return NextResponse.json({ 
       success: true,
@@ -424,14 +509,17 @@ async function handleTaskDeleted(event: ClickUpWebhookEvent) {
 }
 
 async function handleTaskStatusUpdate(event: ClickUpWebhookEvent) {
-  console.log('📊 Processing status update...')
+  console.log('📊 === HANDLING STATUS UPDATE ===');
+  console.log(`📋 Task ID: ${event.task_id}`);
+  console.log(`📊 New Status: ${event.task?.status?.status || 'Unknown'}`);
   
   if (!event.task_id || !event.task?.status) {
-    return NextResponse.json({ error: 'Missing required data' })
+    return NextResponse.json({ error: 'Missing required data for status update' })
   }
 
   try {
     const newStatus = mapClickUpStatusToLocal(event.task.status.status)
+    console.log(`📊 Mapped status: ${event.task.status.status} → ${newStatus}`);
     
     await prisma.task.update({
       where: { id: event.task_id },
@@ -442,13 +530,14 @@ async function handleTaskStatusUpdate(event: ClickUpWebhookEvent) {
       }
     })
 
-    console.log(`✅ Task ${event.task_id} status updated to ${newStatus}`)
+    console.log(`✅ Task ${event.task_id} status updated to ${newStatus}`);
     
     return NextResponse.json({ 
       success: true,
-      message: 'Status updated',
+      message: 'Status updated successfully',
       taskId: event.task_id,
-      newStatus
+      newStatus,
+      originalStatus: event.task.status.status
     })
   } catch (error) {
     console.error('❌ Error updating status:', error)
@@ -460,21 +549,28 @@ async function handleTaskStatusUpdate(event: ClickUpWebhookEvent) {
 }
 
 async function handleTaskAssigneeUpdate(event: ClickUpWebhookEvent) {
-  console.log('👥 Processing assignee update...')
+  console.log('👥 === HANDLING ASSIGNEE UPDATE ===');
+  console.log(`📋 Task ID: ${event.task_id}`);
+  console.log(`👥 Assignees count: ${event.task?.assignees?.length || 0}`);
   
   if (!event.task_id || !event.task?.assignees) {
-    return NextResponse.json({ error: 'Missing required data' })
+    return NextResponse.json({ error: 'Missing required data for assignee update' })
   }
 
   try {
     // Eliminar asignaciones existentes
+    console.log('🗑️ Removing existing task assignments...');
     await prisma.taskAssignment.deleteMany({
       where: { taskId: event.task_id }
     })
 
     // Crear nuevas asignaciones
     const newAssignments = []
+    console.log('👥 Processing new assignees...');
+    
     for (const assignee of event.task.assignees) {
+      console.log(`   🔍 Checking assignee: ${assignee.username} (ID: ${assignee.id})`);
+      
       const user = await prisma.user.findUnique({
         where: { id: assignee.id.toString() }
       })
@@ -484,6 +580,9 @@ async function handleTaskAssigneeUpdate(event: ClickUpWebhookEvent) {
           userId: user.id,
           taskId: event.task_id
         })
+        console.log(`   ✅ Added assignee: ${assignee.username}`);
+      } else {
+        console.log(`   ⚠️ User ${assignee.username} (${assignee.id}) not found in local database`);
       }
     }
 
@@ -493,13 +592,14 @@ async function handleTaskAssigneeUpdate(event: ClickUpWebhookEvent) {
       })
     }
 
-    console.log(`✅ Task ${event.task_id} assignees updated (${newAssignments.length} assignees)`)
+    console.log(`✅ Task ${event.task_id} assignees updated (${newAssignments.length} assignees)`);
     
     return NextResponse.json({ 
       success: true,
-      message: 'Assignees updated',
+      message: 'Assignees updated successfully',
       taskId: event.task_id,
-      assigneeCount: newAssignments.length
+      assigneeCount: newAssignments.length,
+      processedAssignees: event.task.assignees.length
     })
   } catch (error) {
     console.error('❌ Error updating assignees:', error)
