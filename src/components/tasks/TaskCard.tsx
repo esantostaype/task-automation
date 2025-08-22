@@ -28,7 +28,7 @@ interface TaskCardProps {
       color: string;
     }>;
     dueDate?: string | null;
-    startDate?: string | null; // ✅ NUEVO: Agregada fecha de inicio
+    startDate?: string | null;
     timeEstimate?: number | null;
     tags: string[];
     list: {
@@ -87,10 +87,21 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     return `Due: ${dueDateTime}`;
   };
 
-  // ✅ NUEVA FUNCIÓN: Determinar color según urgencia
+  // ✅ MEJORADA: Determinar color según urgencia Y estado de la tarea
   const getDateColor = () => {
     if (!task.dueDate) return "text-gray-400";
     
+    // ✅ NUEVO: Si la tarea está IN PROGRESS, siempre mostrar en gris
+    // porque ya está en manos del solicitante
+    const statusLower = task.status.toLowerCase();
+    if (statusLower.includes('in progress') || statusLower.includes('in-progress') ||
+        statusLower.includes('progress') || statusLower.includes('active') ||
+        statusLower.includes('working') || statusLower.includes('development') ||
+        statusLower.includes('doing')) {
+      return "text-gray-300"; // Gris neutro para tareas en progreso
+    }
+    
+    // Para otras tareas (TO DO, ON APPROVAL), mantener lógica de urgencia
     const dueDate = new Date(task.dueDate);
     const now = new Date();
     const diffTime = dueDate.getTime() - now.getTime();
@@ -197,7 +208,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
       {/* Task Details */}
       <div className="space-y-2 text-sm">
-        {/* ✅ NUEVA SECCIÓN: Date Range con formato mejorado */}
+        {/* ✅ MEJORADA: Date Range con color inteligente según estado */}
         {dateRange && (
           <div className="flex items-center gap-1">
             <HugeiconsIcon
