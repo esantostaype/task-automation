@@ -28,7 +28,7 @@ interface TaskCardProps {
       color: string;
     }>;
     dueDate?: string | null;
-    startDate?: string | null;
+    startDate?: string | null; // ✅ NUEVO: Agregada fecha de inicio
     timeEstimate?: number | null;
     tags: string[];
     list: {
@@ -87,27 +87,16 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     return `Due: ${dueDateTime}`;
   };
 
-  // ✅ MEJORADA: Determinar color según urgencia Y estado de la tarea
+  // ✅ NUEVA FUNCIÓN: Determinar color según urgencia
   const getDateColor = () => {
     if (!task.dueDate) return "text-gray-400";
     
-    // ✅ NUEVO: Si la tarea está IN PROGRESS, siempre mostrar en gris
-    // porque ya está en manos del solicitante
-    const statusLower = task.status.toLowerCase();
-    if (statusLower.includes('in progress') || statusLower.includes('in-progress') ||
-        statusLower.includes('progress') || statusLower.includes('active') ||
-        statusLower.includes('working') || statusLower.includes('development') ||
-        statusLower.includes('doing')) {
-      return "text-gray-300"; // Gris neutro para tareas en progreso
-    }
-    
-    // Para otras tareas (TO DO, ON APPROVAL), mantener lógica de urgencia
     const dueDate = new Date(task.dueDate);
     const now = new Date();
     const diffTime = dueDate.getTime() - now.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-    if (diffDays < 0) {
+    if (diffDays < 0 && task.status !== 'in_progress') {
       return "text-red-400"; // Overdue
     } else if (diffDays === 0) {
       return "text-orange-400"; // Due today  
@@ -208,13 +197,13 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
       {/* Task Details */}
       <div className="space-y-2 text-sm">
-        {/* ✅ MEJORADA: Date Range con color inteligente según estado */}
+        {/* ✅ NUEVA SECCIÓN: Date Range con formato mejorado */}
         {dateRange && (
           <div className="flex items-center gap-1">
             <HugeiconsIcon
               icon={Calendar03Icon}
               size={16}
-              className="text-gray-400 flex-shrink-0"
+              className="text-gray-300 flex-shrink-0"
             />
             <div 
               className={`${dateColor} text-sm font-medium mt-[2px]`}
