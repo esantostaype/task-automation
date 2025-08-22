@@ -111,7 +111,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       return "text-red-400"; // Overdue
     } else if (diffDays === 0) {
       return "text-orange-400"; // Due today  
-    } else if (diffDays <= 2) {
+    } else if (diffDays <= 1) {
       return "text-yellow-400"; // Due soon
     } else {
       return "text-gray-300"; // Normal
