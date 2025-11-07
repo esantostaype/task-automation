@@ -1,16 +1,12 @@
 {
   "name": "task-automation",
   "version": "0.1.0",
-  "prisma": {
-    "seed": "ts-node prisma/seed.cjs"
-  },
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "postinstall": "prisma generate"
+    "lint": "next lint"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -18,32 +14,19 @@
     "@fontsource/inter": "^5.2.6",
     "@hugeicons/core-free-icons": "^1.0.14",
     "@hugeicons/react": "^1.0.5",
-    "@mui/joy": "^5.0.0-beta.52",
-    "@phosphor-icons/react": "^2.1.10",
+    "@playwright/test": "^1.56.1",
     "@prisma/client": "^6.10.1",
-    "@tanstack/react-query": "^5.81.2",
-    "@tanstack/react-query-devtools": "^5.81.5",
     "axios": "^1.10.0",
-    "date-fns": "^4.1.0",
-    "date-fns-tz": "^3.2.0",
-    "formik": "^2.4.6",
-    "framer-motion": "^12.23.0",
-    "jose": "^6.0.12",
-    "jsonwebtoken": "^9.0.2",
     "next": "^14.2.25",
     "node-cache": "^5.1.2",
+    "pdf-lib": "^1.17.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-toastify": "^11.0.5",
-    "socket.io": "^4.8.1",
-    "socket.io-client": "^4.8.1",
-    "yup": "^1.6.1",
-    "zustand": "^5.0.6"
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
-    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
